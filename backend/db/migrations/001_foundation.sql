@@ -36,8 +36,14 @@ create table if not exists capability_registry (
   api_version text,
   restrictions jsonb not null default '[]'::jsonb,
   validation_source text not null,
-  validated_at timestamptz not null,
-  unique (tenant_id, connection_id, capability_type, coalesce(asset_scope, ''))
+  validated_at timestamptz not null
+);
+create unique index if not exists uq_capability_registry_scope
+on capability_registry (
+  tenant_id,
+  connection_id,
+  capability_type,
+  coalesce(asset_scope, '')
 );
 
 create table if not exists audit_events (
