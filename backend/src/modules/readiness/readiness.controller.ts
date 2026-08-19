@@ -7,6 +7,6 @@ export class ReadinessController {
 
   @Get(':connectionId')
   get(@Param('connectionId') connectionId: string, @Query('tenantId') tenantId: string) {
-    return this.service.buildUnconfiguredSnapshot(tenantId, connectionId);
+    return this.service.getConnectionReadiness(tenantId, connectionId);
   }
 }

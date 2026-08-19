@@ -1,14 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { ReadinessSnapshot } from '../../domain/contracts/readiness';
+import { MetaConnectionService } from '../meta-connection/meta-connection.service';
 
 @Injectable()
 export class ReadinessService {
-  buildUnconfiguredSnapshot(tenantId: string, connectionId: string): ReadinessSnapshot {
+  constructor(private readonly connections: MetaConnectionService) {}
+
+  async getConnectionReadiness(tenantId: string, connectionId: string): Promise<ReadinessSnapshot> {
+    const connection = await this.connections.getConnection(tenantId, connectionId);
+
     return {
       snapshotId: randomUUID(),
-      tenantId,
-      connectionId,
+      tenantId: connection.tenantId,
+      connectionId: connection.connectionId,
       correlationId: randomUUID(),
       checks: [
         {
