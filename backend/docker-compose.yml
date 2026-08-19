@@ -1,0 +1,13 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: contexto_ads
+      POSTGRES_PASSWORD: contexto_ads
+      POSTGRES_DB: contexto_ads
+    ports:
+      - "5432:5432"
+    volumes:
+      - contexto_ads_pg:/var/lib/postgresql/data
+volumes:
+  contexto_ads_pg:
