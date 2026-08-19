@@ -20,7 +20,7 @@ describe('PostgresMetaOAuthAttemptRepository', () => {
   const repository = new PostgresMetaOAuthAttemptRepository(pool);
 
   beforeEach(() => {
-    query.mockReset().mockResolvedValue({ rows: [] });
+    query.mockReset().mockResolvedValue({ rows: [], rowCount: 1 });
     release.mockReset();
     connect.mockClear();
   });
@@ -62,14 +62,35 @@ describe('PostgresMetaOAuthAttemptRepository', () => {
 
   it('rolls back and releases the client when persistence fails', async () => {
     query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [], rowCount: null })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
       .mockRejectedValueOnce(new Error('insert failed'))
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [], rowCount: null });
 
     await expect(repository.replaceActive(attempt)).rejects.toThrow('insert failed');
     expect(query).toHaveBeenLastCalledWith('rollback');
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back without invalidating or inserting when the tenant-scoped connection is not found', async () => {
+    query
+      .mockResolvedValueOnce({ rows: [], rowCount: null })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [], rowCount: null });
+
+    await expect(repository.replaceActive(attempt)).rejects.toThrow(
+      'Tenant-scoped Meta connection not found',
+    );
+
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[0]).toEqual(['begin']);
+    expect(query.mock.calls[1]).toEqual([
+      expect.stringContaining('for update'),
+      [attempt.tenantId, attempt.connectionId],
+    ]);
+    expect(query.mock.calls[2]).toEqual(['rollback']);
+    expect(query).not.toHaveBeenCalledWith('commit');
     expect(release).toHaveBeenCalledTimes(1);
   });
 });

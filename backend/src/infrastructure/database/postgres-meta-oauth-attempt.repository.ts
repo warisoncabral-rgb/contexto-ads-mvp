@@ -48,12 +48,16 @@ export class PostgresMetaOAuthAttemptRepository implements MetaOAuthAttemptStore
     tenantId: string,
     connectionId: string,
   ): Promise<void> {
-    await client.query(
+    const result = await client.query(
       `select connection_id
       from meta_connections
       where tenant_id = $1 and connection_id = $2
       for update`,
       [tenantId, connectionId],
     );
+
+    if (result.rowCount !== 1) {
+      throw new Error('Tenant-scoped Meta connection not found');
+    }
   }
 }
