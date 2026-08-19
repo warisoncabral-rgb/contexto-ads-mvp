@@ -1,8 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
-import { DATABASE_POOL, META_CONNECTION_REPOSITORY } from './database.tokens';
+import {
+  DATABASE_POOL,
+  META_CONNECTION_REPOSITORY,
+  META_OAUTH_ATTEMPT_REPOSITORY,
+} from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
+import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -18,7 +23,12 @@ import { PostgresMetaConnectionRepository } from './postgres-meta-connection.rep
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresMetaConnectionRepository(pool),
     },
+    {
+      provide: META_OAUTH_ATTEMPT_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresMetaOAuthAttemptRepository(pool),
+    },
   ],
-  exports: [META_CONNECTION_REPOSITORY],
+  exports: [META_CONNECTION_REPOSITORY, META_OAUTH_ATTEMPT_REPOSITORY],
 })
 export class DatabaseModule {}

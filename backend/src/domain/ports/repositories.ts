@@ -2,6 +2,7 @@ import { MetaConnection, MetaAssetBinding } from '../contracts/meta-connection';
 import { CapabilityRecord } from '../contracts/capability';
 import { AuditEvent } from '../contracts/audit-event';
 import { ReadinessSnapshot } from '../contracts/readiness';
+import { MetaOAuthAttempt } from '../contracts/meta-oauth-attempt';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -15,5 +16,9 @@ export interface CapabilityRepository {
 }
 export interface AuditRepository { append(event: AuditEvent): Promise<void>; }
 export interface ReadinessRepository { save(snapshot: ReadinessSnapshot): Promise<void>; }
+
+export interface MetaOAuthAttemptStore {
+  replaceActive(attempt: MetaOAuthAttempt): Promise<void>;
+}
 
 export type MetaConnectionStore = Pick<MetaConnectionRepository, 'save' | 'findById'>;
