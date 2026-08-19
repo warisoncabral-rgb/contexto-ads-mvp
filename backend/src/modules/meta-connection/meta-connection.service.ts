@@ -36,6 +36,7 @@ export class MetaConnectionService {
 
   async getConnection(tenantId: string, connectionId: string) {
     this.assertTenantId(tenantId);
+    this.assertConnectionId(connectionId);
     const connection = await this.connections.findById(tenantId, connectionId);
     if (!connection) throw new NotFoundException('Meta connection not found');
     return connection;
@@ -48,6 +49,12 @@ export class MetaConnectionService {
   private assertTenantId(tenantId: string): void {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
       throw new BadRequestException('tenantId must be a valid UUID');
+    }
+  }
+
+  private assertConnectionId(connectionId: string): void {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connectionId)) {
+      throw new BadRequestException('connectionId must be a valid UUID');
     }
   }
 }
