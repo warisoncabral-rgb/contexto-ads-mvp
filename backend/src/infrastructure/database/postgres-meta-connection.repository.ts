@@ -57,4 +57,21 @@ export class PostgresMetaConnectionRepository implements MetaConnectionStore {
       updatedAt: row.updated_at.toISOString(),
     };
   }
+
+  async markConnected(
+    tenantId: string,
+    connectionId: string,
+    credentialRef: string,
+    updatedAt: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `update meta_connections
+      set credential_ref = $3, status = 'connected', updated_at = $4
+      where tenant_id = $1 and connection_id = $2
+        and status = 'authorization_pending'`,
+      [tenantId, connectionId, credentialRef, updatedAt],
+    );
+
+    return result.rowCount === 1;
+  }
 }

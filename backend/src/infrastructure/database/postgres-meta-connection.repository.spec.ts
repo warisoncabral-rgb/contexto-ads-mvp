@@ -56,4 +56,29 @@ describe('PostgresMetaConnectionRepository', () => {
     query.mockResolvedValueOnce({ rows: [] });
     await expect(repository.findById('tenant-2', 'connection-1')).resolves.toBeNull();
   });
+
+  it('marks only an authorization_pending tenant-scoped connection as connected', async () => {
+    query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
+    await expect(repository.markConnected(
+      'tenant-1',
+      'connection-1',
+      'vault://credential-1',
+      '2026-08-19T03:00:00.000Z',
+    )).resolves.toBe(true);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(/credential_ref = \$3[\s\S]*status = 'connected'[\s\S]*tenant_id = \$1 and connection_id = \$2[\s\S]*status = 'authorization_pending'/),
+      ['tenant-1', 'connection-1', 'vault://credential-1', '2026-08-19T03:00:00.000Z'],
+    );
+  });
+
+  it('reports failure when no matching pending tenant-scoped connection is updated', async () => {
+    query.mockResolvedValueOnce({ rowCount: 0, rows: [] });
+    await expect(repository.markConnected(
+      'tenant-2',
+      'connection-1',
+      'vault://credential-1',
+      '2026-08-19T03:00:00.000Z',
+    )).resolves.toBe(false);
+  });
 });

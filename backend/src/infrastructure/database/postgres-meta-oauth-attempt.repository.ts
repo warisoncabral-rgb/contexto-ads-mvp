@@ -43,6 +43,47 @@ export class PostgresMetaOAuthAttemptRepository implements MetaOAuthAttemptStore
     }
   }
 
+  async consumeActive(stateHash: string): Promise<MetaOAuthAttempt | null> {
+    const result = await this.pool.query<{
+      attempt_id: string;
+      tenant_id: string;
+      connection_id: string;
+      state_hash: string;
+      requested_scopes: string[];
+      created_at: Date;
+      expires_at: Date;
+      consumed_at: Date;
+      invalidated_at: Date | null;
+    }>(
+      `update meta_oauth_attempts
+      set consumed_at = now()
+      where state_hash = $1
+        and consumed_at is null
+        and invalidated_at is null
+        and expires_at > now()
+      returning attempt_id, tenant_id, connection_id, state_hash,
+        requested_scopes, created_at, expires_at, consumed_at, invalidated_at`,
+      [stateHash],
+    );
+
+    const row = result.rows[0];
+    if (!row) return null;
+
+    return {
+      attemptId: row.attempt_id,
+      tenantId: row.tenant_id,
+      connectionId: row.connection_id,
+      stateHash: row.state_hash,
+      requestedScopes: row.requested_scopes,
+      createdAt: row.created_at.toISOString(),
+      expiresAt: row.expires_at.toISOString(),
+      consumedAt: row.consumed_at.toISOString(),
+      ...(row.invalidated_at
+        ? { invalidatedAt: row.invalidated_at.toISOString() }
+        : {}),
+    };
+  }
+
   private async lockConnection(
     client: PoolClient,
     tenantId: string,
