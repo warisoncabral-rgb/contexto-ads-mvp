@@ -15,3 +15,5 @@ export interface CapabilityRepository {
 }
 export interface AuditRepository { append(event: AuditEvent): Promise<void>; }
 export interface ReadinessRepository { save(snapshot: ReadinessSnapshot): Promise<void>; }
+
+export type MetaConnectionStore = Pick<MetaConnectionRepository, 'save' | 'findById'>;
