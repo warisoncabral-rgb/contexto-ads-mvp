@@ -18,6 +18,7 @@ describe('MetaConnectionService', () => {
     repository = {
       save: jest.fn(async (connection: MetaConnection) => { saved = connection; }),
       findById: jest.fn(async (_tenantId: string, _connectionId: string) => saved ?? null),
+      markConnected: jest.fn().mockResolvedValue(true),
     };
     service = new MetaConnectionService(meta, repository);
   });

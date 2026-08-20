@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   NotFoundException,
@@ -9,6 +10,12 @@ import { createHash } from 'crypto';
 import { MetaConnection } from '../../domain/contracts/meta-connection';
 import { MetaOAuthAttempt } from '../../domain/contracts/meta-oauth-attempt';
 import { MetaOAuthAttemptStore } from '../../domain/ports/repositories';
+import { CredentialVaultPort } from '../../domain/ports/credential-vault.port';
+import {
+  MetaOAuthExchangeError,
+  MetaOAuthTokenExchangePort,
+} from '../../domain/ports/meta-oauth-token-exchange.port';
+import { MetaConnectionStore } from '../../domain/ports/repositories';
 import { MetaConnectionService } from '../meta-connection/meta-connection.service';
 import { MetaOAuthService } from './meta-oauth.service';
 
@@ -23,6 +30,17 @@ describe('MetaOAuthService', () => {
     createdAt: '2026-08-19T00:00:00.000Z',
     updatedAt: '2026-08-19T00:00:00.000Z',
   };
+  const validState = 's'.repeat(43);
+  const consumedAttempt: MetaOAuthAttempt = {
+    attemptId: '33333333-3333-4333-8333-333333333333',
+    tenantId,
+    connectionId,
+    stateHash: createHash('sha256').update(validState).digest('hex'),
+    requestedScopes: ['public_profile'],
+    createdAt: '2026-08-19T02:00:00.000Z',
+    expiresAt: '2026-08-19T02:10:00.000Z',
+    consumedAt: '2026-08-19T02:01:00.000Z',
+  };
   const values: Record<string, string> = {
     NODE_ENV: 'development',
     META_APP_ID: '123456789',
@@ -33,6 +51,9 @@ describe('MetaOAuthService', () => {
   let config: { get: jest.Mock };
   let connections: jest.Mocked<Pick<MetaConnectionService, 'getConnection'>>;
   let attempts: jest.Mocked<MetaOAuthAttemptStore>;
+  let tokenExchange: jest.Mocked<MetaOAuthTokenExchangePort>;
+  let vault: jest.Mocked<CredentialVaultPort>;
+  let connectionStore: jest.Mocked<MetaConnectionStore>;
   let saved: MetaOAuthAttempt[];
   let service: MetaOAuthService;
 
@@ -44,11 +65,34 @@ describe('MetaOAuthService', () => {
       replaceActive: jest.fn(async (attempt: MetaOAuthAttempt) => {
         saved.push(attempt);
       }),
+      consumeActive: jest.fn().mockResolvedValue(consumedAttempt),
+      recordCredentialRevocationPending: jest.fn().mockResolvedValue(undefined),
+    };
+    tokenExchange = {
+      exchangeCode: jest.fn().mockResolvedValue({
+        accessToken: 'secret-access-token',
+        tokenType: 'bearer',
+        expiresIn: 3600,
+      }),
+    };
+    vault = {
+      isAvailable: jest.fn().mockResolvedValue(true),
+      putSecret: jest.fn().mockResolvedValue('vault://credential-1'),
+      getSecret: jest.fn(),
+      revokeSecret: jest.fn().mockResolvedValue(undefined),
+    };
+    connectionStore = {
+      save: jest.fn(),
+      findById: jest.fn(),
+      markConnected: jest.fn().mockResolvedValue(true),
     };
     service = new MetaOAuthService(
       config as unknown as ConfigService,
       connections as unknown as MetaConnectionService,
       attempts,
+      tokenExchange,
+      vault,
+      connectionStore,
     );
   });
 
@@ -183,5 +227,182 @@ describe('MetaOAuthService', () => {
     await expect(service.start(tenantId, connectionId)).rejects
       .toBeInstanceOf(ServiceUnavailableException);
     expect(attempts.replaceActive).not.toHaveBeenCalled();
+  });
+
+  it('rejects a callback without state before any persistence or external call', async () => {
+    await expect(service.callback({ code: 'code-1' })).rejects
+      .toBeInstanceOf(BadRequestException);
+    expect(attempts.consumeActive).not.toHaveBeenCalled();
+    expect(tokenExchange.exchangeCode).not.toHaveBeenCalled();
+  });
+
+  it('hashes and atomically consumes the state before exchanging the code', async () => {
+    const order: string[] = [];
+    attempts.consumeActive.mockImplementationOnce(async () => {
+      order.push('consume');
+      return consumedAttempt;
+    });
+    tokenExchange.exchangeCode.mockImplementationOnce(async () => {
+      order.push('exchange');
+      return { accessToken: 'secret-access-token' };
+    });
+
+    await service.callback({ state: validState, code: 'code-1' });
+
+    expect(attempts.consumeActive).toHaveBeenCalledWith(consumedAttempt.stateHash);
+    expect(order).toEqual(['consume', 'exchange']);
+  });
+
+  it('rejects expired, invalidated, consumed, or unknown state without exchanging code', async () => {
+    attempts.consumeActive.mockResolvedValueOnce(null);
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toBeInstanceOf(BadRequestException);
+    expect(tokenExchange.exchangeCode).not.toHaveBeenCalled();
+    expect(vault.putSecret).not.toHaveBeenCalled();
+  });
+
+  it('prevents replay after a prior state consumption', async () => {
+    attempts.consumeActive
+      .mockResolvedValueOnce(consumedAttempt)
+      .mockResolvedValueOnce(null);
+
+    await service.callback({ state: validState, code: 'code-1' });
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toBeInstanceOf(BadRequestException);
+    expect(tokenExchange.exchangeCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('consumes provider cancellation without exchanging or storing a token', async () => {
+    await expect(service.callback({ state: validState, error: 'access_denied' })).rejects
+      .toThrow('Meta authorization was not completed');
+    expect(attempts.consumeActive).toHaveBeenCalledTimes(1);
+    expect(tokenExchange.exchangeCode).not.toHaveBeenCalled();
+    expect(vault.putSecret).not.toHaveBeenCalled();
+    expect(connectionStore.markConnected).not.toHaveBeenCalled();
+  });
+
+  it('handles provider cancellation even when the production Vault is unavailable', async () => {
+    vault.isAvailable.mockResolvedValueOnce(false);
+    await expect(service.callback({ state: validState, error: 'access_denied' })).rejects
+      .toThrow('Meta authorization was not completed');
+    expect(attempts.consumeActive).toHaveBeenCalledTimes(1);
+    expect(vault.putSecret).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous code and error before consuming state', async () => {
+    await expect(service.callback({
+      state: validState,
+      code: 'code-1',
+      error: 'access_denied',
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(attempts.consumeActive).not.toHaveBeenCalled();
+  });
+
+  it('keeps the success path disabled when no concrete Vault is available', async () => {
+    vault.isAvailable.mockResolvedValueOnce(false);
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toBeInstanceOf(ServiceUnavailableException);
+    expect(attempts.consumeActive).not.toHaveBeenCalled();
+    expect(tokenExchange.exchangeCode).not.toHaveBeenCalled();
+  });
+
+  it('maps invalid Meta configuration to service unavailable', async () => {
+    tokenExchange.exchangeCode.mockRejectedValueOnce(
+      new MetaOAuthExchangeError('configuration', 'contains no secret'),
+    );
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toBeInstanceOf(ServiceUnavailableException);
+    expect(vault.putSecret).not.toHaveBeenCalled();
+  });
+
+  it('sanitizes upstream token exchange failures', async () => {
+    tokenExchange.exchangeCode.mockRejectedValueOnce(
+      new MetaOAuthExchangeError('upstream', 'raw provider detail'),
+    );
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toEqual(expect.objectContaining({
+        constructor: BadGatewayException,
+        message: 'Meta authorization could not be completed',
+      }));
+    expect(vault.putSecret).not.toHaveBeenCalled();
+  });
+
+  it('stores a versioned token payload only through the tenant-scoped Vault port', async () => {
+    await service.callback({ state: validState, code: 'code-1' });
+    expect(vault.putSecret).toHaveBeenCalledWith(tenantId, expect.any(String));
+    const payload = JSON.parse(vault.putSecret.mock.calls[0][1]);
+    expect(payload).toEqual(expect.objectContaining({
+      version: 1,
+      provider: 'meta',
+      accessToken: 'secret-access-token',
+      tokenType: 'bearer',
+      obtainedAt: expect.any(String),
+      expiresAt: expect.any(String),
+    }));
+  });
+
+  it('persists only credentialRef and transitions the tenant-scoped connection', async () => {
+    const result = await service.callback({ state: validState, code: 'code-1' });
+    expect(connectionStore.markConnected).toHaveBeenCalledWith(
+      tenantId,
+      connectionId,
+      'vault://credential-1',
+      expect.any(String),
+    );
+    expect(JSON.stringify(connectionStore.markConnected.mock.calls)).not
+      .toContain('secret-access-token');
+    expect(result).toEqual({ status: 'connected', connectionId });
+    expect(JSON.stringify(result)).not.toContain('secret-access-token');
+  });
+
+  it('does not update the connection when Vault persistence fails', async () => {
+    vault.putSecret.mockRejectedValueOnce(new Error('vault detail'));
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toBeInstanceOf(ServiceUnavailableException);
+    expect(connectionStore.markConnected).not.toHaveBeenCalled();
+  });
+
+  it('revokes the Vault credential when the connection update returns false', async () => {
+    connectionStore.markConnected.mockResolvedValueOnce(false);
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toBeInstanceOf(ServiceUnavailableException);
+    expect(vault.revokeSecret).toHaveBeenCalledWith(tenantId, 'vault://credential-1');
+    expect(attempts.recordCredentialRevocationPending).not.toHaveBeenCalled();
+  });
+
+  it('revokes the Vault credential when the connection update throws', async () => {
+    connectionStore.markConnected.mockRejectedValueOnce(new Error('database detail'));
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toBeInstanceOf(ServiceUnavailableException);
+    expect(vault.revokeSecret).toHaveBeenCalledWith(tenantId, 'vault://credential-1');
+  });
+
+  it('preserves the sanitized failure even when compensation also fails', async () => {
+    connectionStore.markConnected.mockResolvedValueOnce(false);
+    vault.revokeSecret.mockRejectedValueOnce(new Error('revoke detail'));
+    await expect(service.callback({ state: validState, code: 'code-1' })).rejects
+      .toThrow('Meta connection could not be finalized');
+    expect(attempts.recordCredentialRevocationPending).toHaveBeenCalledWith(
+      tenantId,
+      connectionId,
+      'vault://credential-1',
+      expect.any(String),
+    );
+    expect(JSON.stringify(attempts.recordCredentialRevocationPending.mock.calls)).not
+      .toContain('secret-access-token');
+  });
+
+  it('sanitizes a failure to persist the pending credential revocation', async () => {
+    connectionStore.markConnected.mockResolvedValueOnce(false);
+    vault.revokeSecret.mockRejectedValueOnce(new Error('raw revoke detail'));
+    attempts.recordCredentialRevocationPending.mockRejectedValueOnce(
+      new Error('raw database detail'),
+    );
+
+    await expect(service.callback({ state: validState, code: 'authorization-code' }))
+      .rejects.toEqual(expect.objectContaining({
+        constructor: ServiceUnavailableException,
+        message: 'Meta connection could not be finalized',
+      }));
   });
 });

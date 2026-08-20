@@ -19,6 +19,21 @@ export interface ReadinessRepository { save(snapshot: ReadinessSnapshot): Promis
 
 export interface MetaOAuthAttemptStore {
   replaceActive(attempt: MetaOAuthAttempt): Promise<void>;
+  consumeActive(stateHash: string): Promise<MetaOAuthAttempt | null>;
+  recordCredentialRevocationPending(
+    tenantId: string,
+    connectionId: string,
+    credentialRef: string,
+    createdAt: string,
+  ): Promise<void>;
 }
 
-export type MetaConnectionStore = Pick<MetaConnectionRepository, 'save' | 'findById'>;
+export interface MetaConnectionStore
+  extends Pick<MetaConnectionRepository, 'save' | 'findById'> {
+  markConnected(
+    tenantId: string,
+    connectionId: string,
+    credentialRef: string,
+    updatedAt: string,
+  ): Promise<boolean>;
+}

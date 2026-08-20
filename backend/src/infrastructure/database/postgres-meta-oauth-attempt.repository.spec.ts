@@ -16,13 +16,15 @@ describe('PostgresMetaOAuthAttemptRepository', () => {
   const release = jest.fn();
   const client = { query, release } as unknown as PoolClient;
   const connect = jest.fn().mockResolvedValue(client);
-  const pool = { connect } as unknown as Pool;
+  const poolQuery = jest.fn();
+  const pool = { connect, query: poolQuery } as unknown as Pool;
   const repository = new PostgresMetaOAuthAttemptRepository(pool);
 
   beforeEach(() => {
     query.mockReset().mockResolvedValue({ rows: [], rowCount: 1 });
     release.mockReset();
     connect.mockClear();
+    poolQuery.mockReset();
   });
 
   it('locks the tenant-scoped connection before replacing the active attempt', async () => {
@@ -92,5 +94,63 @@ describe('PostgresMetaOAuthAttemptRepository', () => {
     expect(query.mock.calls[2]).toEqual(['rollback']);
     expect(query).not.toHaveBeenCalledWith('commit');
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('atomically consumes only a valid active unexpired state', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [{
+      attempt_id: attempt.attemptId,
+      tenant_id: attempt.tenantId,
+      connection_id: attempt.connectionId,
+      state_hash: attempt.stateHash,
+      requested_scopes: attempt.requestedScopes,
+      created_at: new Date(attempt.createdAt),
+      expires_at: new Date(attempt.expiresAt),
+      consumed_at: new Date('2026-08-19T02:01:00.000Z'),
+      invalidated_at: null,
+    }] });
+
+    const result = await repository.consumeActive(attempt.stateHash);
+
+    expect(poolQuery).toHaveBeenCalledWith(
+      expect.stringMatching(/set consumed_at = now\(\)[\s\S]*consumed_at is null[\s\S]*invalidated_at is null[\s\S]*expires_at > now\(\)[\s\S]*returning/),
+      [attempt.stateHash],
+    );
+    expect(result).toEqual(expect.objectContaining({
+      tenantId: attempt.tenantId,
+      connectionId: attempt.connectionId,
+      consumedAt: '2026-08-19T02:01:00.000Z',
+    }));
+  });
+
+  it('returns null when state is expired, invalidated, consumed, or unknown', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [] });
+    await expect(repository.consumeActive(attempt.stateHash)).resolves.toBeNull();
+  });
+
+  it('uses only the state hash as the consumption parameter', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [] });
+    await repository.consumeActive(attempt.stateHash);
+    expect(poolQuery.mock.calls[0][1]).toEqual([attempt.stateHash]);
+    expect(JSON.stringify(poolQuery.mock.calls[0])).not.toContain(attempt.tenantId);
+  });
+
+  it('records a tenant-scoped pending credential revocation without secret material', async () => {
+    const credentialRef = 'vault://credential-1';
+    const createdAt = '2026-08-19T02:02:00.000Z';
+
+    await repository.recordCredentialRevocationPending(
+      attempt.tenantId,
+      attempt.connectionId,
+      credentialRef,
+      createdAt,
+    );
+
+    expect(poolQuery).toHaveBeenCalledWith(
+      expect.stringMatching(/insert into meta_oauth_credential_compensations[\s\S]*connection_finalization_failed/),
+      [attempt.tenantId, attempt.connectionId, credentialRef, createdAt],
+    );
+    expect(JSON.stringify(poolQuery.mock.calls[0])).not.toContain('access_token');
+    expect(JSON.stringify(poolQuery.mock.calls[0])).not.toContain('authorization-code');
+    expect(JSON.stringify(poolQuery.mock.calls[0])).not.toContain('server-only-secret');
   });
 });

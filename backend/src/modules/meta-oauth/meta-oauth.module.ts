@@ -3,10 +3,26 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { MetaConnectionModule } from '../meta-connection/meta-connection.module';
 import { MetaOAuthController } from './meta-oauth.controller';
 import { MetaOAuthService } from './meta-oauth.service';
+import { ConfigService } from '@nestjs/config';
+import { MetaOAuthHttpAdapter } from '../../infrastructure/meta/meta-oauth-http.adapter';
+import { UnavailableCredentialVaultAdapter } from '../../infrastructure/vault/unavailable-credential-vault.adapter';
+import { CREDENTIAL_VAULT, META_OAUTH_TOKEN_EXCHANGE } from './meta-oauth.tokens';
+import { MetaOAuthCallbackController } from './meta-oauth-callback.controller';
 
 @Module({
   imports: [DatabaseModule, MetaConnectionModule],
-  controllers: [MetaOAuthController],
-  providers: [MetaOAuthService],
+  controllers: [MetaOAuthController, MetaOAuthCallbackController],
+  providers: [
+    MetaOAuthService,
+    {
+      provide: META_OAUTH_TOKEN_EXCHANGE,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => new MetaOAuthHttpAdapter(config),
+    },
+    {
+      provide: CREDENTIAL_VAULT,
+      useClass: UnavailableCredentialVaultAdapter,
+    },
+  ],
 })
 export class MetaOAuthModule {}
