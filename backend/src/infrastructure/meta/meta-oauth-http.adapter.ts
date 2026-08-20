@@ -25,6 +25,9 @@ export class MetaOAuthHttpAdapter implements MetaOAuthTokenExchangePort {
       code,
     });
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let raw: string;
     let response: Response;
     try {
       response = await this.fetchImpl(endpoint, {
@@ -32,24 +35,16 @@ export class MetaOAuthHttpAdapter implements MetaOAuthTokenExchangePort {
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body,
         redirect: 'manual',
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: controller.signal,
       });
+      if (response.status >= 300 && response.status < 400) {
+        throw new MetaOAuthExchangeError('upstream', 'Meta token exchange failed');
+      }
+      raw = await this.readBoundedBody(response, controller);
     } catch {
       throw new MetaOAuthExchangeError('upstream', 'Meta token exchange failed');
-    }
-
-    if (response.status >= 300 && response.status < 400) {
-      throw new MetaOAuthExchangeError('upstream', 'Meta token exchange failed');
-    }
-
-    const declaredLength = Number(response.headers.get('content-length') ?? '0');
-    if (declaredLength > RESPONSE_LIMIT_BYTES) {
-      throw new MetaOAuthExchangeError('upstream', 'Meta token exchange failed');
-    }
-
-    const raw = await response.text();
-    if (Buffer.byteLength(raw, 'utf8') > RESPONSE_LIMIT_BYTES) {
-      throw new MetaOAuthExchangeError('upstream', 'Meta token exchange failed');
+    } finally {
+      clearTimeout(timeout);
     }
 
     let payload: unknown;
@@ -68,6 +63,43 @@ export class MetaOAuthHttpAdapter implements MetaOAuthTokenExchangePort {
       ...(typeof payload.token_type === 'string' ? { tokenType: payload.token_type } : {}),
       ...(typeof payload.expires_in === 'number' ? { expiresIn: payload.expires_in } : {}),
     };
+  }
+
+  private async readBoundedBody(
+    response: Response,
+    controller: AbortController,
+  ): Promise<string> {
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && /^\d+$/.test(contentLength)) {
+      if (Number(contentLength) > RESPONSE_LIMIT_BYTES) {
+        controller.abort();
+        await response.body?.cancel().catch(() => undefined);
+        throw new MetaOAuthExchangeError('upstream', 'Meta token exchange failed');
+      }
+    }
+
+    if (!response.body) return '';
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > RESPONSE_LIMIT_BYTES) {
+          controller.abort();
+          await reader.cancel().catch(() => undefined);
+          throw new MetaOAuthExchangeError('upstream', 'Meta token exchange failed');
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return Buffer.concat(chunks, totalBytes).toString('utf8');
   }
 
   private getConfiguration(): {

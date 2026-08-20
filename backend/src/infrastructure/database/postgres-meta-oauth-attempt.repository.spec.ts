@@ -133,4 +133,24 @@ describe('PostgresMetaOAuthAttemptRepository', () => {
     expect(poolQuery.mock.calls[0][1]).toEqual([attempt.stateHash]);
     expect(JSON.stringify(poolQuery.mock.calls[0])).not.toContain(attempt.tenantId);
   });
+
+  it('records a tenant-scoped pending credential revocation without secret material', async () => {
+    const credentialRef = 'vault://credential-1';
+    const createdAt = '2026-08-19T02:02:00.000Z';
+
+    await repository.recordCredentialRevocationPending(
+      attempt.tenantId,
+      attempt.connectionId,
+      credentialRef,
+      createdAt,
+    );
+
+    expect(poolQuery).toHaveBeenCalledWith(
+      expect.stringMatching(/insert into meta_oauth_credential_compensations[\s\S]*connection_finalization_failed/),
+      [attempt.tenantId, attempt.connectionId, credentialRef, createdAt],
+    );
+    expect(JSON.stringify(poolQuery.mock.calls[0])).not.toContain('access_token');
+    expect(JSON.stringify(poolQuery.mock.calls[0])).not.toContain('authorization-code');
+    expect(JSON.stringify(poolQuery.mock.calls[0])).not.toContain('server-only-secret');
+  });
 });

@@ -140,12 +140,12 @@ export class MetaOAuthService {
         obtainedAt.toISOString(),
       );
     } catch {
-      await this.compensateCredential(attempt.tenantId, credentialRef);
+      await this.compensateCredential(attempt, credentialRef);
       throw new ServiceUnavailableException('Meta connection could not be finalized');
     }
 
     if (!connected) {
-      await this.compensateCredential(attempt.tenantId, credentialRef);
+      await this.compensateCredential(attempt, credentialRef);
       throw new ServiceUnavailableException('Meta connection could not be finalized');
     }
 
@@ -181,11 +181,24 @@ export class MetaOAuthService {
     }
   }
 
-  private async compensateCredential(tenantId: string, credentialRef: string): Promise<void> {
+  private async compensateCredential(
+    attempt: MetaOAuthAttempt,
+    credentialRef: string,
+  ): Promise<void> {
     try {
-      await this.vault.revokeSecret(tenantId, credentialRef);
+      await this.vault.revokeSecret(attempt.tenantId, credentialRef);
+      return;
     } catch {
-      // Best-effort compensation. Never expose or persist the secret outside the Vault.
+      try {
+        await this.attempts.recordCredentialRevocationPending(
+          attempt.tenantId,
+          attempt.connectionId,
+          credentialRef,
+          new Date().toISOString(),
+        );
+      } catch {
+        throw new ServiceUnavailableException('Meta connection could not be finalized');
+      }
     }
   }
 

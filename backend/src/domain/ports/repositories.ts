@@ -20,6 +20,12 @@ export interface ReadinessRepository { save(snapshot: ReadinessSnapshot): Promis
 export interface MetaOAuthAttemptStore {
   replaceActive(attempt: MetaOAuthAttempt): Promise<void>;
   consumeActive(stateHash: string): Promise<MetaOAuthAttempt | null>;
+  recordCredentialRevocationPending(
+    tenantId: string,
+    connectionId: string,
+    credentialRef: string,
+    createdAt: string,
+  ): Promise<void>;
 }
 
 export interface MetaConnectionStore

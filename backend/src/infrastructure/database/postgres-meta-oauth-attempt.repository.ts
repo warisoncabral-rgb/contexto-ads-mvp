@@ -84,6 +84,20 @@ export class PostgresMetaOAuthAttemptRepository implements MetaOAuthAttemptStore
     };
   }
 
+  async recordCredentialRevocationPending(
+    tenantId: string,
+    connectionId: string,
+    credentialRef: string,
+    createdAt: string,
+  ): Promise<void> {
+    await this.pool.query(
+      `insert into meta_oauth_credential_compensations (
+        tenant_id, connection_id, credential_ref, reason, created_at
+      ) values ($1, $2, $3, 'connection_finalization_failed', $4)`,
+      [tenantId, connectionId, credentialRef, createdAt],
+    );
+  }
+
   private async lockConnection(
     client: PoolClient,
     tenantId: string,

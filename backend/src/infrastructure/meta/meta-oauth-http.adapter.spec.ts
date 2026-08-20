@@ -108,4 +108,52 @@ describe('MetaOAuthHttpAdapter', () => {
     await expect(adapter.exchangeCode('authorization-code')).rejects
       .toBeInstanceOf(MetaOAuthExchangeError);
   });
+
+  it('accepts a chunked response up to the exact 64 KiB limit', async () => {
+    const payload = JSON.stringify({ access_token: 'access-token' });
+    const padding = ' '.repeat((64 * 1024) - Buffer.byteLength(payload));
+    const bytes = new TextEncoder().encode(`${payload}${padding}`);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.subarray(0, 32 * 1024));
+        controller.enqueue(bytes.subarray(32 * 1024));
+        controller.close();
+      },
+    });
+    fetchMock.mockResolvedValueOnce(new Response(stream, { status: 200 }));
+
+    await expect(adapter.exchangeCode('authorization-code')).resolves
+      .toEqual({ accessToken: 'access-token' });
+  });
+
+  it('cancels a chunked response and aborts when streaming exceeds 64 KiB', async () => {
+    const cancel = jest.fn();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(40 * 1024));
+        controller.enqueue(new Uint8Array(30 * 1024));
+      },
+      cancel,
+    });
+    fetchMock.mockResolvedValueOnce(new Response(stream, { status: 200 }));
+
+    await expect(adapter.exchangeCode('authorization-code')).rejects
+      .toBeInstanceOf(MetaOAuthExchangeError);
+    const signal = (fetchMock.mock.calls[0][1] as RequestInit).signal as AbortSignal;
+    expect(signal.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an oversized declared length before reading the body', async () => {
+    const cancel = jest.fn();
+    const stream = new ReadableStream<Uint8Array>({ cancel });
+    fetchMock.mockResolvedValueOnce(new Response(stream, {
+      status: 200,
+      headers: { 'content-length': String((64 * 1024) + 1) },
+    }));
+
+    await expect(adapter.exchangeCode('authorization-code')).rejects
+      .toBeInstanceOf(MetaOAuthExchangeError);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
 });

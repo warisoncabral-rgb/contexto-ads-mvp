@@ -66,6 +66,7 @@ describe('MetaOAuthService', () => {
         saved.push(attempt);
       }),
       consumeActive: jest.fn().mockResolvedValue(consumedAttempt),
+      recordCredentialRevocationPending: jest.fn().mockResolvedValue(undefined),
     };
     tokenExchange = {
       exchangeCode: jest.fn().mockResolvedValue({
@@ -366,6 +367,7 @@ describe('MetaOAuthService', () => {
     await expect(service.callback({ state: validState, code: 'code-1' })).rejects
       .toBeInstanceOf(ServiceUnavailableException);
     expect(vault.revokeSecret).toHaveBeenCalledWith(tenantId, 'vault://credential-1');
+    expect(attempts.recordCredentialRevocationPending).not.toHaveBeenCalled();
   });
 
   it('revokes the Vault credential when the connection update throws', async () => {
@@ -380,5 +382,27 @@ describe('MetaOAuthService', () => {
     vault.revokeSecret.mockRejectedValueOnce(new Error('revoke detail'));
     await expect(service.callback({ state: validState, code: 'code-1' })).rejects
       .toThrow('Meta connection could not be finalized');
+    expect(attempts.recordCredentialRevocationPending).toHaveBeenCalledWith(
+      tenantId,
+      connectionId,
+      'vault://credential-1',
+      expect.any(String),
+    );
+    expect(JSON.stringify(attempts.recordCredentialRevocationPending.mock.calls)).not
+      .toContain('secret-access-token');
+  });
+
+  it('sanitizes a failure to persist the pending credential revocation', async () => {
+    connectionStore.markConnected.mockResolvedValueOnce(false);
+    vault.revokeSecret.mockRejectedValueOnce(new Error('raw revoke detail'));
+    attempts.recordCredentialRevocationPending.mockRejectedValueOnce(
+      new Error('raw database detail'),
+    );
+
+    await expect(service.callback({ state: validState, code: 'authorization-code' }))
+      .rejects.toEqual(expect.objectContaining({
+        constructor: ServiceUnavailableException,
+        message: 'Meta connection could not be finalized',
+      }));
   });
 });
