@@ -1,7 +1,9 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { MetaTenantOwnerGuard } from '../meta-connection/meta-tenant-owner.guard';
 import { MetaOAuthService } from './meta-oauth.service';
 
 @Controller('meta/connections')
+@UseGuards(MetaTenantOwnerGuard)
 export class MetaOAuthController {
   constructor(private readonly service: MetaOAuthService) {}
 
