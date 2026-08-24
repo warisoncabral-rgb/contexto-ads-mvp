@@ -3,6 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { CapabilityRecord } from '../../domain/contracts/capability';
 import { MetaAssetBinding, MetaConnection } from '../../domain/contracts/meta-connection';
 import { CredentialVaultPort } from '../../domain/ports/credential-vault.port';
+import {
+  ReadinessRepository,
+  SmokeTestReportRepository,
+} from '../../domain/ports/repositories';
 import { CapabilityRegistryService } from '../capability-registry/capability-registry.service';
 import { MetaConnectionService } from '../meta-connection/meta-connection.service';
 import { ReadinessService } from './readiness.service';
@@ -70,6 +74,8 @@ describe('ReadinessService', () => {
   let capabilities: jest.Mocked<CapabilityRegistryService>;
   let config: ConfigService;
   let vault: jest.Mocked<CredentialVaultPort>;
+  let snapshots: jest.Mocked<ReadinessRepository>;
+  let smokeReports: jest.Mocked<SmokeTestReportRepository>;
   let service: ReadinessService;
 
   beforeEach(() => {
@@ -93,7 +99,22 @@ describe('ReadinessService', () => {
       getSecret: jest.fn(),
       revokeSecret: jest.fn(),
     };
-    service = new ReadinessService(connections, capabilities, config, vault);
+    snapshots = {
+      save: jest.fn(),
+      latestForConnection: jest.fn().mockResolvedValue(null),
+    };
+    smokeReports = {
+      save: jest.fn(),
+      latestForConnection: jest.fn().mockResolvedValue(null),
+    };
+    service = new ReadinessService(
+      connections,
+      capabilities,
+      config,
+      vault,
+      snapshots,
+      smokeReports,
+    );
   });
 
   it('explains every pending step for an authorization-pending connection', async () => {
@@ -142,6 +163,16 @@ describe('ReadinessService', () => {
     expect(JSON.stringify(result)).not.toContain('invalid-app-id');
   });
 
+  it('captures and retrieves tenant-scoped readiness evidence', async () => {
+    const captured = await service.captureConnectionReadiness(tenantId, connectionId);
+    snapshots.latestForConnection.mockResolvedValueOnce(captured);
+
+    await expect(service.latestConnectionReadiness(tenantId, connectionId))
+      .resolves.toEqual(captured);
+    expect(snapshots.save).toHaveBeenCalledWith(captured);
+    expect(snapshots.latestForConnection).toHaveBeenCalledWith(tenantId, connectionId);
+  });
+
   it('runs the complete read-only smoke test in a guarded sequence', async () => {
     connections.getConnection.mockResolvedValue(connected);
     connections.validateReadOnly.mockResolvedValue({
@@ -187,6 +218,7 @@ describe('ReadinessService', () => {
       .toBeLessThan(capabilities.validateReadOnly.mock.invocationCallOrder[0]);
     expect(capabilities.validateReadOnly.mock.invocationCallOrder[0])
       .toBeLessThan(connections.readDiscoveredAdAccount.mock.invocationCallOrder[0]);
+    expect(smokeReports.save).toHaveBeenCalledWith(result);
     expect(JSON.stringify(result)).not.toContain(credentialRef);
   });
 
@@ -200,6 +232,10 @@ describe('ReadinessService', () => {
     );
     expect(vault.isAvailable).not.toHaveBeenCalled();
     expect(connections.validateReadOnly).not.toHaveBeenCalled();
+    expect(smokeReports.save).toHaveBeenCalledWith(expect.objectContaining({
+      passed: false,
+      blockers: ['meta_configuration_blocked'],
+    }));
   });
 
   it('stops the smoke test at the first failed external step', async () => {
@@ -222,6 +258,23 @@ describe('ReadinessService', () => {
     );
     expect(capabilities.validateReadOnly).not.toHaveBeenCalled();
     expect(connections.readDiscoveredAdAccount).not.toHaveBeenCalled();
+  });
+
+  it('retrieves the latest smoke report only after tenant validation', async () => {
+    smokeReports.latestForConnection.mockResolvedValueOnce({
+      smokeTestId: '66666666-6666-4666-8666-666666666666',
+      tenantId,
+      connectionId,
+      passed: false,
+      steps: [],
+      blockers: ['meta_oauth_blocked'],
+      generatedAt: '2026-08-24T04:00:00.000Z',
+    });
+
+    await expect(service.latestReadOnlySmokeTest(tenantId, connectionId)).resolves
+      .toEqual(expect.objectContaining({ blockers: ['meta_oauth_blocked'] }));
+    expect(connections.getConnection).toHaveBeenCalledWith(tenantId, connectionId);
+    expect(smokeReports.latestForConnection).toHaveBeenCalledWith(tenantId, connectionId);
   });
 
   it('preserves tenant validation errors without running diagnostics', async () => {

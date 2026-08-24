@@ -10,6 +10,14 @@ import {
   ReadOnlySmokeTestStep,
 } from '../../domain/contracts/readiness';
 import { CredentialVaultPort } from '../../domain/ports/credential-vault.port';
+import {
+  ReadinessRepository,
+  SmokeTestReportRepository,
+} from '../../domain/ports/repositories';
+import {
+  READINESS_REPOSITORY,
+  SMOKE_TEST_REPORT_REPOSITORY,
+} from '../../infrastructure/database/database.tokens';
 import { CREDENTIAL_VAULT } from '../../infrastructure/vault/credential-vault.tokens';
 import { CapabilityRegistryService } from '../capability-registry/capability-registry.service';
 import { MetaConnectionService } from '../meta-connection/meta-connection.service';
@@ -22,6 +30,10 @@ export class ReadinessService {
     private readonly config: ConfigService,
     @Inject(CREDENTIAL_VAULT)
     private readonly vault: CredentialVaultPort,
+    @Inject(READINESS_REPOSITORY)
+    private readonly snapshots: ReadinessRepository,
+    @Inject(SMOKE_TEST_REPORT_REPOSITORY)
+    private readonly smokeReports: SmokeTestReportRepository,
   ) {}
 
   async getConnectionReadiness(
@@ -55,6 +67,31 @@ export class ReadinessService {
         .map((check) => `${check.key}_${check.status}`),
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  async captureConnectionReadiness(
+    tenantId: string,
+    connectionId: string,
+  ): Promise<ReadinessSnapshot> {
+    const snapshot = await this.getConnectionReadiness(tenantId, connectionId);
+    await this.snapshots.save(snapshot);
+    return snapshot;
+  }
+
+  async latestConnectionReadiness(
+    tenantId: string,
+    connectionId: string,
+  ): Promise<ReadinessSnapshot | null> {
+    await this.connections.getConnection(tenantId, connectionId);
+    return this.snapshots.latestForConnection(tenantId, connectionId);
+  }
+
+  async latestReadOnlySmokeTest(
+    tenantId: string,
+    connectionId: string,
+  ): Promise<ReadOnlySmokeTestReport | null> {
+    await this.connections.getConnection(tenantId, connectionId);
+    return this.smokeReports.latestForConnection(tenantId, connectionId);
   }
 
   async runReadOnlySmokeTest(
@@ -161,7 +198,7 @@ export class ReadinessService {
       observedAt: accountRead.observedAt,
     });
 
-    return {
+    const report: ReadOnlySmokeTestReport = {
       smokeTestId: randomUUID(),
       tenantId,
       connectionId,
@@ -170,6 +207,8 @@ export class ReadinessService {
       blockers: [],
       generatedAt: new Date().toISOString(),
     };
+    await this.smokeReports.save(report);
+    return report;
   }
 
   private configurationCheck(issues: string[]): ReadinessCheck {
@@ -358,12 +397,12 @@ export class ReadinessService {
     };
   }
 
-  private blockedSmokeReport(
+  private async blockedSmokeReport(
     connection: MetaConnection,
     steps: ReadOnlySmokeTestStep[],
     blocker: string,
-  ): ReadOnlySmokeTestReport {
-    return {
+  ): Promise<ReadOnlySmokeTestReport> {
+    const report: ReadOnlySmokeTestReport = {
       smokeTestId: randomUUID(),
       tenantId: connection.tenantId,
       connectionId: connection.connectionId,
@@ -372,5 +411,7 @@ export class ReadinessService {
       blockers: [blocker],
       generatedAt: new Date().toISOString(),
     };
+    await this.smokeReports.save(report);
+    return report;
   }
 }

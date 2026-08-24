@@ -1,7 +1,7 @@
 import { MetaConnection, MetaAssetBinding } from '../contracts/meta-connection';
 import { CapabilityRecord } from '../contracts/capability';
 import { AuditEvent } from '../contracts/audit-event';
-import { ReadinessSnapshot } from '../contracts/readiness';
+import { ReadinessSnapshot, ReadOnlySmokeTestReport } from '../contracts/readiness';
 import { MetaOAuthAttempt } from '../contracts/meta-oauth-attempt';
 
 export interface MetaConnectionRepository {
@@ -19,7 +19,17 @@ export interface CapabilityRepository {
   listForConnection(tenantId: string, connectionId: string): Promise<CapabilityRecord[]>;
 }
 export interface AuditRepository { append(event: AuditEvent): Promise<void>; }
-export interface ReadinessRepository { save(snapshot: ReadinessSnapshot): Promise<void>; }
+export interface ReadinessRepository {
+  save(snapshot: ReadinessSnapshot): Promise<void>;
+  latestForConnection(tenantId: string, connectionId: string): Promise<ReadinessSnapshot | null>;
+}
+export interface SmokeTestReportRepository {
+  save(report: ReadOnlySmokeTestReport): Promise<void>;
+  latestForConnection(
+    tenantId: string,
+    connectionId: string,
+  ): Promise<ReadOnlySmokeTestReport | null>;
+}
 
 export interface MetaOAuthAttemptStore {
   replaceActive(attempt: MetaOAuthAttempt): Promise<void>;

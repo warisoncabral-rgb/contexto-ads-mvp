@@ -20,6 +20,7 @@
 - Endpoint tenant-scoped que lê somente contas de anúncio presentes no snapshot de descoberta da conexão.
 - Validação de capacidades via `/me/permissions`, cruzada com ativos descobertos e persistida atomicamente.
 - Smoke test orquestrado e fail-closed: identidade → descoberta → capacidades → leitura de conta.
+- Evidências tenant-scoped persistidas para snapshots de prontidão e relatórios de smoke test aprovados ou bloqueados.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
