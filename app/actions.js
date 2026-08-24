@@ -12,6 +12,55 @@ import { parseExecutorAction, validExecutionAuthorization, validManifest, validP
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SHA = /^[0-9a-f]{64}$/
 
+export async function startMetaAuthorization(formData) {
+  const tenantId = String(formData.get('tenantId') ?? '').trim()
+  if (!UUID.test(tenantId)) redirect('/integrations/meta?error=tenant')
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) redirect('/integrations/meta?error=configuration')
+
+  let response
+  try {
+    response = await fetch(
+      `${apiBaseUrl.replace(/\/$/, '')}/v1/operator/tenants/${encodeURIComponent(tenantId)}`
+        + '/meta/connections/start-oauth',
+      {
+        method: 'POST',
+        headers: { accept: 'application/json', authorization: `Bearer ${operatorToken}` },
+        cache: 'no-store',
+        signal: globalThis.AbortSignal.timeout(15000),
+      },
+    )
+  } catch {
+    redirect(`/integrations/meta?tenantId=${encodeURIComponent(tenantId)}&error=backend`)
+  }
+  if (response.status === 401 || response.status === 403) {
+    redirect(`/integrations/meta?tenantId=${encodeURIComponent(tenantId)}&error=access`)
+  }
+  if (!response.ok) {
+    redirect(`/integrations/meta?tenantId=${encodeURIComponent(tenantId)}&error=oauth`)
+  }
+
+  let result
+  try { result = await response.json() } catch {
+    redirect(`/integrations/meta?tenantId=${encodeURIComponent(tenantId)}&error=response`)
+  }
+  let authorizationUrl
+  try { authorizationUrl = new URL(result.authorizationUrl) } catch {
+    redirect(`/integrations/meta?tenantId=${encodeURIComponent(tenantId)}&error=response`)
+  }
+  if (authorizationUrl.protocol !== 'https:'
+    || authorizationUrl.hostname !== 'www.facebook.com'
+    || !/^\/v\d+\.\d+\/dialog\/oauth$/.test(authorizationUrl.pathname)
+    || !UUID.test(result.connectionId)
+    || result.boundaries?.requestedScopesAreReadOnly !== true
+    || result.boundaries?.externalWritesAllowed !== false
+    || result.boundaries?.externalWritesPerformed !== false) {
+    redirect(`/integrations/meta?tenantId=${encodeURIComponent(tenantId)}&error=response`)
+  }
+  redirect(authorizationUrl.toString())
+}
+
 export async function saveCampaignContext(_previousState, formData) {
   const parsed = parseCampaignForm(formData)
   if (!parsed.ok) return { error: parsed.error, values: parsed.values }

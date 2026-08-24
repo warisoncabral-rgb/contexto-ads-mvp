@@ -45,34 +45,27 @@ incluindo migrações, consumo concorrente do state OAuth, isolamento entre
 tenants, armazenamento criptografado e revogação de credenciais.
 
 ## Endpoints iniciais
-### `POST /v1/meta/connections/start`
-Body:
-```json
-{"tenantId":"00000000-0000-0000-0000-000000000001"}
-```
-Enquanto o app Meta real não estiver configurado, retorna `authorization_pending` e não chama nenhuma operação externa de escrita.
+### `POST /v1/operator/tenants/:tenantId/meta/connections/start-oauth`
+Exige o bearer do operador e membership com permissão `configure_tenant`. Cria a
+conexão pendente e devolve a URL oficial de autorização. O início do OAuth e as
+rotas de leitura não aceitam mais `tenantId` público no body ou na query.
 
-### `GET /v1/readiness/:connectionId?tenantId=...`
+### Diagnóstico e smoke test protegidos
 Retorna um diagnóstico dinâmico, sem chamadas externas, para configuração do app,
 cofre, OAuth, descoberta de ativos e capacidades de leitura. Cada pendência traz
 significado, evidência e a próxima ação recomendada; nenhum segredo é retornado.
 
-### `POST /v1/readiness/:connectionId/snapshots`
-Body: `{"tenantId":"..."}`. Gera e persiste uma fotografia imutável do diagnóstico
-atual. `GET /v1/readiness/:connectionId/snapshots/latest?tenantId=...` recupera a
-evidência mais recente somente depois de validar a conexão do tenant.
-
-### `POST /v1/readiness/:connectionId/smoke-test`
-Body: `{"tenantId":"..."}`. Depois que o app Meta e o OAuth estiverem prontos,
+`POST /v1/operator/tenants/:tenantId/meta/connections/:connectionId/smoke-test`
+exige autenticação e membership. Depois que o app Meta e o OAuth estiverem prontos,
 executa automaticamente e em ordem: validação de identidade, descoberta de
 ativos, comprovação de capacidades e leitura de uma conta descoberta. Para no
 primeiro bloqueio, retorna somente códigos normalizados e jamais executa escrita
 na Meta.
 Todo resultado, aprovado ou bloqueado, é persistido. O relatório mais recente
-fica disponível em `GET /v1/readiness/:connectionId/smoke-test/latest?tenantId=...`.
+fica disponível na rota protegida equivalente com `/smoke-test/latest`.
 
-### `POST /v1/meta/connections/:connectionId/discover-assets`
-Body: `{"tenantId":"..."}`. Executa descoberta somente leitura para uma conexão
+### `POST /v1/operator/tenants/:tenantId/meta/connections/:connectionId/discover-assets`
+Executa descoberta somente leitura para uma conexão
 OAuth já conectada e substitui o snapshot anterior atomicamente apenas em caso de
 sucesso. Enquanto a Graph API real não estiver configurada, permanece fail-closed.
 
@@ -82,7 +75,7 @@ envia o token somente no header `Authorization` e assina chamadas com
 `appsecret_proof`. O OAuth solicita apenas `public_profile`, `ads_read` e
 `pages_show_list` nesta etapa.
 
-### `GET /v1/meta/connections/:connectionId/assets?tenantId=...`
+### `GET /v1/operator/tenants/:tenantId/meta/connections/:connectionId/assets`
 Lista somente os ativos persistidos para o tenant e a conexão informados.
 
 ### `GET /v1/meta/connections/:connectionId/ad-accounts/:adAccountId?tenantId=...`
@@ -91,13 +84,8 @@ de anúncios presente no snapshot de descoberta da mesma conexão e tenant. IDs
 malformados, conexões não prontas e contas não descobertas são recusados antes
 de qualquer chamada à Graph API.
 
-### `GET /v1/meta/connections/:connectionId/capabilities?tenantId=...`
-Lista o registro persistido de capacidades e suas evidências somente depois de
-validar que a conexão pertence ao tenant informado. A validação contra a Meta
-continua fail-closed enquanto o app real não estiver configurado.
-
-### `POST /v1/meta/connections/:connectionId/capabilities/validate`
-Body: `{"tenantId":"..."}`. Consulta `/me/permissions`, cruza as permissões
+### `POST /v1/operator/tenants/:tenantId/meta/connections/:connectionId/capabilities/validate`
+Consulta `/me/permissions`, cruza as permissões
 concedidas com os ativos descobertos e substitui atomicamente o snapshot das
 capacidades `DISCOVER_ASSETS` e `READ_AD_ACCOUNT`. Falhas da Meta não apagam a
 última evidência válida; permissões ou ativos ausentes nunca são tratados como

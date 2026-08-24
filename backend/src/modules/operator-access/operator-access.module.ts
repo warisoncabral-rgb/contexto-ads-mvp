@@ -13,6 +13,11 @@ import { ExecutionManifestModule } from '../execution-manifest/execution-manifes
 import { ExecutionAuthorizationModule } from '../execution-authorization/execution-authorization.module';
 import { KillSwitchModule } from '../kill-switch/kill-switch.module';
 import { MetaWriteValidationModule } from '../meta-write-validation/meta-write-validation.module';
+import { MetaConnectionModule } from '../meta-connection/meta-connection.module';
+import { MetaOAuthModule } from '../meta-oauth/meta-oauth.module';
+import { OperatorMetaController } from './operator-meta.controller';
+import { ReadinessModule } from '../readiness/readiness.module';
+import { CapabilityRegistryModule } from '../capability-registry/capability-registry.module';
 
 @Module({
   imports: [
@@ -28,8 +33,12 @@ import { MetaWriteValidationModule } from '../meta-write-validation/meta-write-v
     ExecutionAuthorizationModule,
     KillSwitchModule,
     MetaWriteValidationModule,
+    MetaConnectionModule,
+    MetaOAuthModule,
+    ReadinessModule,
+    CapabilityRegistryModule,
   ],
-  controllers: [OperatorAccessController],
+  controllers: [OperatorAccessController, OperatorMetaController],
   providers: [OperatorAccessService],
 })
 export class OperatorAccessModule {}

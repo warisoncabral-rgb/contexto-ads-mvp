@@ -627,4 +627,17 @@ describe('OperatorAccessService', () => {
     )).rejects.toBeInstanceOf(UnauthorizedException);
     expect(executionPlans.generate).not.toHaveBeenCalled();
   });
+
+  it('allows only a tenant owner to configure the Meta connection', async () => {
+    const result = await service.authorizeTenantConfiguration(
+      'Bearer valid-token-value-with-32-characters',
+      membershipsFixture[0].tenantId,
+    );
+    expect(result.membership.role).toBe('owner');
+
+    await expect(service.authorizeTenantConfiguration(
+      'Bearer valid-token-value-with-32-characters',
+      membershipsFixture[1].tenantId,
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+  });
 });

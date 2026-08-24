@@ -130,6 +130,15 @@ export class OperatorAccessService {
     private readonly metaWriteValidation: MetaWriteValidationService,
   ) {}
 
+  async authorizeTenantConfiguration(
+    authorizationHeader: string | undefined,
+    tenantId: string,
+  ) {
+    const context = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(context.membership.role, 'configure_tenant');
+    return context;
+  }
+
   async listTenants(
     authorizationHeader: string | undefined,
   ): Promise<OperatorWorkspaceAccessV1> {
