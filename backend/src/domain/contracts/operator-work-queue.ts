@@ -61,7 +61,9 @@ export interface OperatorWorkQueueSnapshotV1 {
   generatedAt: string;
 }
 
-export interface OperatorWorkQueueStoredSnapshotV1 extends Omit<OperatorWorkQueueSnapshotV1, 'comparison'> {
+export type OperatorWorkQueueSnapshotInputV1 = Omit<OperatorWorkQueueSnapshotV1, 'comparison'>;
+
+export interface OperatorWorkQueueStoredSnapshotV1 extends OperatorWorkQueueSnapshotInputV1 {
   comparison?: OperatorWorkQueueSnapshotComparisonV1;
   items: OperatorWorkItemV1[];
 }
