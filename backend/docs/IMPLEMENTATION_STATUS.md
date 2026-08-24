@@ -47,11 +47,16 @@
 - Cada decisão segue “decisão, por quê e base”, informa o teto financeiro e aponta uma única próxima ação priorizada.
 - Decisões semanticamente idênticas são idempotentes, persistidas e auditadas atomicamente.
 - Mesmo com todos os controles internos aprovados, o estado máximo é `ready_for_executor_validation`; nunca “publicado”, “ativo” ou “entregando”.
+- Manifesto de execução imutável transforma a simulação aprovada em operações ordenadas, pausadas e individualmente identificadas.
+- Cada efeito futuro possui chave idempotente, fingerprint da requisição, pré-condições obrigatórias e dependências explícitas.
+- Resultado externo incerto bloqueia retries até reconciliação; falha parcial interrompe dependentes e preserva evidências.
+- Compensações nunca são automáticas sem política e autorização específicas, e o estado observado na Meta será a fonte de verdade.
+- O manifesto permanece `prepared_gate_closed`: aprovação específica de execução, validação real de escrita, adapter e Kill Switch ainda são requisitos ausentes.
 
 ## Próximo bloco interno sem dependência externa
-1. Preparar o contrato do executor real em modo estritamente pausado e fail-closed.
-2. Definir idempotência, compensação, reconciliação e registro de cada efeito externo futuro.
-3. Manter o adapter de escrita ausente até a validação Meta real e um gate humano específico.
+1. Preparar o registro interno do ciclo de vida de cada tentativa futura, sem iniciar efeitos.
+2. Definir o gate humano específico de execução, vinculado ao manifesto e com validade curta.
+3. Manter o adapter de escrita ausente até a validação Meta real, Kill Switch comprovado e autorização explícita.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.

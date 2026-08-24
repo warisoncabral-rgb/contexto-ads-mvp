@@ -65,4 +65,15 @@ describe('PostgresExecutionSimulationRepository', () => {
       [report.tenantId, report.executionPlanId],
     );
   });
+
+  it('loads immutable evidence by tenant, plan and simulation ID', async () => {
+    query.mockResolvedValueOnce({ rows: [] });
+    await expect(repository.findById(
+      report.tenantId, report.executionPlanId, report.simulationId,
+    )).resolves.toBeNull();
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('and simulation_id = $3'),
+      [report.tenantId, report.executionPlanId, report.simulationId],
+    );
+  });
 });

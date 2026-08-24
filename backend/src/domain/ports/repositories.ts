@@ -15,6 +15,7 @@ import {
   UnversionedCreativePackageV1,
 } from '../contracts/creative-package';
 import { OperationalReadinessDecisionV1 } from '../contracts/operational-readiness';
+import { ExecutionManifestV1 } from '../contracts/execution-manifest';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -106,10 +107,26 @@ export interface ApprovalRepository {
 
 export interface ExecutionSimulationRepository {
   save(report: ExecutionSimulationReportV1): Promise<void>;
+  findById(
+    tenantId: string,
+    executionPlanId: string,
+    simulationId: string,
+  ): Promise<ExecutionSimulationReportV1 | null>;
   latestForPlan(
     tenantId: string,
     executionPlanId: string,
   ): Promise<ExecutionSimulationReportV1 | null>;
+}
+
+export interface ExecutionManifestRepository {
+  saveIdempotent(
+    manifest: ExecutionManifestV1,
+    event: AuditEvent,
+  ): Promise<ExecutionManifestV1>;
+  latestForPlan(
+    tenantId: string,
+    executionPlanId: string,
+  ): Promise<ExecutionManifestV1 | null>;
 }
 
 export interface CreativePackageRepository {
