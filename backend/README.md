@@ -103,22 +103,23 @@ capacidades `DISCOVER_ASSETS` e `READ_AD_ACCOUNT`. Falhas da Meta não apagam a
 última evidência válida; permissões ou ativos ausentes nunca são tratados como
 capacidade disponível.
 
-### `POST /v1/campaign-contexts`
-Cria a primeira versão imutável do contexto de uma campanha. O body contém
-`tenantId` e `facts` com nome do negócio, oferta, objetivo, público, destino,
-geografia, orçamento em unidade monetária mínima e duração. Cada fato persistido
-registra a origem `user_input`; campos ausentes nunca são inferidos e retornam
-pendências bloqueantes com próxima ação.
+### Preparação autenticada do contexto da campanha
+`GET /v1/operator/tenants/:tenantId/campaign-contexts` lista somente a versão
+mais recente de cada campanha após autenticar e validar a membership.
 
-### `POST /v1/campaign-contexts/:campaignId/versions`
-Registra uma nova versão completa do contexto. A numeração é alocada sob lock no
-PostgreSQL para evitar colisões concorrentes e versões anteriores não são
-alteradas.
+`POST /v1/operator/tenants/:tenantId/campaign-contexts` cria a primeira versão
+imutável. `POST /v1/operator/tenants/:tenantId/campaign-contexts/:campaignId/versions`
+registra a próxima versão completa sob lock no PostgreSQL. Os endpoints públicos
+anteriores foram removidos para que conhecer UUIDs não contorne o acesso do
+operador.
 
-### `GET /v1/campaign-contexts/:campaignId/latest?tenantId=...`
-Retorna somente a versão mais recente dentro do tenant. Um pacote só recebe
-`ready_for_generation` quando todos os fatos críticos estão válidos; isso ainda
-não publica ou modifica nada na Meta.
+O body contém `facts` com nome do negócio, oferta, objetivo, público, destino,
+geografia, orçamento em unidade monetária mínima e duração. Cada fato registra a
+origem `user_input`; campos ausentes nunca são inferidos e retornam tarefas
+bloqueantes em linguagem operacional. Somente `owner` e `operator` podem gravar;
+`viewer` permanece leitura. Persistência e `AuditEvent` acontecem na mesma
+transação. Um pacote só recebe `ready_for_generation` quando todos os fatos
+críticos estão válidos; isso não publica nem modifica nada na Meta.
 
 ### `POST /v1/campaigns/:campaignId/plans`
 Body: `{"tenantId":"...","contextVersion":1}`. Transforma uma versão pronta do

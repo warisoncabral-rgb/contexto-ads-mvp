@@ -133,6 +133,9 @@ function WorkspaceSelector({ workspace }) {
         <button type="submit" disabled={!workspace.plans.length}>Abrir operação</button>
       </form>
       <small className="credential-note">Acesso verificado no servidor · credencial nunca enviada ao navegador</small>
+      <a className="prepare-link" href={`/campaigns?tenantId=${workspace.selectedTenant.tenantId}`}>
+        Preparar campanhas e resolver pendências
+      </a>
     </div>
   )
 }

@@ -9,11 +9,13 @@ import {
 import {
   AuditRepository,
   OperatorPlanSelectionRepository,
+  OperatorCampaignContextSelectionRepository,
   OperationalReadinessRepository,
   OperatorTenantMembershipRepository,
 } from '../../domain/ports/repositories';
 import { ExecutionPlanV1 } from '../../domain/contracts/execution-plan';
 import { OperatorAccessService } from './operator-access.service';
+import { CampaignContextService } from '../campaign-context/campaign-context.service';
 
 describe('OperatorAccessService', () => {
   const principal = {
@@ -46,6 +48,8 @@ describe('OperatorAccessService', () => {
   let audit: jest.Mocked<AuditRepository>;
   let plans: jest.Mocked<OperatorPlanSelectionRepository>;
   let readiness: jest.Mocked<OperationalReadinessRepository>;
+  let contextSelection: jest.Mocked<OperatorCampaignContextSelectionRepository>;
+  let campaignContexts: jest.Mocked<Pick<CampaignContextService, 'create' | 'appendVersion'>>;
   let service: OperatorAccessService;
 
   beforeEach(() => {
@@ -65,7 +69,20 @@ describe('OperatorAccessService', () => {
       saveIdempotent: jest.fn(),
       latestForPlan: jest.fn(),
     };
-    service = new OperatorAccessService(identity, memberships, audit, plans, readiness);
+    contextSelection = { listLatestForTenant: jest.fn().mockResolvedValue([]) };
+    campaignContexts = {
+      create: jest.fn(),
+      appendVersion: jest.fn(),
+    };
+    service = new OperatorAccessService(
+      identity,
+      memberships,
+      audit,
+      plans,
+      readiness,
+      contextSelection,
+      campaignContexts as unknown as CampaignContextService,
+    );
   });
 
   it('derives tenant selection and permissions only from active memberships', async () => {
@@ -201,5 +218,52 @@ describe('OperatorAccessService', () => {
     )).rejects.toBeInstanceOf(UnauthorizedException);
     expect(plans.findById).not.toHaveBeenCalled();
     expect(readiness.latestForPlan).not.toHaveBeenCalled();
+  });
+
+  it('lists latest campaign contexts only after tenant authorization', async () => {
+    const context = {
+      tenantId: membershipsFixture[0].tenantId,
+      campaignId: '99999999-9999-4999-8999-999999999999',
+      status: 'needs_information',
+    } as never;
+    contextSelection.listLatestForTenant.mockResolvedValueOnce([context]);
+
+    const result = await service.listCampaignContexts(
+      'Bearer valid-token-value-with-32-characters',
+      membershipsFixture[0].tenantId,
+    );
+
+    expect(result.contexts).toEqual([context]);
+    expect(result.boundaries.externalWritesAllowed).toBe(false);
+    expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'operator_campaign_contexts_listed',
+    }));
+  });
+
+  it('allows owner and operator roles to create versioned context with their identity', async () => {
+    const facts = { businessName: 'Rosa VIP' };
+    campaignContexts.create.mockResolvedValueOnce({ campaignId: 'campaign-id' } as never);
+
+    await service.createCampaignContext(
+      'Bearer valid-token-value-with-32-characters',
+      membershipsFixture[0].tenantId,
+      facts,
+    );
+
+    expect(campaignContexts.create).toHaveBeenCalledWith(
+      membershipsFixture[0].tenantId,
+      facts,
+      principal.subject,
+    );
+  });
+
+  it('blocks viewer role from changing campaign context', async () => {
+    await expect(service.createCampaignContext(
+      'Bearer valid-token-value-with-32-characters',
+      membershipsFixture[1].tenantId,
+      { businessName: 'Blocked' },
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(campaignContexts.create).not.toHaveBeenCalled();
+    expect(campaignContexts.appendVersion).not.toHaveBeenCalled();
   });
 });
