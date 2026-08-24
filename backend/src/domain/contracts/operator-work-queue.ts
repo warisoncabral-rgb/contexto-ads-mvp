@@ -65,13 +65,9 @@ export interface OperatorWorkQueueStoredSnapshotV1 extends OperatorWorkQueueSnap
   items: OperatorWorkItemV1[];
 }
 
-export type OperatorWorkQueuePublicSnapshotV1 = Omit<OperatorWorkQueueSnapshotV1, 'comparison'> & {
-  comparison: OperatorWorkQueueSnapshotComparisonV1;
-};
-
 export interface OperatorWorkQueueV1 {
   items: OperatorWorkItemV1[];
-  snapshots: OperatorWorkQueuePublicSnapshotV1[];
+  snapshots: OperatorWorkQueueSnapshotV1[];
   summary: {
     authorizedTenantCount: number;
     pendingItemCount: number;
