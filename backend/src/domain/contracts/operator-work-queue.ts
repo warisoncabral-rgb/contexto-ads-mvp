@@ -57,18 +57,21 @@ export interface OperatorWorkQueueSnapshotV1 {
   snapshotHash: string;
   itemCount: number;
   sourceDecisions: OperatorWorkQueueSourceDecisionV1[];
-  comparison: OperatorWorkQueueSnapshotComparisonV1;
+  comparison?: OperatorWorkQueueSnapshotComparisonV1;
   generatedAt: string;
 }
 
-export interface OperatorWorkQueueStoredSnapshotV1 extends Omit<OperatorWorkQueueSnapshotV1, 'comparison'> {
-  comparison?: OperatorWorkQueueSnapshotComparisonV1;
+export interface OperatorWorkQueueStoredSnapshotV1 extends OperatorWorkQueueSnapshotV1 {
   items: OperatorWorkItemV1[];
 }
 
+export type OperatorWorkQueuePublicSnapshotV1 = Omit<OperatorWorkQueueSnapshotV1, 'comparison'> & {
+  comparison: OperatorWorkQueueSnapshotComparisonV1;
+};
+
 export interface OperatorWorkQueueV1 {
   items: OperatorWorkItemV1[];
-  snapshots: OperatorWorkQueueSnapshotV1[];
+  snapshots: OperatorWorkQueuePublicSnapshotV1[];
   summary: {
     authorizedTenantCount: number;
     pendingItemCount: number;
