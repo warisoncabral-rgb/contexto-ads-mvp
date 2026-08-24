@@ -36,6 +36,7 @@ import {
 } from '../../infrastructure/database/database.tokens';
 import { OPERATOR_IDENTITY } from '../../infrastructure/operator-access/operator-access.tokens';
 import { CampaignContextService } from '../campaign-context/campaign-context.service';
+import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
   owner: [
@@ -69,6 +70,7 @@ export class OperatorAccessService {
     @Inject(CAMPAIGN_CONTEXT_REPOSITORY)
     private readonly campaignContextSelection: OperatorCampaignContextSelectionRepository,
     private readonly campaignContexts: CampaignContextService,
+    private readonly executionPlans: ExecutionPlanService,
   ) {}
 
   async listTenants(
@@ -241,6 +243,25 @@ export class OperatorAccessService {
       tenantId,
       campaignId,
       facts,
+      operator.subject,
+    );
+  }
+
+  async generateExecutionPlan(
+    authorizationHeader: string | undefined,
+    tenantId: string,
+    campaignId: string,
+    contextVersion?: number,
+  ) {
+    const { operator, membership } = await this.authorizedMembership(
+      authorizationHeader,
+      tenantId,
+    );
+    this.assertCanPrepareCampaign(membership.role);
+    return this.executionPlans.generate(
+      tenantId,
+      campaignId,
+      contextVersion,
       operator.subject,
     );
   }

@@ -77,7 +77,7 @@ export interface OperatorCampaignContextSelectionRepository {
 }
 
 export interface ExecutionPlanRepository {
-  saveIdempotent(plan: ExecutionPlanV1): Promise<ExecutionPlanV1>;
+  saveIdempotent(plan: ExecutionPlanV1, event?: AuditEvent): Promise<ExecutionPlanV1>;
   latest(tenantId: string, campaignId: string): Promise<ExecutionPlanV1 | null>;
   findById(tenantId: string, executionPlanId: string): Promise<ExecutionPlanV1 | null>;
 }

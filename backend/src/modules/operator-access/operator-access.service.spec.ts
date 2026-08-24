@@ -16,6 +16,7 @@ import {
 import { ExecutionPlanV1 } from '../../domain/contracts/execution-plan';
 import { OperatorAccessService } from './operator-access.service';
 import { CampaignContextService } from '../campaign-context/campaign-context.service';
+import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 
 describe('OperatorAccessService', () => {
   const principal = {
@@ -50,6 +51,7 @@ describe('OperatorAccessService', () => {
   let readiness: jest.Mocked<OperationalReadinessRepository>;
   let contextSelection: jest.Mocked<OperatorCampaignContextSelectionRepository>;
   let campaignContexts: jest.Mocked<Pick<CampaignContextService, 'create' | 'appendVersion'>>;
+  let executionPlans: jest.Mocked<Pick<ExecutionPlanService, 'generate'>>;
   let service: OperatorAccessService;
 
   beforeEach(() => {
@@ -74,6 +76,7 @@ describe('OperatorAccessService', () => {
       create: jest.fn(),
       appendVersion: jest.fn(),
     };
+    executionPlans = { generate: jest.fn() };
     service = new OperatorAccessService(
       identity,
       memberships,
@@ -82,6 +85,7 @@ describe('OperatorAccessService', () => {
       readiness,
       contextSelection,
       campaignContexts as unknown as CampaignContextService,
+      executionPlans as unknown as ExecutionPlanService,
     );
   });
 
@@ -265,5 +269,33 @@ describe('OperatorAccessService', () => {
     )).rejects.toBeInstanceOf(UnauthorizedException);
     expect(campaignContexts.create).not.toHaveBeenCalled();
     expect(campaignContexts.appendVersion).not.toHaveBeenCalled();
+  });
+
+  it('generates a plan only through an authorized preparation role', async () => {
+    executionPlans.generate.mockResolvedValueOnce({ executionPlanId: 'plan-id' } as never);
+
+    await service.generateExecutionPlan(
+      'Bearer valid-token-value-with-32-characters',
+      membershipsFixture[0].tenantId,
+      '99999999-9999-4999-8999-999999999999',
+      3,
+    );
+
+    expect(executionPlans.generate).toHaveBeenCalledWith(
+      membershipsFixture[0].tenantId,
+      '99999999-9999-4999-8999-999999999999',
+      3,
+      principal.subject,
+    );
+  });
+
+  it('blocks viewer role before invoking plan generation', async () => {
+    await expect(service.generateExecutionPlan(
+      'Bearer valid-token-value-with-32-characters',
+      membershipsFixture[1].tenantId,
+      '99999999-9999-4999-8999-999999999999',
+      1,
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(executionPlans.generate).not.toHaveBeenCalled();
   });
 });

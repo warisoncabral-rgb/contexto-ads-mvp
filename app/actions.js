@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { parseCampaignForm } from '../lib/campaign-preparation.mjs'
+import { parsePlanGenerationForm, validGeneratedPlan } from '../lib/execution-plan-view.mjs'
 
 export async function saveCampaignContext(_previousState, formData) {
   const parsed = parseCampaignForm(formData)
@@ -57,4 +58,52 @@ export async function saveCampaignContext(_previousState, formData) {
   }
   redirect(`/campaigns?tenantId=${encodeURIComponent(context.tenantId)}`
     + `&campaignId=${encodeURIComponent(context.campaignId)}&saved=1`)
+}
+
+export async function generateExecutionPlan(_previousState, formData) {
+  const parsed = parsePlanGenerationForm(formData)
+  if (!parsed.ok) return { error: parsed.error }
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) {
+    return { error: 'A central ainda não está conectada ao backend seguro.' }
+  }
+  const base = apiBaseUrl.replace(/\/$/, '')
+  let response
+  try {
+    response = await fetch(
+      `${base}/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+        + `/campaigns/${encodeURIComponent(parsed.campaignId)}/plans`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${operatorToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ contextVersion: parsed.contextVersion }),
+        cache: 'no-store',
+        signal: globalThis.AbortSignal.timeout(8000),
+      },
+    )
+  } catch {
+    return { error: 'Não foi possível gerar o plano agora. Nenhuma execução foi iniciada.' }
+  }
+  if (response.status === 401 || response.status === 403) {
+    return { error: 'Seu acesso não permite gerar o plano desta campanha.' }
+  }
+  if (response.status === 409) {
+    return { error: 'O contexto ainda possui pendências e não pode gerar um plano.' }
+  }
+  if (!response.ok) return { error: 'O backend não conseguiu gerar um plano seguro.' }
+  let plan
+  try {
+    plan = await response.json()
+  } catch {
+    return { error: 'O backend não confirmou o plano de forma válida.' }
+  }
+  if (!validGeneratedPlan(plan, parsed)) {
+    return { error: 'O plano retornado não respeitou todas as travas e foi recusado.' }
+  }
+  return { plan }
 }

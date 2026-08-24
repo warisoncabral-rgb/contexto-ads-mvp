@@ -59,4 +59,19 @@ export class OperatorAccessController {
       body?.facts,
     );
   }
+
+  @Post('tenants/:tenantId/campaigns/:campaignId/plans')
+  generateExecutionPlan(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Body() body: { contextVersion?: number },
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.service.generateExecutionPlan(
+      authorization,
+      tenantId,
+      campaignId,
+      body?.contextVersion,
+    );
+  }
 }

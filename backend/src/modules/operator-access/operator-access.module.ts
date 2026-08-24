@@ -4,9 +4,15 @@ import { OperatorAccessInfrastructureModule } from '../../infrastructure/operato
 import { OperatorAccessController } from './operator-access.controller';
 import { OperatorAccessService } from './operator-access.service';
 import { CampaignContextModule } from '../campaign-context/campaign-context.module';
+import { ExecutionPlanModule } from '../execution-plan/execution-plan.module';
 
 @Module({
-  imports: [DatabaseModule, OperatorAccessInfrastructureModule, CampaignContextModule],
+  imports: [
+    DatabaseModule,
+    OperatorAccessInfrastructureModule,
+    CampaignContextModule,
+    ExecutionPlanModule,
+  ],
   controllers: [OperatorAccessController],
   providers: [OperatorAccessService],
 })

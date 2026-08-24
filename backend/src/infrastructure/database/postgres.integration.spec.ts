@@ -34,6 +34,7 @@ import { PostgresAuditRepository } from './postgres-audit.repository';
 import { OperatorAccessService } from '../../modules/operator-access/operator-access.service';
 import { OperatorIdentityPort } from '../../domain/ports/operator-identity.port';
 import { CampaignContextService } from '../../modules/campaign-context/campaign-context.service';
+import { ExecutionPlanService } from '../../modules/execution-plan/execution-plan.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -189,6 +190,10 @@ describeWithPostgres('PostgreSQL integration', () => {
       new PostgresOperationalReadinessRepository(pool),
       new PostgresCampaignContextRepository(pool),
       new CampaignContextService(new PostgresCampaignContextRepository(pool)),
+      new ExecutionPlanService(
+        new PostgresCampaignContextRepository(pool),
+        planRepository,
+      ),
     );
     const result = await service.listTenants(
       'Bearer integration-token-with-at-least-32-characters',
@@ -241,33 +246,13 @@ describeWithPostgres('PostgreSQL integration', () => {
       [tenantId, subject],
     );
     expect(contextAudit.rows[0].count).toBe('1');
-    const executionPlanId = randomUUID();
-    await planRepository.saveIdempotent({
-      executionPlanId,
+    const generatedPlan = await service.generateExecutionPlan(
+      'Bearer integration-token-with-at-least-32-characters',
       tenantId,
       campaignId,
-      campaignPackageVersion: 1,
-      planVersion: '1.0',
-      correlationId: randomUUID(),
-      planHash: '8'.repeat(64),
-      idempotencyKey: '7'.repeat(64),
-      status: 'draft',
-      meta: { assetBindings: [], requiredCapabilities: [] },
-      objectsToCreate: [],
-      readiness: [],
-      autonomy: { level: 'A0', approvalRequired: true },
-      financials: {
-        currency: 'BRL',
-        budgetMode: 'daily',
-        configuredAmountMinor: 1000,
-        maximumPlannedSpendMinor: 7000,
-        calculation: '1000 x 7 days',
-      },
-      decisions: [],
-      risks: [],
-      externalEffects: { writesAllowed: false, writesPerformed: false },
-      createdAt: '2026-08-24T15:30:00.000Z',
-    });
+      preparedContext.version,
+    );
+    const executionPlanId = generatedPlan.executionPlanId;
     const planResult = await service.listTenantPlans(
       'Bearer integration-token-with-at-least-32-characters',
       tenantId,
@@ -276,7 +261,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       tenantId,
       campaignId,
       executionPlanId,
-      maximumPlannedSpendMinor: 7000,
+      maximumPlannedSpendMinor: 8400,
     })]);
     await expect(service.listTenantPlans(
       'Bearer integration-token-with-at-least-32-characters',
@@ -289,6 +274,13 @@ describeWithPostgres('PostgreSQL integration', () => {
       [tenantId, subject],
     );
     expect(planAudit.rows[0].count).toBe('1');
+    const generationAudit = await pool.query<{ count: string }>(
+      `select count(*)::text as count from audit_events
+      where tenant_id = $1 and actor_id = $2
+        and event_type = 'operator_execution_plan_generated'`,
+      [tenantId, subject],
+    );
+    expect(generationAudit.rows[0].count).toBe('1');
   });
 
   it('replaces asset snapshots and enforces tenant scope in PostgreSQL', async () => {

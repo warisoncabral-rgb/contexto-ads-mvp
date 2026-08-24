@@ -78,6 +78,11 @@
 - Criação e atualização de contexto exigem `manage_campaign_preparation`; papel `viewer` permanece estritamente leitura.
 - Versão do contexto e auditoria do operador são persistidas atomicamente na mesma transação PostgreSQL.
 - Endpoints públicos de contexto foram retirados; seleção, leitura e gravação passam pelo limite autenticado do operador.
+- Contexto completo recebe uma revisão explícita de fatos e teto financeiro antes da geração do plano lógico.
+- Geração de plano exige membership e permissão de preparação; a rota pública anterior foi removida.
+- Plano idempotente e auditoria de geração são persistidos atomicamente, sem duplicar evidência em repetição concorrente.
+- A interface recusa plano cruzado, versão diferente, objetos ativos ou qualquer alegação de escrita externa.
+- Resultado apresentado permanece `draft`, A0, com aprovação humana obrigatória, riscos bloqueantes e objetos `PAUSED`.
 
 ## Bloco interno de validação controlada concluído
 1. O contrato do primeiro teste de criação pausada está persistido e auditável.
@@ -85,9 +90,9 @@
 3. O adapter permanece ausente até ambiente real, autorização curta e todos os gates comprovados.
 
 ## Próximo bloco interno de produto
-1. Exibir a revisão final do contexto completo e gerar o plano lógico somente por ação explícita do operador.
-2. Apresentar orçamento, regras, riscos e justificativas antes de solicitar aprovação humana.
-3. Proteger também a geração do plano pelo limite autenticado, mantendo toda escrita Meta desligada.
+1. Criar a revisão humana do hash e do teto exatos do plano antes de solicitar aprovação.
+2. Proteger solicitação, aprovação, rejeição e revogação pelo papel do operador e registrar a decisão na interface.
+3. Manter aprovação separada da autorização curta de execução e toda escrita Meta desligada.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
