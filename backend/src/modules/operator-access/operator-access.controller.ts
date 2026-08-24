@@ -18,6 +18,11 @@ export class OperatorAccessController {
     return this.service.portfolio(authorization);
   }
 
+  @Get('work-queue')
+  workQueue(@Headers('authorization') authorization: string | undefined) {
+    return this.service.workQueue(authorization);
+  }
+
   @Get('tenants/:tenantId/plans')
   listTenantPlans(
     @Param('tenantId') tenantId: string,

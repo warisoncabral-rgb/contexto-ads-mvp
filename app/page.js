@@ -310,7 +310,7 @@ export default async function Page({ searchParams }) {
           <span className="brand-mark">C</span>
           <span><strong>Contexto Ads</strong><small>Central Operacional</small></span>
         </a>
-        <div className="topbar-actions"><a href="/portfolio">Visão de portfólio</a><div className="environment"><span /> Ambiente controlado</div></div>
+        <div className="topbar-actions"><a href="/work-queue">Fila diária</a><a href="/portfolio">Visão de portfólio</a><div className="environment"><span /> Ambiente controlado</div></div>
       </header>
 
       <section className="workspace-intro">

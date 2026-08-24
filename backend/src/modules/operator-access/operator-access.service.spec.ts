@@ -181,6 +181,53 @@ describe('OperatorAccessService', () => {
     expect(readiness.latestForPlan).not.toHaveBeenCalled();
   });
 
+  it('derives a daily work queue from current blockers without fabricated deadlines', async () => {
+    const tenant = membershipsFixture[0];
+    const plan = { tenantId: tenant.tenantId,
+      campaignId: '55555555-5555-4555-8555-555555555555',
+      executionPlanId: '66666666-6666-4666-8666-666666666666',
+      createdAt: '2026-08-24T16:00:00.000Z' } as ExecutionPlanV1;
+    plans.listLatestForTenant.mockImplementation(async (tenantId) =>
+      tenantId === tenant.tenantId ? [plan] : []);
+    readiness.latestForPlan.mockResolvedValueOnce({ tenantId: tenant.tenantId,
+      campaignId: plan.campaignId, executionPlanId: plan.executionPlanId, status: 'blocked',
+      blockers: [{ code: 'capabilities_sufficient', owner: 'meta_environment',
+        meaning: 'Permissões insuficientes.', nextAction: 'Corrigir as permissões concedidas.',
+        evidenceRefs: ['capability:read_ads'] }], generatedAt: '2026-08-24T18:00:00.000Z' } as never);
+
+    const result = await service.workQueue('Bearer token');
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual(expect.objectContaining({
+      tenantDisplayName: 'Rosa VIP Calçados', source: 'operational_blocker',
+      owner: 'meta_environment', priority: 'critical', blockerCode: 'capabilities_sufficient',
+      evidenceRefs: ['capability:read_ads'],
+    }));
+    expect(result.items[0].workItemId).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.summary).toEqual({ authorizedTenantCount: 2, pendingItemCount: 1,
+      criticalCount: 1, operatorCount: 0, systemCount: 0, metaEnvironmentCount: 1 });
+    expect(result.boundaries).toEqual(expect.objectContaining({
+      derivedFromCurrentReadiness: true, deadlinesFabricated: false,
+      completionInferred: false, externalWritesAllowed: false,
+    }));
+  });
+
+  it('creates a deterministic system task when readiness has not been evaluated', async () => {
+    const tenant = membershipsFixture[0];
+    plans.listLatestForTenant.mockImplementation(async (tenantId) => tenantId === tenant.tenantId
+      ? [{ tenantId: tenant.tenantId, campaignId: '55555555-5555-4555-8555-555555555555',
+        executionPlanId: '66666666-6666-4666-8666-666666666666',
+        createdAt: '2026-08-24T16:00:00.000Z' } as ExecutionPlanV1] : []);
+    readiness.latestForPlan.mockResolvedValue(null);
+
+    const first = await service.workQueue('Bearer token');
+    const second = await service.workQueue('Bearer token');
+
+    expect(first.items[0]).toEqual(expect.objectContaining({ source: 'readiness_not_evaluated',
+      owner: 'system', priority: 'normal', blockerCode: 'readiness_not_evaluated' }));
+    expect(second.items[0].workItemId).toBe(first.items[0].workItemId);
+  });
+
   it('returns a sanitized campaign timeline after membership and plan verification', async () => {
     const tenantId = membershipsFixture[0].tenantId;
     const campaignId = '55555555-5555-4555-8555-555555555555';
