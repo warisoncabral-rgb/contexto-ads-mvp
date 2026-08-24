@@ -1,4 +1,5 @@
 import { loadOperatorWorkQueue } from '../../lib/operator-work-queue.mjs'
+import { deriveOperatorDailyBrief } from '../../lib/operator-daily-brief.mjs'
 
 const ownerLabels = { operator: 'Operador', system: 'Sistema', meta_environment: 'Ambiente Meta' }
 const priorityLabels = { critical: 'Crítica', high: 'Alta', normal: 'Normal' }
@@ -22,6 +23,7 @@ export default async function WorkQueuePage({ searchParams }) {
   const params = await searchParams
   const filter = allowedFilters.has(params?.owner) ? params.owner : 'all'
   const { queue } = result
+  const brief = deriveOperatorDailyBrief(queue)
   const items = filter === 'all' ? queue.items : queue.items.filter((item) => item.owner === filter)
   const tabs = [['all', 'Todas'], ['operator', 'Operador'], ['system', 'Sistema'], ['meta_environment', 'Ambiente Meta']]
   const comparisons = queue.snapshots.map((snapshot) => snapshot.comparison)
@@ -33,6 +35,12 @@ export default async function WorkQueuePage({ searchParams }) {
     <header className="topbar"><a className="brand" href="/"><span className="brand-mark">C</span><span><strong>Contexto Ads</strong><small>Central operacional</small></span></a><div className="environment"><span />Fila somente leitura</div></header>
     <main className="work-shell">
       <section className="work-hero"><div><span className="eyebrow">Trabalho diário</span><h1>Uma fila objetiva para fazer o que importa agora.</h1><p>Cada item nasce da prontidão atual e conserva responsável, evidência e ação recomendada. Nenhum prazo ou conclusão é inventado.</p></div><a href="/portfolio">Ver portfólio</a></section>
+      <section className="daily-brief">
+        <div className="section-heading"><div><span className="eyebrow">Resumo operacional</span><h2>{brief.headline}</h2></div><small>Derivado somente da fila validada</small></div>
+        <div className="daily-brief-metrics"><article><span>Críticas</span><strong>{brief.summary.criticalCount}</strong></article><article><span>Entraram ou pioraram</span><strong>{brief.summary.enteredOrWorsenedCount}</strong></article><article><span>Resolvidas</span><strong>{brief.summary.resolvedCount}</strong></article><article><span>Melhoraram</span><strong>{brief.summary.improvedCount}</strong></article></div>
+        {brief.baselineMissingCount > 0 && <p className="change-baseline">{brief.baselineMissingCount} cliente(s) ainda não possuem checkpoint anterior; nenhuma mudança foi fabricada para eles.</p>}
+        {brief.attention.length > 0 && <div className="daily-brief-focus"><span>Prioridade agora</span>{brief.attention.map((item) => <a href={`/?tenantId=${item.tenantId}&executionPlanId=${item.executionPlanId}`} key={item.workItemId}><strong>{item.tenantDisplayName}</strong><small>{priorityLabels[item.priority]} · {ownerLabels[item.owner]} · {item.blockerCode}</small><p>{item.nextAction}</p></a>)}</div>}
+      </section>
       <section className="work-metrics"><article><span>Pendências</span><strong>{queue.summary.pendingItemCount}</strong></article><article><span>Críticas</span><strong>{queue.summary.criticalCount}</strong></article><article><span>Do operador</span><strong>{queue.summary.operatorCount}</strong></article><article><span>Do sistema</span><strong>{queue.summary.systemCount}</strong></article><article><span>Ambiente Meta</span><strong>{queue.summary.metaEnvironmentCount}</strong></article></section>
       <nav className="work-tabs" aria-label="Filtrar responsável">{tabs.map(([key, label]) => <a className={filter === key ? 'active' : ''} href={key === 'all' ? '/work-queue' : `/work-queue?owner=${key}`} key={key}>{label}</a>)}</nav>
       <section className="change-panel">
@@ -51,7 +59,7 @@ export default async function WorkQueuePage({ searchParams }) {
           <details><summary>{item.evidenceRefs.length} evidência(s) vinculada(s)</summary>{item.evidenceRefs.map((ref) => <code key={ref}>{ref}</code>)}</details>
         </article>)}
       </section>
-      <div className="portfolio-boundary">Fila e mudanças derivadas de evidências persistidas. Nenhuma tarefa foi marcada como concluída por inferência e nenhuma ação externa foi executada.</div>
+      <div className="portfolio-boundary">Fila, mudanças e resumo derivados de evidências persistidas. Nenhuma tarefa foi marcada como concluída por inferência, nenhuma notificação foi enviada e nenhuma ação externa foi executada.</div>
     </main>
   </>
 }
