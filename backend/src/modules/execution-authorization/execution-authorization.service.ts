@@ -21,6 +21,7 @@ import {
   EXECUTION_AUTHORIZATION_REPOSITORY,
   EXECUTION_MANIFEST_REPOSITORY,
 } from '../../infrastructure/database/database.tokens';
+import { KillSwitchService } from '../kill-switch/kill-switch.service';
 
 const AUTHORIZATION_VALIDITY_MS = 15 * 60 * 1000;
 
@@ -31,6 +32,7 @@ export class ExecutionAuthorizationService {
     private readonly manifests: ExecutionManifestRepository,
     @Inject(EXECUTION_AUTHORIZATION_REPOSITORY)
     private readonly authorizations: ExecutionAuthorizationRepository,
+    private readonly killSwitch: KillSwitchService,
   ) {}
 
   async request(
@@ -174,6 +176,13 @@ export class ExecutionAuthorizationService {
     const latest = await this.manifests.latestForPlan(tenantId, manifest.executionPlanId);
     const current = latest?.executionManifestId === manifest.executionManifestId
       && latest.manifestHash === manifest.manifestHash;
+    const effectiveKillSwitch = await this.killSwitch.effective(
+      tenantId, manifest.campaignId,
+    );
+    const tenantKillSwitchPassed = effectiveKillSwitch.tenant.known
+      && effectiveKillSwitch.tenant.status === 'released';
+    const campaignKillSwitchPassed = effectiveKillSwitch.campaign.known
+      && effectiveKillSwitch.campaign.status === 'released';
     const checks: ExecutionPreflightCheckV1[] = [
       {
         key: 'manifest_current',
@@ -197,12 +206,26 @@ export class ExecutionAuthorizationService {
           : `A autorização específica está ${authorization.status}.`,
       },
       {
-        key: 'tenant_kill_switch', status: 'blocked', evidenceRefs: [],
-        meaning: 'O Kill Switch do tenant ainda não possui estado validado; o padrão é bloquear.',
+        key: 'tenant_kill_switch',
+        status: tenantKillSwitchPassed ? 'passed' : 'blocked',
+        evidenceRefs: effectiveKillSwitch.tenant.stateId
+          ? [`kill_switch:${effectiveKillSwitch.tenant.stateId}`] : [],
+        meaning: tenantKillSwitchPassed
+          ? 'O Kill Switch do tenant possui estado conhecido e liberado.'
+          : effectiveKillSwitch.tenant.status === 'engaged'
+            ? 'O Kill Switch do tenant está acionado.'
+            : 'O Kill Switch do tenant não possui estado; o padrão é bloquear.',
       },
       {
-        key: 'campaign_kill_switch', status: 'blocked', evidenceRefs: [],
-        meaning: 'O Kill Switch da campanha ainda não possui estado validado; o padrão é bloquear.',
+        key: 'campaign_kill_switch',
+        status: campaignKillSwitchPassed ? 'passed' : 'blocked',
+        evidenceRefs: effectiveKillSwitch.campaign.stateId
+          ? [`kill_switch:${effectiveKillSwitch.campaign.stateId}`] : [],
+        meaning: campaignKillSwitchPassed
+          ? 'O Kill Switch da campanha possui estado conhecido e liberado.'
+          : effectiveKillSwitch.campaign.status === 'engaged'
+            ? 'O Kill Switch da campanha está acionado.'
+            : 'O Kill Switch da campanha não possui estado; o padrão é bloquear.',
       },
       {
         key: 'real_meta_write_validation', status: 'blocked', evidenceRefs: [],

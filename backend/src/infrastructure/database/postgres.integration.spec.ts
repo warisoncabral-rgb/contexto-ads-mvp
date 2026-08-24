@@ -24,6 +24,8 @@ import { PostgresExecutionManifestRepository } from './postgres-execution-manife
 import { ExecutionManifestService } from '../../modules/execution-manifest/execution-manifest.service';
 import { PostgresExecutionAuthorizationRepository } from './postgres-execution-authorization.repository';
 import { ExecutionAuthorizationService } from '../../modules/execution-authorization/execution-authorization.service';
+import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository';
+import { KillSwitchService } from '../../modules/kill-switch/kill-switch.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -51,6 +53,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '013_operational_readiness_decisions.sql',
       '014_execution_manifests.sql',
       '015_execution_authorizations.sql',
+      '016_kill_switch_states.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -67,6 +70,7 @@ describeWithPostgres('PostgreSQL integration', () => {
   afterAll(async () => {
     await pool.query('delete from execution_preflights where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_authorizations where tenant_id = $1', [tenantId]);
+    await pool.query('delete from kill_switch_states where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_manifests where tenant_id = $1', [tenantId]);
     await pool.query('delete from operational_readiness_decisions where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_simulation_reports where tenant_id = $1', [tenantId]);
@@ -514,6 +518,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     const readinessDecisionRepository = new PostgresOperationalReadinessRepository(pool);
     const executionManifestRepository = new PostgresExecutionManifestRepository(pool);
     const executionAuthorizationRepository = new PostgresExecutionAuthorizationRepository(pool);
+    const killSwitchRepository = new PostgresKillSwitchRepository(pool);
     const connectionRepository = new PostgresMetaConnectionRepository(pool);
     const capabilityRepository = new PostgresCapabilityRepository(pool);
     const meta = {} as MetaReadonlyAdapter;
@@ -544,9 +549,14 @@ describeWithPostgres('PostgreSQL integration', () => {
       simulationRepository,
       executionManifestRepository,
     );
+    const killSwitchService = new KillSwitchService(
+      killSwitchRepository,
+      contexts,
+    );
     const executionAuthorizationService = new ExecutionAuthorizationService(
       executionManifestRepository,
       executionAuthorizationRepository,
+      killSwitchService,
     );
     const campaignId = randomUUID();
     const executionConnectionId = randomUUID();
@@ -866,6 +876,40 @@ describeWithPostgres('PostgreSQL integration', () => {
       'tenant_kill_switch', 'campaign_kill_switch',
       'real_meta_write_validation', 'write_adapter_enabled',
     ]));
+    const tenantReleases = await Promise.all(Array.from({ length: 5 }, () =>
+      killSwitchService.changeTenant(
+        tenantId, 'released', 'warison', 'Preparação interna validada.',
+      )));
+    const campaignReleases = await Promise.all(Array.from({ length: 5 }, () =>
+      killSwitchService.changeCampaign(
+        tenantId, campaignId, 'released', 'warison',
+        'Campanha autorizada somente para preflight.',
+      )));
+    expect(new Set(tenantReleases.map((item) => item.killSwitchStateId)).size).toBe(1);
+    expect(new Set(campaignReleases.map((item) => item.killSwitchStateId)).size).toBe(1);
+    expect(tenantReleases[0].version).toBe(1);
+    expect(campaignReleases[0].version).toBe(1);
+    const releasedPreflight = await executionAuthorizationService.preflight(
+      tenantId, executionAuthorization.executionAuthorizationId,
+    );
+    expect(releasedPreflight.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'tenant_kill_switch', status: 'passed' }),
+      expect.objectContaining({ key: 'campaign_kill_switch', status: 'passed' }),
+      expect.objectContaining({ key: 'real_meta_write_validation', status: 'blocked' }),
+      expect.objectContaining({ key: 'write_adapter_enabled', status: 'blocked' }),
+    ]));
+    expect(releasedPreflight.preflightHash).not.toBe(preflights[0].preflightHash);
+    expect(releasedPreflight.boundaries.externalAttemptStarted).toBe(false);
+    const engaged = await killSwitchService.changeTenant(
+      tenantId, 'engaged', 'warison', 'Interrupção operacional preventiva.',
+    );
+    expect(engaged.version).toBe(2);
+    await expect(killSwitchService.effective(tenantId, campaignId)).resolves
+      .toEqual(expect.objectContaining({
+        writesBlocked: true,
+        decision: 'blocked_engaged',
+        tenant: expect.objectContaining({ status: 'engaged', version: 2 }),
+      }));
     await expect(simulationRepository.save({
       ...simulation,
       simulationId: randomUUID(),

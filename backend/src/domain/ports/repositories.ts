@@ -20,6 +20,11 @@ import {
   ExecutionAuthorizationV1,
   ExecutionPreflightV1,
 } from '../contracts/execution-authorization';
+import {
+  KillSwitchScope,
+  KillSwitchStateV1,
+  UnversionedKillSwitchStateV1,
+} from '../contracts/kill-switch';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -172,6 +177,18 @@ export interface ExecutionAuthorizationRepository {
     preflight: ExecutionPreflightV1,
     event: AuditEvent,
   ): Promise<ExecutionPreflightV1>;
+}
+
+export interface KillSwitchRepository {
+  appendNext(
+    state: UnversionedKillSwitchStateV1,
+    event: AuditEvent,
+  ): Promise<KillSwitchStateV1>;
+  latest(
+    tenantId: string,
+    scope: KillSwitchScope,
+    campaignId?: string,
+  ): Promise<KillSwitchStateV1 | null>;
 }
 
 export interface CreativePackageRepository {

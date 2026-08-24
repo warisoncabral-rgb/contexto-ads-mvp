@@ -17,6 +17,7 @@ import {
   OPERATIONAL_READINESS_REPOSITORY,
   EXECUTION_MANIFEST_REPOSITORY,
   EXECUTION_AUTHORIZATION_REPOSITORY,
+  KILL_SWITCH_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -32,6 +33,7 @@ import { PostgresCreativePackageRepository } from './postgres-creative-package.r
 import { PostgresOperationalReadinessRepository } from './postgres-operational-readiness.repository';
 import { PostgresExecutionManifestRepository } from './postgres-execution-manifest.repository';
 import { PostgresExecutionAuthorizationRepository } from './postgres-execution-authorization.repository';
+import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -112,6 +114,11 @@ import { PostgresExecutionAuthorizationRepository } from './postgres-execution-a
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresExecutionAuthorizationRepository(pool),
     },
+    {
+      provide: KILL_SWITCH_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresKillSwitchRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -129,6 +136,7 @@ import { PostgresExecutionAuthorizationRepository } from './postgres-execution-a
     OPERATIONAL_READINESS_REPOSITORY,
     EXECUTION_MANIFEST_REPOSITORY,
     EXECUTION_AUTHORIZATION_REPOSITORY,
+    KILL_SWITCH_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

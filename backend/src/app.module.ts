@@ -12,6 +12,7 @@ import { CreativePackageModule } from './modules/creative-package/creative-packa
 import { OperationalReadinessModule } from './modules/operational-readiness/operational-readiness.module';
 import { ExecutionManifestModule } from './modules/execution-manifest/execution-manifest.module';
 import { ExecutionAuthorizationModule } from './modules/execution-authorization/execution-authorization.module';
+import { KillSwitchModule } from './modules/kill-switch/kill-switch.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ExecutionAuthorizationModule } from './modules/execution-authorization/
     OperationalReadinessModule,
     ExecutionManifestModule,
     ExecutionAuthorizationModule,
+    KillSwitchModule,
   ],
 })
 export class AppModule {}

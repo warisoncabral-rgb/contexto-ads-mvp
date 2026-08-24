@@ -56,11 +56,15 @@
 - Aprovar a autorização não abre o gate: o contrato mantém `effectiveExecutionPermission: false` até todos os demais controles passarem.
 - Preflight persistido e idempotente registra controles aprovados e bloqueadores sem criar `ExecutionRecord` ou iniciar tentativa externa.
 - Autorização expirada ou referente a manifesto substituído é invalidada fail-closed, com auditoria atômica.
+- Kill Switch versionado e imutável por tenant e campanha, com mudanças serializadas e auditoria na mesma transação.
+- Ausência de estado em qualquer escopo bloqueia fail-closed; switch do tenant acionado prevalece sobre toda campanha.
+- Solicitações concorrentes para o mesmo estado retornam uma única versão e não duplicam auditoria.
+- O preflight usa evidências exatas dos dois switches; mesmo ambos liberados, validação Meta e adapter continuam bloqueando a tentativa.
 
 ## Próximo bloco interno sem dependência externa
-1. Implementar Kill Switch persistente e auditado por tenant e campanha, com ausência tratada como bloqueio.
-2. Integrar seu estado ao preflight sem criar uma tentativa externa.
-3. Manter o adapter de escrita ausente até validação Meta real e liberação explícita de todos os gates.
+1. Preparar o contrato de validação controlada do adapter, ainda sem implementar escrita real.
+2. Definir evidências mínimas e limites para um primeiro teste de criação pausada na Meta.
+3. Manter o adapter ausente até ambiente real, autorização curta e todos os gates comprovados.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.

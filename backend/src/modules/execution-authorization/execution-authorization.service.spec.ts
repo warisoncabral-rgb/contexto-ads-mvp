@@ -10,6 +10,7 @@ import {
   ExecutionManifestRepository,
 } from '../../domain/ports/repositories';
 import { ExecutionAuthorizationService } from './execution-authorization.service';
+import { KillSwitchService } from '../kill-switch/kill-switch.service';
 
 describe('ExecutionAuthorizationService', () => {
   const tenantId = '11111111-1111-4111-8111-111111111111';
@@ -60,6 +61,7 @@ describe('ExecutionAuthorizationService', () => {
   let manifests: jest.Mocked<ExecutionManifestRepository>;
   let authorizations: jest.Mocked<ExecutionAuthorizationRepository>;
   let service: ExecutionAuthorizationService;
+  let killSwitch: jest.Mocked<KillSwitchService>;
 
   beforeEach(() => {
     manifests = {
@@ -79,7 +81,17 @@ describe('ExecutionAuthorizationService', () => {
         value: ExecutionPreflightV1, _event: AuditEvent,
       ) => value),
     };
-    service = new ExecutionAuthorizationService(manifests, authorizations);
+    killSwitch = {
+      effective: jest.fn().mockResolvedValue({
+        tenantId, campaignId, writesBlocked: true,
+        decision: 'blocked_missing_state',
+        tenant: { known: false, status: 'missing' },
+        campaign: { known: false, status: 'missing' },
+        boundaries: { externalWritesAllowed: false, externalWritesPerformed: false },
+        evaluatedAt: '2026-08-24T13:00:00.000Z',
+      }),
+    } as unknown as jest.Mocked<KillSwitchService>;
+    service = new ExecutionAuthorizationService(manifests, authorizations, killSwitch);
   });
 
   it('requests a high-risk, short-lived authorization for the exact manifest', async () => {
@@ -149,6 +161,28 @@ describe('ExecutionAuthorizationService', () => {
     const first = await service.preflight(tenantId, authorizationId);
     const second = await service.preflight(tenantId, authorizationId);
     expect(second.preflightHash).toBe(first.preflightHash);
+  });
+
+  it('passes both Kill Switch checks only when both states are known and released', async () => {
+    authorizations.findById.mockResolvedValue({ ...pending, status: 'approved' });
+    killSwitch.effective.mockResolvedValueOnce({
+      tenantId, campaignId, writesBlocked: false, decision: 'released',
+      tenant: {
+        known: true, status: 'released', stateId: authorizationId, version: 1,
+      },
+      campaign: {
+        known: true, status: 'released', stateId: manifestId, version: 1,
+      },
+      boundaries: { externalWritesAllowed: false, externalWritesPerformed: false },
+      evaluatedAt: '2026-08-24T13:00:00.000Z',
+    });
+    const result = await service.preflight(tenantId, authorizationId);
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'tenant_kill_switch', status: 'passed' }),
+      expect.objectContaining({ key: 'campaign_kill_switch', status: 'passed' }),
+      expect.objectContaining({ key: 'write_adapter_enabled', status: 'blocked' }),
+    ]));
+    expect(result.boundaries.externalWritesAllowed).toBe(false);
   });
 
   it('refuses stale manifests before creating an authorization', async () => {
