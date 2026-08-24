@@ -20,7 +20,7 @@ export default async function ConnectionsPage({ searchParams }) {
     const [title, detail] = copy[setup.kind] ?? copy.unavailable
     return <main className="portfolio-state"><span className="eyebrow">Conexão Meta</span><h1>{title}</h1><p>{detail}</p><a href="/">Voltar à central</a></main>
   }
-  return <><header className="topbar"><a className="brand" href="/"><span className="brand-mark">C</span><span><strong>Contexto Ads</strong><small>Conexão Meta</small></span></a><a href="/work-queue/overview">Central de comando</a></header><main className="work-shell">
+  return <><header className="topbar"><a className="brand" href="/"><span className="brand-mark">C</span><span><strong>Contexto Ads</strong><small>Conexão Meta</small></span></a><div><a href="/connections/checklist">Checklist real</a> · <a href="/work-queue/overview">Central de comando</a></div></header><main className="work-shell">
     <section className="work-hero"><div><span className="eyebrow">Primeiro gate real</span><h1>Conectar {setup.selectedTenant.displayName} em modo somente leitura.</h1><p>O OAuth será iniciado pelo servidor e a credencial nunca será enviada ao navegador.</p></div></section>
     {oauthConnected && returnedConnectionId && <div className="save-confirmation" role="status">OAuth concluído. A conexão retornou à Central e já pode seguir para o smoke somente leitura.</div>}
     <nav className="campaign-nav" aria-label="Clientes configuráveis">{setup.tenants.map((tenant) => <a className={tenant.tenantId === setup.selectedTenant.tenantId ? 'active' : ''} key={tenant.tenantId} href={`/connections?tenantId=${tenant.tenantId}`}>{tenant.displayName}</a>)}</nav>
