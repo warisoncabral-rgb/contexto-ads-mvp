@@ -1,5 +1,7 @@
 import { loadOperationalReadiness } from '../lib/operational-readiness.mjs'
 import { loadOperatorWorkspace } from '../lib/operator-workspace.mjs'
+import { loadPlanApproval } from '../lib/plan-approval.mjs'
+import PlanApprovalPanel from './plan-approval-panel'
 
 const phases = [
   ['campaignPreparation', 'Campanha'],
@@ -140,7 +142,7 @@ function WorkspaceSelector({ workspace }) {
   )
 }
 
-function DecisionDashboard({ decision }) {
+function DecisionDashboard({ decision, workspace, approvalResult }) {
   const statusLabel = {
     blocked: 'Bloqueado',
     action_required: 'Ação necessária',
@@ -246,6 +248,7 @@ function DecisionDashboard({ decision }) {
           ))}
         </div>
       </section>
+      <PlanApprovalPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} />
     </>
   )
 }
@@ -255,6 +258,7 @@ export default async function Page({ searchParams }) {
   const tenantId = typeof params?.tenantId === 'string' ? params.tenantId : ''
   const executionPlanId = typeof params?.executionPlanId === 'string'
     ? params.executionPlanId : ''
+  const approvalId = typeof params?.approvalId === 'string' ? params.approvalId : ''
   const workspace = await loadOperatorWorkspace({
     requestedTenantId: tenantId,
     requestedExecutionPlanId: executionPlanId,
@@ -267,6 +271,11 @@ export default async function Page({ searchParams }) {
     : workspace.kind === 'ready'
       ? { kind: 'no_plans' }
       : workspace
+  const approvalResult = workspace.kind === 'ready' && workspace.selectedPlan
+    ? await loadPlanApproval({ approvalId, plan: workspace.selectedPlan,
+      apiBaseUrl: process.env.CONTEXT_ADS_API_BASE_URL,
+      operatorToken: process.env.CONTEXT_ADS_OPERATOR_TOKEN })
+    : { kind: 'none' }
 
   return (
     <main>
@@ -291,7 +300,7 @@ export default async function Page({ searchParams }) {
 
       <div className="content-shell">
         {result.kind === 'ready'
-          ? <DecisionDashboard decision={result.decision} />
+          ? <DecisionDashboard decision={result.decision} workspace={workspace} approvalResult={approvalResult} />
           : <EmptyState result={result} />}
       </div>
 

@@ -189,9 +189,12 @@ describe('OperatorAccessService', () => {
       tenantId: membershipsFixture[0].tenantId,
       campaignId: '55555555-5555-4555-8555-555555555555',
       executionPlanId: '66666666-6666-4666-8666-666666666666',
+      planVersion: '1.0',
+      planHash: 'a'.repeat(64),
       status: 'ready_for_approval',
       campaignPackageVersion: 2,
-      financials: { maximumPlannedSpendMinor: 42000, currency: 'BRL' },
+      financials: { maximumPlannedSpendMinor: 42000, currency: 'BRL', calculation: '6000 x 7 days' },
+      autonomy: { level: 'A0', approvalRequired: true },
       createdAt: '2026-08-24T16:00:00.000Z',
     } as ExecutionPlanV1;
     plans.listLatestForTenant.mockResolvedValueOnce([plan]);

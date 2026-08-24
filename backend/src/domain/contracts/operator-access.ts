@@ -48,10 +48,15 @@ export interface OperatorExecutionPlanSummaryV1 {
   tenantId: string;
   campaignId: string;
   executionPlanId: string;
+  planVersion: string;
+  planHash: string;
   status: 'draft' | 'pending' | 'blocked' | 'ready_for_approval' | 'approved' | 'executing';
   campaignPackageVersion: number;
   maximumPlannedSpendMinor: number;
   currency: string;
+  calculation: string;
+  approvalRequired: boolean;
+  externalWritesAllowed: false;
   createdAt: string;
 }
 
