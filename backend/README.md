@@ -277,9 +277,27 @@ preflight distingue manifesto atual, autorização específica, Kill Switch do
 tenant e campanha, validação Meta real e adapter de escrita.
 
 Nesta fase o resultado é sempre `blocked_before_attempt`: Kill Switch, validação
-real e adapter ainda não existem. Por isso `executionRecordCreated`,
+real e adapter ainda impedem execução. Por isso `executionRecordCreated`,
 `externalAttemptStarted`, publicação, ativação, entrega e todos os efeitos
 externos permanecem `false`.
+
+### Kill Switch por tenant e campanha
+`POST /v1/tenants/:tenantId/kill-switch` recebe `status` (`engaged` ou
+`released`), `changedBy` e `reason`. O switch do tenant prevalece sobre todas as
+campanhas. `POST /v1/campaigns/:campaignId/kill-switch` recebe os mesmos campos
+e `tenantId`, restringindo somente a campanha validada dentro daquele tenant.
+
+Cada mudança cria uma versão imutável e um `AuditEvent` na mesma transação.
+Repetir concorrentemente o mesmo estado recupera a versão atual sem duplicar
+histórico ou auditoria. Acionar o switch nunca apaga planos, manifestos,
+autorizações ou evidências anteriores.
+
+`GET /v1/campaigns/:campaignId/kill-switch/effective?tenantId=...` aplica as
+regras de precedência. Estado ausente em qualquer escopo é
+`blocked_missing_state`; qualquer switch acionado é `blocked_engaged`; somente
+dois estados conhecidos e liberados produzem `released` para este controle.
+Mesmo nesse último caso, `externalWritesAllowed` continua `false`, pois os demais
+gates permanecem independentes.
 
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
@@ -294,11 +312,12 @@ externos permanecem `false`.
 - A linguagem operacional nunca confunde preparação com publicação, ativação ou entrega.
 - Manifestos descrevem efeitos futuros, mas não são executáveis e não contêm IDs externos inventados.
 - Autorizações curtas não substituem os demais gates; preflight bloqueado não é registrado como execução.
+- Kill Switch ausente ou acionado bloqueia; liberá-lo não substitui autorização, validação Meta ou adapter.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Implementar o Kill Switch persistente por tenant e campanha e integrá-lo ao
-preflight, ainda sem adicionar um adapter de escrita ou liberar efeitos externos.
-A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
+Preparar o contrato de validação controlada do futuro adapter e as evidências do
+primeiro teste de criação pausada, ainda sem adicionar escrita real ou liberar
+efeitos externos. A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
 um OAuth real e acionar o smoke test automatizado continua sendo a única
 validação externa restante para o vertical atual.
