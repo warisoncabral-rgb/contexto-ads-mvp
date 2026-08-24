@@ -70,6 +70,13 @@ test('fails closed for duplicate work items, snapshots or comparison changes', (
   assert.equal(validWorkQueue({ ...payload, snapshots: [{ ...payload.snapshots[0], comparison }] }), false)
 })
 
+test('fails closed when temporal ordering is impossible', () => {
+  assert.equal(validWorkQueue({ ...payload, items: [{ ...payload.items[0], observedAt: '2026-08-24T19:00:00.000Z' }] }), false)
+  assert.equal(validWorkQueue({ ...payload, snapshots: [{ ...payload.snapshots[0], generatedAt: '2026-08-24T19:00:00.000Z' }] }), false)
+  const comparison = { ...payload.snapshots[0].comparison, previousQueueDate: '2026-08-24' }
+  assert.equal(validWorkQueue({ ...payload, snapshots: [{ ...payload.snapshots[0], comparison }] }), false)
+})
+
 test('loads the queue with server-side authentication and no cache', async () => {
   let request
   const result = await loadOperatorWorkQueue({ apiBaseUrl: 'https://api.test/', operatorToken: 'secret', fetchImpl: async (url, options) => {
