@@ -19,6 +19,7 @@ import { CampaignContextService } from '../campaign-context/campaign-context.ser
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 import { ApprovalService } from '../approval/approval.service';
 import { OperationalReadinessService } from '../operational-readiness/operational-readiness.service';
+import { ExecutionSimulationService } from '../execution-simulation/execution-simulation.service';
 
 describe('OperatorAccessService', () => {
   const principal = {
@@ -56,6 +57,7 @@ describe('OperatorAccessService', () => {
   let executionPlans: jest.Mocked<Pick<ExecutionPlanService, 'generate'>>;
   let approvalService: jest.Mocked<Pick<ApprovalService, 'request' | 'get' | 'approve' | 'reject' | 'revoke'>>;
   let operationalReadiness: jest.Mocked<Pick<OperationalReadinessService, 'generate'>>;
+  let executionSimulations: jest.Mocked<Pick<ExecutionSimulationService, 'bindTarget'>>;
   let service: OperatorAccessService;
 
   beforeEach(() => {
@@ -88,6 +90,7 @@ describe('OperatorAccessService', () => {
       readinessDecisionId: '88888888-8888-4888-8888-888888888888',
       boundaries: { externalWritesAllowed: false },
     } as never) };
+    executionSimulations = { bindTarget: jest.fn() };
     service = new OperatorAccessService(
       identity,
       memberships,
@@ -99,7 +102,25 @@ describe('OperatorAccessService', () => {
       executionPlans as unknown as ExecutionPlanService,
       approvalService as unknown as ApprovalService,
       operationalReadiness as unknown as OperationalReadinessService,
+      executionSimulations as unknown as ExecutionSimulationService,
     );
+  });
+
+  it('binds a discovered execution target only behind preparation permission', async () => {
+    const tenantId = membershipsFixture[0].tenantId;
+    const campaignId = '55555555-5555-4555-8555-555555555555';
+    const planId = '66666666-6666-4666-8666-666666666666';
+    const connectionId = '77777777-7777-4777-8777-777777777777';
+    executionSimulations.bindTarget.mockResolvedValueOnce({ executionPlanId: planId } as never);
+    await service.bindExecutionTarget('Bearer token', tenantId, campaignId, planId,
+      connectionId, 'act_123456');
+    expect(executionSimulations.bindTarget).toHaveBeenCalledWith(
+      tenantId, campaignId, planId, connectionId, 'act_123456',
+    );
+
+    await expect(service.bindExecutionTarget('Bearer token', membershipsFixture[1].tenantId,
+      campaignId, planId, connectionId, 'act_123456'))
+      .rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('lets an operator request approval but reserves decisions for owners', async () => {

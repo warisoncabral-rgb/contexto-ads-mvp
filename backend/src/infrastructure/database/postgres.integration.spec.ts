@@ -196,6 +196,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       ),
       new ApprovalService(planRepository, new PostgresApprovalRepository(pool)),
       {} as OperationalReadinessService,
+      {} as ExecutionSimulationService,
     );
     const result = await service.listTenants(
       'Bearer integration-token-with-at-least-32-characters',
