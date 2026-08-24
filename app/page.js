@@ -1,8 +1,236 @@
-export default function Page() {
+import { loadOperationalReadiness } from '../lib/operational-readiness.mjs'
+
+const phases = [
+  ['campaignPreparation', 'Campanha'],
+  ['metaEnvironmentValidation', 'Ambiente Meta'],
+  ['creativeApproval', 'Criativo'],
+  ['humanPlanApproval', 'Aprovação'],
+  ['executorValidation', 'Executor'],
+  ['publication', 'Publicação'],
+  ['activation', 'Ativação'],
+  ['delivery', 'Entrega'],
+]
+
+const ownerLabels = {
+  system: 'Sistema',
+  operator: 'Operador',
+  meta_environment: 'Ambiente Meta',
+}
+
+const phaseLabels = {
+  complete: 'Concluído',
+  incomplete: 'Incompleto',
+  pending: 'Pendente',
+  not_started: 'Não iniciado',
+}
+
+function shortId(value) {
+  return value ? `${value.slice(0, 8)}…${value.slice(-4)}` : '—'
+}
+
+function money(currency, minor) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency,
+  }).format(minor / 100)
+}
+
+function EmptyState({ result }) {
+  const copy = {
+    empty: {
+      eyebrow: 'Consulta segura',
+      title: 'Carregue uma decisão operacional',
+      text: 'Informe os identificadores do cliente e do plano. A central não cria dados de demonstração e só exibe evidências persistidas pelo backend.',
+    },
+    invalid: {
+      eyebrow: 'Dados inválidos',
+      title: 'Revise os identificadores',
+      text: result.message,
+    },
+    configuration_required: {
+      eyebrow: 'Configuração necessária',
+      title: 'Conecte a central ao backend',
+      text: 'Defina CONTEXT_ADS_API_BASE_URL na hospedagem. Nenhuma consulta externa foi realizada.',
+    },
+    not_found: {
+      eyebrow: 'Sem evidência',
+      title: 'Nenhuma decisão foi encontrada',
+      text: 'Gere uma decisão de prontidão para este plano antes de tentar acompanhá-lo pela central.',
+    },
+    unavailable: {
+      eyebrow: 'Backend indisponível',
+      title: 'Não foi possível confirmar o estado',
+      text: 'A central manteve o comportamento fail-closed. Tente novamente quando o backend estiver acessível.',
+    },
+  }[result.kind]
+
+  return (
+    <section className="empty-state" aria-live="polite">
+      <span className="eyebrow">{copy.eyebrow}</span>
+      <h2>{copy.title}</h2>
+      <p>{copy.text}</p>
+      <div className="empty-boundary">
+        <span className="status-dot" />
+        Nenhuma publicação, ativação ou entrega foi inferida.
+      </div>
+    </section>
+  )
+}
+
+function DecisionDashboard({ decision }) {
+  const statusLabel = {
+    blocked: 'Bloqueado',
+    action_required: 'Ação necessária',
+    ready_for_executor_validation: 'Pronto para validar executor',
+  }[decision.status]
+
+  return (
+    <>
+      <section className="decision-hero">
+        <div>
+          <span className={`status-pill status-${decision.status}`}>{statusLabel}</span>
+          <h2>{decision.headline}</h2>
+          <p>{decision.plainLanguageSummary}</p>
+        </div>
+        <div className="identity-card">
+          <span>Plano</span>
+          <strong title={decision.executionPlanId}>{shortId(decision.executionPlanId)}</strong>
+          <small title={decision.decisionHash}>Decisão {shortId(decision.decisionHash)}</small>
+        </div>
+      </section>
+
+      <section className="truth-strip" aria-label="Estado externo confirmado">
+        <div><span>Publicada</span><strong>Não</strong></div>
+        <div><span>Ativa</span><strong>Não</strong></div>
+        <div><span>Entregando</span><strong>Não</strong></div>
+        <div><span>Escrita externa</span><strong>Bloqueada</strong></div>
+      </section>
+
+      <section className="phase-section">
+        <div className="section-heading">
+          <div><span className="eyebrow">Fluxo de execução</span><h3>Progresso real da campanha</h3></div>
+          <small>Atualizado em {new Date(decision.generatedAt).toLocaleString('pt-BR')}</small>
+        </div>
+        <div className="phase-grid">
+          {phases.map(([key, label], index) => {
+            const value = decision.progress[key]
+            return (
+              <div className={`phase phase-${value}`} key={key}>
+                <span className="phase-number">{String(index + 1).padStart(2, '0')}</span>
+                <strong>{label}</strong>
+                <small>{phaseLabels[value]}</small>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <div className="dashboard-grid">
+        <section className="panel blockers-panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">Centro de pendências</span><h3>O que impede o avanço</h3></div>
+            <span className="count-badge">{decision.blockers.length}</span>
+          </div>
+          {decision.blockers.length ? (
+            <div className="blocker-list">
+              {decision.blockers.map((blocker) => (
+                <article className="blocker" key={`${blocker.code}-${blocker.owner}`}>
+                  <div className="blocker-topline">
+                    <span>{ownerLabels[blocker.owner]}</span>
+                    <small>{blocker.evidenceRefs.length} evidência(s)</small>
+                  </div>
+                  <h4>{blocker.meaning}</h4>
+                  <p><strong>Próxima ação:</strong> {blocker.nextAction}</p>
+                </article>
+              ))}
+            </div>
+          ) : <p className="clear-message">Nenhum bloqueador interno registrado.</p>}
+        </section>
+
+        <aside className="side-stack">
+          <section className="panel action-panel">
+            <span className="eyebrow">Próxima ação priorizada</span>
+            <h3>{decision.nextAction}</h3>
+            <p>A central apresenta uma única ação por vez para reduzir erro operacional.</p>
+          </section>
+          <section className="panel money-panel">
+            <span className="eyebrow">Limite financeiro aprovado</span>
+            <strong>{money(
+              decision.financialScope.currency,
+              decision.financialScope.maximumPlannedSpendMinor,
+            )}</strong>
+            <p>{decision.financialScope.calculation}</p>
+            <div className="autonomy-row">
+              <span>Autonomia {decision.autonomy.level}</span>
+              <span>{decision.autonomy.humanApprovalRequired ? 'Aprovação humana obrigatória' : 'Autonomia delegada'}</span>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <section className="panel basis-panel">
+        <div className="section-heading">
+          <div><span className="eyebrow">Transparência</span><h3>Decisão, motivo e base</h3></div>
+        </div>
+        <div className="basis-grid">
+          {decision.decisionBasis.map((basis, index) => (
+            <article key={`${basis.decision}-${index}`}>
+              <span>{String(index + 1).padStart(2, '0')}</span>
+              <h4>{basis.decision}</h4>
+              <p>{basis.why}</p>
+              <small>{basis.evidenceRefs.length} referência(s) de evidência</small>
+            </article>
+          ))}
+        </div>
+      </section>
+    </>
+  )
+}
+
+export default async function Page({ searchParams }) {
+  const params = await searchParams
+  const tenantId = typeof params?.tenantId === 'string' ? params.tenantId : ''
+  const executionPlanId = typeof params?.executionPlanId === 'string'
+    ? params.executionPlanId : ''
+  const result = await loadOperationalReadiness({ tenantId, executionPlanId })
+
   return (
     <main>
-      <h1>Contexto Ads</h1>
-      <p>Plataforma em construção.</p>
+      <header className="topbar">
+        <a className="brand" href="/" aria-label="Contexto Ads — início">
+          <span className="brand-mark">C</span>
+          <span><strong>Contexto Ads</strong><small>Central Operacional</small></span>
+        </a>
+        <div className="environment"><span /> Ambiente controlado</div>
+      </header>
+
+      <section className="workspace-intro">
+        <div>
+          <span className="eyebrow">Visão do operador</span>
+          <h1>Clareza para decidir.<br />Controle para executar.</h1>
+          <p>Acompanhe o estado comprovado de cada campanha, entenda os bloqueios e avance somente quando todos os controles estiverem satisfeitos.</p>
+        </div>
+        <form className="lookup-form" method="get">
+          <label>Cliente / tenant
+            <input name="tenantId" defaultValue={tenantId} placeholder="UUID do tenant" autoComplete="off" />
+          </label>
+          <label>Plano de execução
+            <input name="executionPlanId" defaultValue={executionPlanId} placeholder="UUID do plano" autoComplete="off" />
+          </label>
+          <button type="submit">Consultar estado</button>
+        </form>
+      </section>
+
+      <div className="content-shell">
+        {result.kind === 'ready'
+          ? <DecisionDashboard decision={result.decision} />
+          : <EmptyState result={result} />}
+      </div>
+
+      <footer>
+        <span>Contexto Ads</span>
+        <p>Automação responsável com evidência, aprovação e rastreabilidade.</p>
+      </footer>
     </main>
   )
 }
