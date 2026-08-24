@@ -44,6 +44,32 @@ test('accepts an explicit missing baseline without fabricating changes', () => {
     ...snapshot.comparison, changes: [change] } }] }), false)
 })
 
+test('fails closed for duplicate or blank evidence references and duplicate source decisions', () => {
+  assert.equal(validWorkQueue({ ...payload, items: [{ ...payload.items[0], evidenceRefs: ['approval:none', 'approval:none'] }] }), false)
+  assert.equal(validWorkQueue({ ...payload, items: [{ ...payload.items[0], evidenceRefs: ['   '] }] }), false)
+  const duplicatedSources = payload.snapshots[0].sourceDecisions.map((decision) => ({ ...decision }))
+  duplicatedSources[3] = { ...duplicatedSources[0] }
+  assert.equal(validWorkQueue({ ...payload, snapshots: [{ ...payload.snapshots[0], sourceDecisions: duplicatedSources }] }), false)
+})
+
+test('fails closed when summary, snapshot item counts or tenant coverage disagree with items', () => {
+  assert.equal(validWorkQueue({ ...payload, summary: { ...payload.summary, criticalCount: 0 } }), false)
+  assert.equal(validWorkQueue({ ...payload, snapshots: [{ ...payload.snapshots[0], itemCount: 0 }] }), false)
+  assert.equal(validWorkQueue({ ...payload, summary: { ...payload.summary, authorizedTenantCount: 2 } }), false)
+  const foreignItem = { ...payload.items[0], workItemId: 'c'.repeat(64), tenantId: id('5') }
+  assert.equal(validWorkQueue({ ...payload, items: [foreignItem], summary: { ...payload.summary, pendingItemCount: 1 } }), false)
+})
+
+test('fails closed for duplicate work items, snapshots or comparison changes', () => {
+  assert.equal(validWorkQueue({ ...payload, items: [payload.items[0], payload.items[0]],
+    summary: { ...payload.summary, pendingItemCount: 2, criticalCount: 2, operatorCount: 2 } }), false)
+  const duplicateSnapshot = { ...payload.snapshots[0], snapshotId: id('5') }
+  assert.equal(validWorkQueue({ ...payload, snapshots: [payload.snapshots[0], duplicateSnapshot],
+    summary: { ...payload.summary, authorizedTenantCount: 2 } }), false)
+  const comparison = { ...payload.snapshots[0].comparison, changes: [change, change] }
+  assert.equal(validWorkQueue({ ...payload, snapshots: [{ ...payload.snapshots[0], comparison }] }), false)
+})
+
 test('loads the queue with server-side authentication and no cache', async () => {
   let request
   const result = await loadOperatorWorkQueue({ apiBaseUrl: 'https://api.test/', operatorToken: 'secret', fetchImpl: async (url, options) => {
