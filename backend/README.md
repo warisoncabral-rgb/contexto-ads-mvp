@@ -120,16 +120,34 @@ Retorna somente a versão mais recente dentro do tenant. Um pacote só recebe
 `ready_for_generation` quando todos os fatos críticos estão válidos; isso ainda
 não publica ou modifica nada na Meta.
 
+### `POST /v1/campaigns/:campaignId/plans`
+Body: `{"tenantId":"...","contextVersion":1}`. Transforma uma versão pronta do
+Campaign Context em um plano lógico imutável. Se `contextVersion` for omitida, a
+versão mais recente é fixada no plano. A mesma entrada é idempotente e retorna o
+plano originalmente persistido, inclusive sob requisições concorrentes.
+
+O plano calcula o teto financeiro, mapeia o objetivo por regras versionadas,
+preserva público, geografia e destino informados, cria a dependência lógica entre
+campanha, conjunto, briefing criativo e anúncio e registra a justificativa de
+cada decisão. Todos os objetos permanecem `PAUSED`; conteúdo criativo, alvo Meta,
+capacidades de escrita e aprovação são pendências bloqueantes explícitas.
+
+### `GET /v1/campaigns/:campaignId/plans/latest?tenantId=...`
+Recupera somente o plano mais recente do tenant. O payload inclui hash,
+idempotência, teto financeiro, decisões, riscos, prontidão e a garantia
+`writesAllowed: false` / `writesPerformed: false`.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
 - Capacidade desconhecida não é tratada como disponível.
 - A Fase 1 não possui escrita na Meta.
 - Fatos críticos ausentes bloqueiam geração; a automação não cria inferências silenciosas.
+- Planos lógicos são idempotentes, explicáveis e não autorizam efeitos externos.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Consumir o Campaign Context aprovado no gerador de plano interno, mantendo a
-publicação externa desligada. Em paralelo, criar/configurar o app Meta, concluir
+Vincular o plano lógico ao fluxo de aprovação por hash e trilha de auditoria,
+mantendo a publicação externa desligada. Em paralelo, criar/configurar o app Meta, concluir
 um OAuth real e acionar o smoke test automatizado continua sendo a única
 validação externa restante para o vertical atual.

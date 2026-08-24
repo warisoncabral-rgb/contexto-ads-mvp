@@ -9,6 +9,7 @@ import { PostgresCapabilityRepository } from './postgres-capability.repository';
 import { PostgresReadinessRepository } from './postgres-readiness.repository';
 import { PostgresSmokeTestReportRepository } from './postgres-smoke-test-report.repository';
 import { PostgresCampaignContextRepository } from './postgres-campaign-context.repository';
+import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repository';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -29,6 +30,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '006_tenant_scoped_capability_registry.sql',
       '007_validation_evidence.sql',
       '008_campaign_context.sql',
+      '009_execution_plans.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -43,6 +45,7 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from execution_plans where tenant_id = $1', [tenantId]);
     await pool.query('delete from campaign_context_versions where tenant_id = $1', [tenantId]);
     await pool.query('delete from campaigns where tenant_id = $1', [tenantId]);
     await pool.query('delete from meta_smoke_test_reports where tenant_id = $1', [tenantId]);
@@ -261,5 +264,71 @@ describeWithPostgres('PostgreSQL integration', () => {
       packageId: randomUUID(),
       tenantId: otherTenantId,
     })).resolves.toBeNull();
+  });
+
+  it('persists one immutable plan under concurrent idempotent generation', async () => {
+    const contexts = new PostgresCampaignContextRepository(pool);
+    const plans = new PostgresExecutionPlanRepository(pool);
+    const campaignId = randomUUID();
+    const context = {
+      packageId: randomUUID(),
+      tenantId,
+      campaignId,
+      version: 1,
+      schemaVersion: '1.0' as const,
+      status: 'ready_for_generation' as const,
+      facts: {},
+      inferences: [] as [],
+      validationIssues: [],
+      contentHash: 'c'.repeat(64),
+      createdAt: '2026-08-24T06:00:00.000Z',
+    };
+    await contexts.create(context);
+    const basePlan = {
+      executionPlanId: randomUUID(),
+      tenantId,
+      campaignId,
+      campaignPackageVersion: 1,
+      planVersion: '1.0',
+      correlationId: randomUUID(),
+      planHash: 'd'.repeat(64),
+      idempotencyKey: 'e'.repeat(64),
+      status: 'draft' as const,
+      meta: { assetBindings: [], requiredCapabilities: [] },
+      objectsToCreate: [],
+      readiness: [],
+      autonomy: { level: 'A0' as const, approvalRequired: true },
+      financials: {
+        currency: 'BRL',
+        budgetMode: 'daily' as const,
+        configuredAmountMinor: 1000,
+        maximumPlannedSpendMinor: 7000,
+        calculation: '1000 x 7 days',
+      },
+      decisions: [],
+      risks: [],
+      externalEffects: { writesAllowed: false as const, writesPerformed: false as const },
+      createdAt: '2026-08-24T07:00:00.000Z',
+    };
+
+    const persisted = await Promise.all(
+      Array.from({ length: 6 }, () => plans.saveIdempotent({
+        ...basePlan,
+        executionPlanId: randomUUID(),
+        correlationId: randomUUID(),
+      })),
+    );
+
+    expect(new Set(persisted.map((plan) => plan.executionPlanId)).size).toBe(1);
+    await expect(plans.latest(tenantId, campaignId)).resolves
+      .toEqual(expect.objectContaining({ tenantId, campaignId, planHash: 'd'.repeat(64) }));
+    await expect(plans.latest(otherTenantId, campaignId)).resolves.toBeNull();
+    await expect(plans.saveIdempotent({
+      ...basePlan,
+      executionPlanId: randomUUID(),
+      tenantId: otherTenantId,
+      planHash: 'f'.repeat(64),
+      idempotencyKey: '1'.repeat(64),
+    })).rejects.toThrow();
   });
 });

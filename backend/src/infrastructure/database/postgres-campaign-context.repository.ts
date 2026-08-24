@@ -91,6 +91,22 @@ export class PostgresCampaignContextRepository implements CampaignContextReposit
     return result.rows[0] ? this.toDomain(result.rows[0]) : null;
   }
 
+  async findVersion(
+    tenantId: string,
+    campaignId: string,
+    version: number,
+  ): Promise<CampaignContextPackageV1 | null> {
+    const result = await this.pool.query<CampaignContextRow>(
+      `select package_id, tenant_id, campaign_id, version, schema_version,
+        status, facts, inferences, validation_issues, content_hash, created_at
+      from campaign_context_versions
+      where tenant_id = $1 and campaign_id = $2 and version = $3
+      limit 1`,
+      [tenantId, campaignId, version],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : null;
+  }
+
   private async insertVersion(
     client: PoolClient,
     context: CampaignContextPackageV1,

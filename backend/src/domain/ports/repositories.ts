@@ -7,6 +7,7 @@ import {
   CampaignContextPackageV1,
   UnversionedCampaignContextPackageV1,
 } from '../contracts/campaign-context';
+import { ExecutionPlanV1 } from '../contracts/execution-plan';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -44,6 +45,16 @@ export interface CampaignContextRepository {
     tenantId: string,
     campaignId: string,
   ): Promise<CampaignContextPackageV1 | null>;
+  findVersion(
+    tenantId: string,
+    campaignId: string,
+    version: number,
+  ): Promise<CampaignContextPackageV1 | null>;
+}
+
+export interface ExecutionPlanRepository {
+  saveIdempotent(plan: ExecutionPlanV1): Promise<ExecutionPlanV1>;
+  latest(tenantId: string, campaignId: string): Promise<ExecutionPlanV1 | null>;
 }
 
 export interface MetaOAuthAttemptStore {

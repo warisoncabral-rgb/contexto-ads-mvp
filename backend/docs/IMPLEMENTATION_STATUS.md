@@ -24,11 +24,15 @@
 - Contexto de campanha versionado e imutável, com fatos rastreáveis, hash semântico e isolamento por tenant.
 - Validação fail-closed do contexto: dados críticos ausentes viram bloqueios acionáveis e nunca são inferidos silenciosamente.
 - Numeração concorrente de versões serializada no PostgreSQL.
+- Gerador determinístico de planos lógicos vinculado a uma versão exata do Campaign Context.
+- Teto financeiro, riscos, regras aplicadas e justificativas persistidos no próprio plano.
+- Idempotência concorrente: a mesma entrada produz e recupera um único plano imutável.
+- Objetos lógicos nascem pausados e nenhum plano permite ou executa escrita externa.
 
 ## Próximo bloco interno sem dependência externa
-1. Transformar apenas um CampaignContext `ready_for_generation` em plano lógico interno.
-2. Manter publicação e qualquer escrita na Meta desligadas.
-3. Ligar o plano ao fluxo de aprovação e trilha de auditoria antes de habilitar execução.
+1. Criar aprovação vinculada ao hash exato e ao teto financeiro do plano.
+2. Invalidar automaticamente aprovações quando o plano mudar.
+3. Persistir a trilha de auditoria das decisões e transições, mantendo escrita Meta desligada.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
