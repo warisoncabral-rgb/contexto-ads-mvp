@@ -16,6 +16,10 @@ import {
 } from '../contracts/creative-package';
 import { OperationalReadinessDecisionV1 } from '../contracts/operational-readiness';
 import { ExecutionManifestV1 } from '../contracts/execution-manifest';
+import {
+  ExecutionAuthorizationV1,
+  ExecutionPreflightV1,
+} from '../contracts/execution-authorization';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -127,6 +131,47 @@ export interface ExecutionManifestRepository {
     tenantId: string,
     executionPlanId: string,
   ): Promise<ExecutionManifestV1 | null>;
+  findById(
+    tenantId: string,
+    executionManifestId: string,
+  ): Promise<ExecutionManifestV1 | null>;
+}
+
+export interface ExecutionAuthorizationRepository {
+  request(
+    authorization: ExecutionAuthorizationV1,
+    event: AuditEvent,
+  ): Promise<ExecutionAuthorizationV1>;
+  findById(
+    tenantId: string,
+    executionAuthorizationId: string,
+  ): Promise<ExecutionAuthorizationV1 | null>;
+  approveIfCurrent(
+    tenantId: string,
+    executionAuthorizationId: string,
+    approvedBy: string,
+    approvedAt: string,
+    event: AuditEvent,
+  ): Promise<ExecutionAuthorizationV1 | null>;
+  transition(
+    tenantId: string,
+    executionAuthorizationId: string,
+    fromStatuses: ExecutionAuthorizationV1['status'][],
+    toStatus: ExecutionAuthorizationV1['status'],
+    updatedAt: string,
+    reason: string,
+    event: AuditEvent,
+  ): Promise<ExecutionAuthorizationV1 | null>;
+  expireOrInvalidate(
+    tenantId: string,
+    executionAuthorizationId: string,
+    now: string,
+    event: AuditEvent,
+  ): Promise<ExecutionAuthorizationV1 | null>;
+  savePreflightIdempotent(
+    preflight: ExecutionPreflightV1,
+    event: AuditEvent,
+  ): Promise<ExecutionPreflightV1>;
 }
 
 export interface CreativePackageRepository {

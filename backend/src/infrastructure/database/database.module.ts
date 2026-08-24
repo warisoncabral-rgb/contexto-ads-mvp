@@ -16,6 +16,7 @@ import {
   CREATIVE_PACKAGE_REPOSITORY,
   OPERATIONAL_READINESS_REPOSITORY,
   EXECUTION_MANIFEST_REPOSITORY,
+  EXECUTION_AUTHORIZATION_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -30,6 +31,7 @@ import { PostgresExecutionSimulationRepository } from './postgres-execution-simu
 import { PostgresCreativePackageRepository } from './postgres-creative-package.repository';
 import { PostgresOperationalReadinessRepository } from './postgres-operational-readiness.repository';
 import { PostgresExecutionManifestRepository } from './postgres-execution-manifest.repository';
+import { PostgresExecutionAuthorizationRepository } from './postgres-execution-authorization.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -105,6 +107,11 @@ import { PostgresExecutionManifestRepository } from './postgres-execution-manife
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresExecutionManifestRepository(pool),
     },
+    {
+      provide: EXECUTION_AUTHORIZATION_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresExecutionAuthorizationRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -121,6 +128,7 @@ import { PostgresExecutionManifestRepository } from './postgres-execution-manife
     CREATIVE_PACKAGE_REPOSITORY,
     OPERATIONAL_READINESS_REPOSITORY,
     EXECUTION_MANIFEST_REPOSITORY,
+    EXECUTION_AUTHORIZATION_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

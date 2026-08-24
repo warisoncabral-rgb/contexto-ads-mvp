@@ -81,4 +81,14 @@ describe('PostgresExecutionManifestRepository', () => {
       [manifest.tenantId, manifest.executionPlanId],
     );
   });
+
+  it('loads a manifest by ID only inside its tenant', async () => {
+    query.mockResolvedValueOnce({ rows: [{ payload: manifest }] });
+    await expect(repository.findById(manifest.tenantId, manifest.executionManifestId))
+      .resolves.toEqual(manifest);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('where tenant_id = $1 and execution_manifest_id = $2'),
+      [manifest.tenantId, manifest.executionManifestId],
+    );
+  });
 });

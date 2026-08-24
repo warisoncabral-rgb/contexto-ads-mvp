@@ -255,6 +255,32 @@ Retorna o manifesto mais recente somente dentro do tenant e plano informados.
 Solicitações semanticamente iguais recuperam o mesmo manifesto; a persistência e
 o evento de auditoria ocorrem atomicamente apenas na primeira inserção.
 
+### Autorização específica de execução
+`POST /v1/execution-manifests/:executionManifestId/authorizations` recebe
+`tenantId` e `requestedBy`. A solicitação é de alto risco, vale 15 minutos e fica
+vinculada ao plano, manifesto e hashes exatos. Ela autoriza somente a intenção
+futura de criação controlada com objetos pausados; não libera escrita por si só.
+
+- `POST /v1/execution-authorizations/:id/approve` — `tenantId`, `approvedBy`;
+- `POST /v1/execution-authorizations/:id/reject` — `tenantId`, `rejectedBy`, `reason`;
+- `POST /v1/execution-authorizations/:id/revoke` — `tenantId`, `revokedBy`, `reason`;
+- `GET /v1/execution-authorizations/:id?tenantId=...` — consulta e atualiza
+  expiração/invalidação de forma fail-closed.
+
+Mesmo aprovada, a resposta mantém `effectiveExecutionPermission: false`,
+`externalWritesAllowed: false` e `externalWritesPerformed: false`. Manifesto
+substituído ou prazo vencido invalida a autorização.
+
+### `POST /v1/execution-authorizations/:id/preflights`
+Body: `{"tenantId":"..."}`. Persiste uma avaliação idempotente do gate. O
+preflight distingue manifesto atual, autorização específica, Kill Switch do
+tenant e campanha, validação Meta real e adapter de escrita.
+
+Nesta fase o resultado é sempre `blocked_before_attempt`: Kill Switch, validação
+real e adapter ainda não existem. Por isso `executionRecordCreated`,
+`externalAttemptStarted`, publicação, ativação, entrega e todos os efeitos
+externos permanecem `false`.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -267,11 +293,12 @@ o evento de auditoria ocorrem atomicamente apenas na primeira inserção.
 - Mudanças criativas invalidam o plano anterior; mídias e conteúdo são ligados por hash.
 - A linguagem operacional nunca confunde preparação com publicação, ativação ou entrega.
 - Manifestos descrevem efeitos futuros, mas não são executáveis e não contêm IDs externos inventados.
+- Autorizações curtas não substituem os demais gates; preflight bloqueado não é registrado como execução.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Preparar o registro do ciclo de vida das futuras tentativas e o gate humano
-específico de execução, ainda sem adicionar um adapter de escrita ou liberar
-efeitos externos. A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
+Implementar o Kill Switch persistente por tenant e campanha e integrá-lo ao
+preflight, ainda sem adicionar um adapter de escrita ou liberar efeitos externos.
+A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
 um OAuth real e acionar o smoke test automatizado continua sendo a única
 validação externa restante para o vertical atual.

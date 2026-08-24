@@ -142,6 +142,7 @@ describe('ExecutionManifestService', () => {
         _event: AuditEvent,
       ) => manifest),
       latestForPlan: jest.fn().mockResolvedValue(null),
+      findById: jest.fn(),
     };
     service = new ExecutionManifestService(
       readiness, plans, simulations, manifests,
