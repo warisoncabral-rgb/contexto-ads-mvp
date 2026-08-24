@@ -25,6 +25,13 @@ import {
   KillSwitchStateV1,
   UnversionedKillSwitchStateV1,
 } from '../contracts/kill-switch';
+import { MetaWriteValidationProtocolV1 } from '../contracts/meta-write-validation';
+import { OperatorTenantMembershipV1 } from '../contracts/operator-access';
+import {
+  OperatorWorkItemV1,
+  OperatorWorkQueueSnapshotInputV1,
+  OperatorWorkQueueSnapshotV1,
+} from '../contracts/operator-work-queue';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -41,6 +48,9 @@ export interface CapabilityRepository {
   listForConnection(tenantId: string, connectionId: string): Promise<CapabilityRecord[]>;
 }
 export interface AuditRepository { append(event: AuditEvent): Promise<void>; }
+export interface AuditTimelineRepository {
+  listForCampaign(tenantId: string, campaignId: string, limit: number): Promise<AuditEvent[]>;
+}
 export interface ReadinessRepository {
   save(snapshot: ReadinessSnapshot): Promise<void>;
   latestForConnection(tenantId: string, connectionId: string): Promise<ReadinessSnapshot | null>;
@@ -54,9 +64,10 @@ export interface SmokeTestReportRepository {
 }
 
 export interface CampaignContextRepository {
-  create(context: CampaignContextPackageV1): Promise<void>;
+  create(context: CampaignContextPackageV1, event?: AuditEvent): Promise<void>;
   appendNext(
     context: UnversionedCampaignContextPackageV1,
+    event?: AuditEvent,
   ): Promise<CampaignContextPackageV1 | null>;
   latest(
     tenantId: string,
@@ -69,9 +80,18 @@ export interface CampaignContextRepository {
   ): Promise<CampaignContextPackageV1 | null>;
 }
 
+export interface OperatorCampaignContextSelectionRepository {
+  listLatestForTenant(tenantId: string): Promise<CampaignContextPackageV1[]>;
+}
+
 export interface ExecutionPlanRepository {
-  saveIdempotent(plan: ExecutionPlanV1): Promise<ExecutionPlanV1>;
+  saveIdempotent(plan: ExecutionPlanV1, event?: AuditEvent): Promise<ExecutionPlanV1>;
   latest(tenantId: string, campaignId: string): Promise<ExecutionPlanV1 | null>;
+  findById(tenantId: string, executionPlanId: string): Promise<ExecutionPlanV1 | null>;
+}
+
+export interface OperatorPlanSelectionRepository {
+  listLatestForTenant(tenantId: string): Promise<ExecutionPlanV1[]>;
   findById(tenantId: string, executionPlanId: string): Promise<ExecutionPlanV1 | null>;
 }
 
@@ -189,6 +209,26 @@ export interface KillSwitchRepository {
     scope: KillSwitchScope,
     campaignId?: string,
   ): Promise<KillSwitchStateV1 | null>;
+}
+
+export interface MetaWriteValidationProtocolRepository {
+  saveIdempotent(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1>;
+  latestForManifest(
+    tenantId: string,
+    executionManifestId: string,
+  ): Promise<MetaWriteValidationProtocolV1 | null>;
+}
+
+export interface OperatorTenantMembershipRepository {
+  listActiveForSubject(operatorSubject: string): Promise<OperatorTenantMembershipV1[]>;
+}
+
+export interface OperatorWorkQueueSnapshotRepository {
+  saveDaily(snapshot: OperatorWorkQueueSnapshotInputV1, items: OperatorWorkItemV1[]):
+    Promise<OperatorWorkQueueSnapshotV1>;
 }
 
 export interface CreativePackageRepository {

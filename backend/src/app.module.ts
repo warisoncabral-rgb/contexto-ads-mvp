@@ -13,6 +13,8 @@ import { OperationalReadinessModule } from './modules/operational-readiness/oper
 import { ExecutionManifestModule } from './modules/execution-manifest/execution-manifest.module';
 import { ExecutionAuthorizationModule } from './modules/execution-authorization/execution-authorization.module';
 import { KillSwitchModule } from './modules/kill-switch/kill-switch.module';
+import { MetaWriteValidationModule } from './modules/meta-write-validation/meta-write-validation.module';
+import { OperatorAccessModule } from './modules/operator-access/operator-access.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { KillSwitchModule } from './modules/kill-switch/kill-switch.module';
     ExecutionManifestModule,
     ExecutionAuthorizationModule,
     KillSwitchModule,
+    MetaWriteValidationModule,
+    OperatorAccessModule,
   ],
 })
 export class AppModule {}

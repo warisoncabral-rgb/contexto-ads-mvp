@@ -5,9 +5,11 @@ import {
   ExecutionPreflightV1,
 } from '../../domain/contracts/execution-authorization';
 import { ExecutionManifestV1 } from '../../domain/contracts/execution-manifest';
+import { MetaWriteValidationProtocolV1 } from '../../domain/contracts/meta-write-validation';
 import {
   ExecutionAuthorizationRepository,
   ExecutionManifestRepository,
+  MetaWriteValidationProtocolRepository,
 } from '../../domain/ports/repositories';
 import { ExecutionAuthorizationService } from './execution-authorization.service';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
@@ -62,6 +64,7 @@ describe('ExecutionAuthorizationService', () => {
   let authorizations: jest.Mocked<ExecutionAuthorizationRepository>;
   let service: ExecutionAuthorizationService;
   let killSwitch: jest.Mocked<KillSwitchService>;
+  let validationProtocols: jest.Mocked<MetaWriteValidationProtocolRepository>;
 
   beforeEach(() => {
     manifests = {
@@ -91,7 +94,13 @@ describe('ExecutionAuthorizationService', () => {
         evaluatedAt: '2026-08-24T13:00:00.000Z',
       }),
     } as unknown as jest.Mocked<KillSwitchService>;
-    service = new ExecutionAuthorizationService(manifests, authorizations, killSwitch);
+    validationProtocols = {
+      saveIdempotent: jest.fn(),
+      latestForManifest: jest.fn().mockResolvedValue(null),
+    };
+    service = new ExecutionAuthorizationService(
+      manifests, authorizations, killSwitch, validationProtocols,
+    );
   });
 
   it('requests a high-risk, short-lived authorization for the exact manifest', async () => {
@@ -161,6 +170,25 @@ describe('ExecutionAuthorizationService', () => {
     const first = await service.preflight(tenantId, authorizationId);
     const second = await service.preflight(tenantId, authorizationId);
     expect(second.preflightHash).toBe(first.preflightHash);
+  });
+
+  it('references a prepared protocol without treating it as real validation', async () => {
+    authorizations.findById.mockResolvedValue({ ...pending, status: 'approved' });
+    const protocolId = '99999999-9999-4999-8999-999999999999';
+    validationProtocols.latestForManifest.mockResolvedValue({
+      metaWriteValidationProtocolId: protocolId,
+    } as MetaWriteValidationProtocolV1);
+
+    const result = await service.preflight(tenantId, authorizationId);
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: 'real_meta_write_validation',
+        status: 'blocked',
+        evidenceRefs: [`meta_write_validation_protocol:${protocolId}`],
+      }),
+    ]));
+    expect(result.blockers).toContain('real_meta_write_validation');
+    expect(result.boundaries.externalAttemptStarted).toBe(false);
   });
 
   it('passes both Kill Switch checks only when both states are known and released', async () => {

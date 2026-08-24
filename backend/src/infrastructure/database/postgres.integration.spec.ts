@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { UnauthorizedException } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Pool } from 'pg';
@@ -26,6 +27,16 @@ import { PostgresExecutionAuthorizationRepository } from './postgres-execution-a
 import { ExecutionAuthorizationService } from '../../modules/execution-authorization/execution-authorization.service';
 import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository';
 import { KillSwitchService } from '../../modules/kill-switch/kill-switch.service';
+import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-write-validation-protocol.repository';
+import { MetaWriteValidationService } from '../../modules/meta-write-validation/meta-write-validation.service';
+import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-tenant-membership.repository';
+import { PostgresOperatorWorkQueueSnapshotRepository } from './postgres-operator-work-queue-snapshot.repository';
+import { PostgresAuditRepository } from './postgres-audit.repository';
+import { OperatorAccessService } from '../../modules/operator-access/operator-access.service';
+import { OperatorIdentityPort } from '../../domain/ports/operator-identity.port';
+import { CampaignContextService } from '../../modules/campaign-context/campaign-context.service';
+import { ExecutionPlanService } from '../../modules/execution-plan/execution-plan.service';
+import { CreativePackageService } from '../../modules/creative-package/creative-package.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -54,6 +65,9 @@ describeWithPostgres('PostgreSQL integration', () => {
       '014_execution_manifests.sql',
       '015_execution_authorizations.sql',
       '016_kill_switch_states.sql',
+      '017_meta_write_validation_protocols.sql',
+      '018_operator_access.sql',
+      '019_operator_work_queue_snapshots.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -68,9 +82,16 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from operator_tenant_memberships where tenant_id = any($1::uuid[])', [
+      [tenantId, otherTenantId],
+    ]);
+    await pool.query('delete from tenant_profiles where tenant_id = any($1::uuid[])', [
+      [tenantId, otherTenantId],
+    ]);
     await pool.query('delete from execution_preflights where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_authorizations where tenant_id = $1', [tenantId]);
     await pool.query('delete from kill_switch_states where tenant_id = $1', [tenantId]);
+    await pool.query('delete from meta_write_validation_protocols where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_manifests where tenant_id = $1', [tenantId]);
     await pool.query('delete from operational_readiness_decisions where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_simulation_reports where tenant_id = $1', [tenantId]);
@@ -135,6 +156,144 @@ describeWithPostgres('PostgreSQL integration', () => {
     await expect(vault.getSecret(tenantId, credentialRef)).rejects.toThrow(
       'Credential Vault operation failed',
     );
+  });
+
+  it('derives operator tenant and plan selection only from active memberships', async () => {
+    const subject = 'operator:integration';
+    const membershipId = randomUUID();
+    await pool.query(
+      `insert into tenant_profiles (
+        tenant_id, display_name, status, created_at, updated_at
+      ) values ($1, 'Rosa VIP Calçados', 'active', now(), now()),
+        ($2, 'Cliente suspenso', 'suspended', now(), now())`,
+      [tenantId, otherTenantId],
+    );
+    await pool.query(
+      `insert into operator_tenant_memberships (
+        membership_id, operator_subject, tenant_id, role, status, created_at
+      ) values ($1, $2, $3, 'owner', 'active', now()),
+        ($4, $2, $5, 'viewer', 'active', now())`,
+      [membershipId, subject, tenantId, randomUUID(), otherTenantId],
+    );
+    const memberships = new PostgresOperatorTenantMembershipRepository(pool);
+    const identity: OperatorIdentityPort = {
+      isAvailable: () => true,
+      authenticate: async () => ({
+        subject,
+        provider: 'bootstrap_token',
+        authenticatedAt: '2026-08-24T15:00:00.000Z',
+      }),
+    };
+    const planRepository = new PostgresExecutionPlanRepository(pool);
+    const service = new OperatorAccessService(
+      identity,
+      memberships,
+      new PostgresAuditRepository(pool),
+      new PostgresAuditRepository(pool),
+      planRepository,
+      new PostgresOperationalReadinessRepository(pool),
+      new PostgresOperatorWorkQueueSnapshotRepository(pool),
+      new PostgresCampaignContextRepository(pool),
+      new CampaignContextService(new PostgresCampaignContextRepository(pool)),
+      new ExecutionPlanService(
+        new PostgresCampaignContextRepository(pool),
+        planRepository,
+      ),
+      new ApprovalService(planRepository, new PostgresApprovalRepository(pool)),
+      {} as OperationalReadinessService,
+      {} as ExecutionSimulationService,
+      {} as CreativePackageService,
+      {} as import('../../modules/execution-manifest/execution-manifest.service').ExecutionManifestService,
+      {} as import('../../modules/execution-authorization/execution-authorization.service').ExecutionAuthorizationService,
+      {} as import('../../modules/kill-switch/kill-switch.service').KillSwitchService,
+      {} as import('../../modules/meta-write-validation/meta-write-validation.service').MetaWriteValidationService,
+    );
+    const result = await service.listTenants(
+      'Bearer integration-token-with-at-least-32-characters',
+    );
+    expect(result.tenants).toEqual([expect.objectContaining({
+      tenantId,
+      displayName: 'Rosa VIP Calçados',
+      role: 'owner',
+      membershipId,
+      permissions: expect.arrayContaining(['decide_approval', 'configure_tenant']),
+    })]);
+    expect(result.boundaries.externalWritesAllowed).toBe(false);
+    await expect(memberships.listActiveForSubject('operator:other')).resolves.toEqual([]);
+    const accessAudit = await pool.query<{ count: string }>(
+      `select count(*)::text as count from audit_events
+      where tenant_id = $1 and actor_id = $2
+        and event_type = 'operator_tenant_access_listed'`,
+      [tenantId, subject],
+    );
+    expect(accessAudit.rows[0].count).toBe('1');
+
+    const preparedContext = await service.createCampaignContext(
+      'Bearer integration-token-with-at-least-32-characters',
+      tenantId,
+      {
+        businessName: 'Rosa VIP Calçados',
+        offer: 'Calçados femininos no atacado',
+        objective: 'leads',
+        audience: 'Lojistas e revendedores',
+        destination: 'whatsapp',
+        geography: 'Recife e Natal',
+        budget: { mode: 'daily', amountMinor: 1200, currency: 'BRL' },
+        durationDays: 7,
+      },
+    );
+    const campaignId = preparedContext.campaignId;
+    const contextResult = await service.listCampaignContexts(
+      'Bearer integration-token-with-at-least-32-characters',
+      tenantId,
+    );
+    expect(contextResult.contexts).toEqual([expect.objectContaining({
+      campaignId,
+      status: 'ready_for_generation',
+      version: 1,
+    })]);
+    const contextAudit = await pool.query<{ count: string }>(
+      `select count(*)::text as count from audit_events
+      where tenant_id = $1 and actor_id = $2
+        and event_type = 'operator_campaign_context_created'`,
+      [tenantId, subject],
+    );
+    expect(contextAudit.rows[0].count).toBe('1');
+    const generatedPlan = await service.generateExecutionPlan(
+      'Bearer integration-token-with-at-least-32-characters',
+      tenantId,
+      campaignId,
+      preparedContext.version,
+    );
+    const executionPlanId = generatedPlan.executionPlanId;
+    const planResult = await service.listTenantPlans(
+      'Bearer integration-token-with-at-least-32-characters',
+      tenantId,
+    );
+    expect(planResult.plans).toEqual([expect.objectContaining({
+      tenantId,
+      campaignId,
+      executionPlanId,
+      maximumPlannedSpendMinor: 8400,
+    })]);
+    await expect(service.listTenantPlans(
+      'Bearer integration-token-with-at-least-32-characters',
+      otherTenantId,
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    const planAudit = await pool.query<{ count: string }>(
+      `select count(*)::text as count from audit_events
+      where tenant_id = $1 and actor_id = $2
+        and event_type = 'operator_tenant_plans_listed'`,
+      [tenantId, subject],
+    );
+    expect(planAudit.rows[0].count).toBe('1');
+    const generationAudit = await pool.query<{ count: string }>(
+      `select count(*)::text as count from audit_events
+      where tenant_id = $1 and actor_id = $2
+        and event_type = 'operator_execution_plan_generated'`,
+      [tenantId, subject],
+    );
+    expect(generationAudit.rows[0].count).toBe('1');
   });
 
   it('replaces asset snapshots and enforces tenant scope in PostgreSQL', async () => {
@@ -519,6 +678,8 @@ describeWithPostgres('PostgreSQL integration', () => {
     const executionManifestRepository = new PostgresExecutionManifestRepository(pool);
     const executionAuthorizationRepository = new PostgresExecutionAuthorizationRepository(pool);
     const killSwitchRepository = new PostgresKillSwitchRepository(pool);
+    const validationProtocolRepository =
+      new PostgresMetaWriteValidationProtocolRepository(pool);
     const connectionRepository = new PostgresMetaConnectionRepository(pool);
     const capabilityRepository = new PostgresCapabilityRepository(pool);
     const meta = {} as MetaReadonlyAdapter;
@@ -553,10 +714,15 @@ describeWithPostgres('PostgreSQL integration', () => {
       killSwitchRepository,
       contexts,
     );
+    const validationProtocolService = new MetaWriteValidationService(
+      executionManifestRepository,
+      validationProtocolRepository,
+    );
     const executionAuthorizationService = new ExecutionAuthorizationService(
       executionManifestRepository,
       executionAuthorizationRepository,
       killSwitchService,
+      validationProtocolRepository,
     );
     const campaignId = randomUUID();
     const executionConnectionId = randomUUID();
@@ -853,6 +1019,21 @@ describeWithPostgres('PostgreSQL integration', () => {
     await expect(executionManifestService.latest(
       tenantId, targeted.executionPlanId,
     )).resolves.toEqual(manifests[0]);
+    const protocols = await Promise.all(Array.from({ length: 5 }, () =>
+      validationProtocolService.prepare(
+        tenantId, manifests[0].executionManifestId, 'warison',
+      )));
+    expect(new Set(protocols.map((item) => item.metaWriteValidationProtocolId)).size)
+      .toBe(1);
+    expect(protocols[0].limits.exactOperationCount).toBe(4);
+    expect(protocols[0].operations.every((operation) =>
+      operation.intendedLifecycleStatus === 'PAUSED')).toBe(true);
+    expect(protocols[0].requiredEvidence.every((evidence) =>
+      evidence.status === 'required_not_collected')).toBe(true);
+    expect(protocols[0].boundaries.externalWritesAllowed).toBe(false);
+    await expect(validationProtocolService.latest(
+      otherTenantId, manifests[0].executionManifestId,
+    )).rejects.toThrow('Execution manifest not found');
     const authorizations = await Promise.all(Array.from({ length: 5 }, () =>
       executionAuthorizationService.request(
         tenantId, manifests[0].executionManifestId, 'warison',
@@ -875,6 +1056,15 @@ describeWithPostgres('PostgreSQL integration', () => {
     expect(preflights[0].blockers).toEqual(expect.arrayContaining([
       'tenant_kill_switch', 'campaign_kill_switch',
       'real_meta_write_validation', 'write_adapter_enabled',
+    ]));
+    expect(preflights[0].checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: 'real_meta_write_validation',
+        status: 'blocked',
+        evidenceRefs: [
+          `meta_write_validation_protocol:${protocols[0].metaWriteValidationProtocolId}`,
+        ],
+      }),
     ]));
     const tenantReleases = await Promise.all(Array.from({ length: 5 }, () =>
       killSwitchService.changeTenant(
