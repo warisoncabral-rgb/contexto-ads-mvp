@@ -334,6 +334,20 @@ footer {
 }
 footer span { color: var(--ink); font-weight: 800; }
 footer p { margin: 0; }
+.approval-panel { margin-top: 20px; }
+.approval-facts { display: grid; grid-template-columns: 1.4fr 1fr .7fr 1fr; gap: 10px; margin-top: 18px; }
+.approval-facts div { display: grid; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f8faf8; }
+.approval-facts span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.approval-facts strong { font-size: 12px; overflow-wrap: anywhere; }
+.approval-explanation { padding: 14px; border-left: 3px solid var(--green); color: var(--muted); background: var(--green-soft); font-size: 12px; line-height: 1.55; }
+.approval-action-form { display: grid; gap: 10px; margin-top: 12px; }
+.approval-action-form input { padding: 12px; border: 1px solid var(--line); border-radius: 9px; }
+.approval-action-form button { padding: 12px; border: 0; border-radius: 9px; color: white; background: var(--green); font-weight: 800; cursor: pointer; }
+.approval-action-form button:disabled { opacity: .55; cursor: wait; }
+.approval-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.approval-actions form:last-child button { background: #843b35; }
+.approval-evidence { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.approval-evidence span { padding: 8px 10px; border-radius: 8px; background: #eef2ef; font-size: 10px; }
 
 .back-link { color: var(--green); font-size: 12px; font-weight: 800; }
 .preparation-hero {
@@ -420,6 +434,7 @@ footer p { margin: 0; }
   .phase-grid { grid-template-columns: repeat(4, 1fr); }
   .basis-grid { grid-template-columns: repeat(2, 1fr); }
   .review-facts { grid-template-columns: repeat(2, 1fr); }
+  .approval-facts { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 640px) {
@@ -439,6 +454,7 @@ footer p { margin: 0; }
   .review-facts, .plan-result-grid { grid-template-columns: 1fr; }
   .plan-boundaries { grid-template-columns: 1fr 1fr; }
   .generated-plan-hero, .plan-review-heading { flex-direction: column; }
+  .approval-facts, .approval-actions { grid-template-columns: 1fr; }
   .preparation-hero, .preparation-shell { padding-left: 18px; padding-right: 18px; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid label.wide { grid-column: auto; }

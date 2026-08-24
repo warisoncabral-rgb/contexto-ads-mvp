@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { parseCampaignForm } from '../lib/campaign-preparation.mjs'
 import { parsePlanGenerationForm, validGeneratedPlan } from '../lib/execution-plan-view.mjs'
+import { parseApprovalAction, validApproval } from '../lib/plan-approval.mjs'
 
 export async function saveCampaignContext(_previousState, formData) {
   const parsed = parseCampaignForm(formData)
@@ -106,4 +107,38 @@ export async function generateExecutionPlan(_previousState, formData) {
     return { error: 'O plano retornado não respeitou todas as travas e foi recusado.' }
   }
   return { plan }
+}
+
+export async function changePlanApproval(_previousState, formData) {
+  const parsed = parseApprovalAction(formData)
+  if (!parsed.ok) return { error: parsed.error }
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) return { error: 'A central não está conectada ao backend seguro.' }
+  const base = apiBaseUrl.replace(/\/$/, '')
+  const requestPath = `/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+    + `/campaigns/${encodeURIComponent(parsed.campaignId)}/plans/${encodeURIComponent(parsed.executionPlanId)}/approvals`
+  const decisionPath = `/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+    + `/approvals/${encodeURIComponent(parsed.approvalId)}/${parsed.decision}`
+  let response
+  try {
+    response = await fetch(`${base}${parsed.decision === 'request' ? requestPath : decisionPath}`, {
+      method: 'POST', headers: { accept: 'application/json', authorization: `Bearer ${operatorToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify(parsed.reason ? { reason: parsed.reason } : {}), cache: 'no-store',
+      signal: globalThis.AbortSignal.timeout(8000),
+    })
+  } catch { return { error: 'Não foi possível registrar a decisão. Nada foi liberado.' } }
+  if (response.status === 401 || response.status === 403) return { error: 'Seu papel não permite esta ação.' }
+  if (!response.ok) return { error: 'A decisão foi recusada com segurança pelo backend.' }
+  let approval
+  try { approval = await response.json() } catch { return { error: 'O backend não confirmou a decisão.' } }
+  const expected = {
+    tenantId: parsed.tenantId, campaignId: parsed.campaignId,
+    executionPlanId: parsed.executionPlanId,
+    planHash: String(formData.get('planHash') ?? ''),
+    maximumPlannedSpendMinor: Number(formData.get('maximumPlannedSpendMinor')),
+    currency: String(formData.get('currency') ?? ''),
+  }
+  if (!validApproval(approval, expected)) return { error: 'A confirmação não corresponde ao plano revisado.' }
+  redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}&executionPlanId=${encodeURIComponent(parsed.executionPlanId)}&approvalId=${encodeURIComponent(approval.approvalId)}`)
 }
