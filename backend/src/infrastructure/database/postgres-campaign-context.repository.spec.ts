@@ -102,6 +102,32 @@ describe('PostgresCampaignContextRepository', () => {
     );
   });
 
+  it('loads an exact immutable version inside the tenant scope', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [{
+      package_id: context.packageId,
+      tenant_id: context.tenantId,
+      campaign_id: context.campaignId,
+      version: context.version,
+      schema_version: context.schemaVersion,
+      status: context.status,
+      facts: context.facts,
+      inferences: context.inferences,
+      validation_issues: context.validationIssues,
+      content_hash: context.contentHash,
+      created_at: new Date(context.createdAt),
+    }] });
+
+    await expect(repository.findVersion(
+      context.tenantId,
+      context.campaignId,
+      context.version,
+    )).resolves.toEqual(context);
+    expect(poolQuery).toHaveBeenCalledWith(
+      expect.stringContaining('and version = $3'),
+      [context.tenantId, context.campaignId, context.version],
+    );
+  });
+
   it('rolls back a failed create and always releases the client', async () => {
     clientQuery
       .mockResolvedValueOnce({ rows: [] })

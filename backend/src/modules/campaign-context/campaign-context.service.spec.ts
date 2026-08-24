@@ -28,6 +28,7 @@ describe('CampaignContextService', () => {
       create: jest.fn().mockResolvedValue(undefined),
       appendNext: jest.fn(),
       latest: jest.fn(),
+      findVersion: jest.fn(),
     };
     service = new CampaignContextService(repository);
   });

@@ -13,7 +13,7 @@ export interface ExecutionPlanV1 {
   idempotencyKey: string;
   status: ExecutionPlanStatus;
   meta: {
-    connectionId: string;
+    connectionId?: string;
     adAccountId?: string;
     assetBindings: string[];
     requiredCapabilities: MetaCapabilityType[];
@@ -30,6 +30,38 @@ export interface ExecutionPlanV1 {
     approvalRequired: boolean;
     approvalId?: string;
     approvedPlanHash?: string;
+  };
+  financials: {
+    currency: string;
+    budgetMode: 'daily' | 'lifetime';
+    configuredAmountMinor: number;
+    maximumPlannedSpendMinor: number;
+    calculation: string;
+  };
+  decisions: Array<{
+    decisionId: string;
+    category:
+      | 'objective'
+      | 'budget'
+      | 'schedule'
+      | 'audience'
+      | 'destination'
+      | 'creative_safety';
+    ruleId: string;
+    inputRefs: string[];
+    outcome: Record<string, unknown>;
+    rationale: string;
+  }>;
+  risks: Array<{
+    code: string;
+    severity: 'low' | 'medium' | 'high';
+    meaning: string;
+    mitigation: string;
+    blocksExecution: boolean;
+  }>;
+  externalEffects: {
+    writesAllowed: false;
+    writesPerformed: false;
   };
   createdAt: string;
 }
