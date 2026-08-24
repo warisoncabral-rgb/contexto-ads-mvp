@@ -18,6 +18,8 @@ import { MetaConnectionService } from '../../modules/meta-connection/meta-connec
 import { CapabilityRegistryService } from '../../modules/capability-registry/capability-registry.service';
 import { MetaReadonlyAdapter } from '../../modules/meta-adapter/meta-readonly.adapter';
 import { PostgresCreativePackageRepository } from './postgres-creative-package.repository';
+import { PostgresOperationalReadinessRepository } from './postgres-operational-readiness.repository';
+import { OperationalReadinessService } from '../../modules/operational-readiness/operational-readiness.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -42,6 +44,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '010_plan_approvals.sql',
       '011_execution_simulations.sql',
       '012_creative_packages.sql',
+      '013_operational_readiness_decisions.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -56,6 +59,7 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from operational_readiness_decisions where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_simulation_reports where tenant_id = $1', [tenantId]);
     await pool.query('delete from plan_approvals where tenant_id = $1', [tenantId]);
     await pool.query('delete from creative_package_versions where tenant_id = $1', [tenantId]);
@@ -498,6 +502,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     const approvalRepository = new PostgresApprovalRepository(pool);
     const simulationRepository = new PostgresExecutionSimulationRepository(pool);
     const creativePackageRepository = new PostgresCreativePackageRepository(pool);
+    const readinessDecisionRepository = new PostgresOperationalReadinessRepository(pool);
     const connectionRepository = new PostgresMetaConnectionRepository(pool);
     const capabilityRepository = new PostgresCapabilityRepository(pool);
     const meta = {} as MetaReadonlyAdapter;
@@ -516,6 +521,11 @@ describeWithPostgres('PostgreSQL integration', () => {
       approvalRepository,
       simulationRepository,
       creativePackageRepository,
+    );
+    const operationalReadinessService = new OperationalReadinessService(
+      simulationService,
+      plans,
+      readinessDecisionRepository,
     );
     const campaignId = randomUUID();
     const executionConnectionId = randomUUID();
@@ -749,6 +759,42 @@ describeWithPostgres('PostgreSQL integration', () => {
     ]);
     expect(simulation.operations.every((operation) => !operation.willExecute)).toBe(true);
     expect(simulation.externalEffects).toEqual({ writesAllowed: false, writesPerformed: false });
+    const readinessDecision = await operationalReadinessService.generate(
+      tenantId,
+      campaignId,
+      targeted.executionPlanId,
+      approvedTarget.approvalId,
+    );
+    expect(readinessDecision.status).toBe('ready_for_executor_validation');
+    expect(readinessDecision.progress).toEqual(expect.objectContaining({
+      campaignPreparation: 'complete',
+      executorValidation: 'pending',
+      publication: 'not_started',
+      activation: 'not_started',
+      delivery: 'not_started',
+    }));
+    expect(readinessDecision.boundaries).toEqual({
+      campaignPublished: false,
+      campaignActive: false,
+      campaignDelivering: false,
+      externalWritesAllowed: false,
+      externalWritesPerformed: false,
+    });
+    await expect(operationalReadinessService.latest(
+      tenantId,
+      targeted.executionPlanId,
+    )).resolves.toEqual(readinessDecision);
+    const concurrentDecisions = await Promise.all(Array.from({ length: 5 }, () =>
+      operationalReadinessService.generate(
+        tenantId,
+        campaignId,
+        targeted.executionPlanId,
+        approvedTarget.approvalId,
+      )));
+    expect(new Set(concurrentDecisions.map((item) => item.readinessDecisionId)).size)
+      .toBe(1);
+    expect(new Set(concurrentDecisions.map((item) => item.decisionHash)))
+      .toEqual(new Set([readinessDecision.decisionHash]));
     await expect(simulationRepository.latestForPlan(
       tenantId,
       targeted.executionPlanId,

@@ -42,11 +42,16 @@
 - Nova versão criativa gera imediatamente um novo plano bloqueado e invalida aprovações anteriores.
 - Aprovação criativa aceita somente a versão e o hash mais recentes e produz outro plano imutável ainda em A0.
 - O dry-run compara o plano com o pacote criativo aprovado mais recente, impedindo reuso de conteúdo antigo.
+- Decisão operacional consolidada refaz o dry-run seguro antes de responder e traduz evidências para linguagem simples.
+- Estados de preparação, ambiente Meta, criativo, aprovação, executor, publicação, ativação e entrega são separados explicitamente.
+- Cada decisão segue “decisão, por quê e base”, informa o teto financeiro e aponta uma única próxima ação priorizada.
+- Decisões semanticamente idênticas são idempotentes, persistidas e auditadas atomicamente.
+- Mesmo com todos os controles internos aprovados, o estado máximo é `ready_for_executor_validation`; nunca “publicado”, “ativo” ou “entregando”.
 
 ## Próximo bloco interno sem dependência externa
-1. Criar o resumo operacional final, compreensível para o usuário, a partir do plano e das evidências atuais.
-2. Consolidar bloqueadores, próxima ação e limites de autonomia em uma decisão única de prontidão.
-3. Preparar o contrato do executor real sem implementar chamadas de escrita Meta.
+1. Preparar o contrato do executor real em modo estritamente pausado e fail-closed.
+2. Definir idempotência, compensação, reconciliação e registro de cada efeito externo futuro.
+3. Manter o adapter de escrita ausente até a validação Meta real e um gate humano específico.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
