@@ -8,6 +8,7 @@ import {
   UnversionedCampaignContextPackageV1,
 } from '../contracts/campaign-context';
 import { ExecutionPlanV1 } from '../contracts/execution-plan';
+import { ApprovalV1 } from '../contracts/approval';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -55,6 +56,40 @@ export interface CampaignContextRepository {
 export interface ExecutionPlanRepository {
   saveIdempotent(plan: ExecutionPlanV1): Promise<ExecutionPlanV1>;
   latest(tenantId: string, campaignId: string): Promise<ExecutionPlanV1 | null>;
+  findById(tenantId: string, executionPlanId: string): Promise<ExecutionPlanV1 | null>;
+}
+
+export interface ApprovalRepository {
+  request(approval: ApprovalV1, event: AuditEvent): Promise<ApprovalV1>;
+  findById(tenantId: string, approvalId: string): Promise<ApprovalV1 | null>;
+  approveIfCurrent(
+    tenantId: string,
+    approvalId: string,
+    approvedBy: string,
+    approvedAt: string,
+    event: AuditEvent,
+  ): Promise<ApprovalV1 | null>;
+  transition(
+    tenantId: string,
+    approvalId: string,
+    fromStatuses: ApprovalV1['status'][],
+    toStatus: ApprovalV1['status'],
+    updatedAt: string,
+    decisionReason: string | undefined,
+    event: AuditEvent,
+  ): Promise<ApprovalV1 | null>;
+  expire(
+    tenantId: string,
+    approvalId: string,
+    now: string,
+    event: AuditEvent,
+  ): Promise<ApprovalV1 | null>;
+  invalidateIfStale(
+    tenantId: string,
+    approvalId: string,
+    now: string,
+    event: AuditEvent,
+  ): Promise<ApprovalV1 | null>;
 }
 
 export interface MetaOAuthAttemptStore {

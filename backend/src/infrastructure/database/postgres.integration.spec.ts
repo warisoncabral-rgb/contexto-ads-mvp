@@ -10,6 +10,8 @@ import { PostgresReadinessRepository } from './postgres-readiness.repository';
 import { PostgresSmokeTestReportRepository } from './postgres-smoke-test-report.repository';
 import { PostgresCampaignContextRepository } from './postgres-campaign-context.repository';
 import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repository';
+import { PostgresApprovalRepository } from './postgres-approval.repository';
+import { ApprovalService } from '../../modules/approval/approval.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -31,6 +33,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '007_validation_evidence.sql',
       '008_campaign_context.sql',
       '009_execution_plans.sql',
+      '010_plan_approvals.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -45,6 +48,7 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from plan_approvals where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_plans where tenant_id = $1', [tenantId]);
     await pool.query('delete from campaign_context_versions where tenant_id = $1', [tenantId]);
     await pool.query('delete from campaigns where tenant_id = $1', [tenantId]);
@@ -57,6 +61,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     await pool.query('delete from capability_registry where tenant_id = $1', [tenantId]);
     await pool.query('delete from meta_oauth_attempts where tenant_id = $1', [tenantId]);
     await pool.query('delete from meta_connections where tenant_id = $1', [tenantId]);
+    await pool.query('delete from audit_events where tenant_id = $1', [tenantId]);
     await pool.end();
   });
 
@@ -330,5 +335,150 @@ describeWithPostgres('PostgreSQL integration', () => {
       planHash: 'f'.repeat(64),
       idempotencyKey: '1'.repeat(64),
     })).rejects.toThrow();
+  });
+
+  it('governs approval lifecycle by current hash with atomic audit evidence', async () => {
+    const contexts = new PostgresCampaignContextRepository(pool);
+    const plans = new PostgresExecutionPlanRepository(pool);
+    const approvals = new PostgresApprovalRepository(pool);
+    const service = new ApprovalService(plans, approvals);
+    const campaignId = randomUUID();
+    const context = {
+      packageId: randomUUID(),
+      tenantId,
+      campaignId,
+      version: 1,
+      schemaVersion: '1.0' as const,
+      status: 'ready_for_generation' as const,
+      facts: {},
+      inferences: [] as [],
+      validationIssues: [],
+      contentHash: '2'.repeat(64),
+      createdAt: '2026-08-24T08:00:00.000Z',
+    };
+    await contexts.create(context);
+    const makePlan = (
+      executionPlanId: string,
+      version: number,
+      planHash: string,
+      createdAt: string,
+    ) => ({
+      executionPlanId,
+      tenantId,
+      campaignId,
+      campaignPackageVersion: version,
+      planVersion: '1.0',
+      correlationId: randomUUID(),
+      planHash,
+      idempotencyKey: planHash.split('').reverse().join(''),
+      status: 'draft' as const,
+      meta: { assetBindings: [], requiredCapabilities: [] },
+      objectsToCreate: [{
+        internalObjectId: `${campaignId}:campaign`,
+        type: 'campaign' as const,
+        dependsOn: [],
+        logicalConfig: { lifecycleStatus: 'PAUSED' },
+      }],
+      readiness: [],
+      autonomy: { level: 'A0' as const, approvalRequired: true },
+      financials: {
+        currency: 'BRL',
+        budgetMode: 'daily' as const,
+        configuredAmountMinor: 1000,
+        maximumPlannedSpendMinor: 7000,
+        calculation: '1000 x 7 days',
+      },
+      decisions: [],
+      risks: [{
+        code: 'financial_commitment_requires_approval',
+        severity: 'high' as const,
+        meaning: 'Spend approval required',
+        mitigation: 'Approve exact hash',
+        blocksExecution: true,
+      }],
+      externalEffects: { writesAllowed: false as const, writesPerformed: false as const },
+      createdAt,
+    });
+    const firstPlan = makePlan(
+      randomUUID(),
+      1,
+      '3'.repeat(64),
+      '2026-08-24T09:00:00.000Z',
+    );
+    await plans.saveIdempotent(firstPlan);
+
+    const requested = await Promise.all(
+      Array.from({ length: 4 }, () => service.request(
+        tenantId,
+        campaignId,
+        firstPlan.executionPlanId,
+        'warison',
+      )),
+    );
+    expect(new Set(requested.map((approval) => approval.approvalId)).size).toBe(1);
+    const approved = await service.approve(
+      tenantId,
+      requested[0].approvalId,
+      'warison',
+    );
+    expect(approved).toEqual(expect.objectContaining({
+      status: 'approved',
+      approvedBy: 'warison',
+      approvedPlanHash: firstPlan.planHash,
+    }));
+
+    const secondContext = await contexts.appendNext({
+      ...context,
+      packageId: randomUUID(),
+      contentHash: '4'.repeat(64),
+      createdAt: '2026-08-24T10:00:00.000Z',
+    });
+    const secondPlan = makePlan(
+      randomUUID(),
+      secondContext!.version,
+      '5'.repeat(64),
+      '2026-08-24T11:00:00.000Z',
+    );
+    await plans.saveIdempotent(secondPlan);
+
+    await expect(service.get(tenantId, approved.approvalId)).resolves
+      .toEqual(expect.objectContaining({
+        status: 'invalidated',
+        decisionReason: 'plan_hash_changed',
+      }));
+    await expect(service.get(otherTenantId, approved.approvalId)).rejects
+      .toThrow('Approval not found');
+
+    const expiring = await service.request(
+      tenantId,
+      campaignId,
+      secondPlan.executionPlanId,
+      'warison',
+    );
+    await pool.query(
+      `update plan_approvals set expires_at = now() - interval '1 second'
+      where approval_id = $1`,
+      [expiring.approvalId],
+    );
+    await expect(service.get(tenantId, expiring.approvalId)).resolves
+      .toEqual(expect.objectContaining({
+        status: 'expired',
+        decisionReason: 'approval_expired',
+      }));
+
+    const audit = await pool.query<{ event_type: string }>(
+      `select event_type from audit_events
+      where tenant_id = $1 and object_type = 'plan_approval'
+        and object_id = any($2::text[])
+      order by created_at`,
+      [tenantId, [approved.approvalId, expiring.approvalId]],
+    );
+    expect(audit.rows.map((row) => row.event_type)).toEqual(expect.arrayContaining([
+      'campaign_plan_approval_requested',
+      'campaign_plan_approved',
+      'campaign_plan_approval_invalidated',
+      'campaign_plan_approval_expired',
+    ]));
+    expect(audit.rows).toHaveLength(5);
   });
 });
