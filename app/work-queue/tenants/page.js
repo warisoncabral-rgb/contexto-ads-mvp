@@ -20,7 +20,7 @@ export default async function TenantDailyPulsePage() {
       <section className="work-list">
         <div className="section-heading"><div><span className="eyebrow">Prioridade por fatos</span><h2>{pulse.tenants.length} cliente(s) com trabalho atual</h2></div><small>Sem score sintético</small></div>
         {pulse.tenants.map((tenant) => <article className={`work-item ${tenant.criticalCount ? 'work-critical' : tenant.highCount ? 'work-high' : ''}`} key={tenant.tenantId}>
-          <div className="work-item-head"><div><span>{tenant.criticalCount} crítica(s) · {tenant.enteredOrWorsenedCount} entrou/piorou</span><h3>{tenant.tenantDisplayName}</h3><small>{tenant.baselineAvailable ? `Baseline ${tenant.previousQueueDate}` : 'Sem baseline anterior'}</small></div><a href={`/work-queue?tenant=${tenant.tenantId}`}>Ver fila →</a></div>
+          <div className="work-item-head"><div><span>{tenant.criticalCount} crítica(s) · {tenant.enteredOrWorsenedCount} entrou/piorou</span><h3>{tenant.tenantDisplayName}</h3><small>{tenant.baselineAvailable ? `Baseline ${tenant.previousQueueDate}` : 'Sem baseline anterior'}</small></div>{tenant.primaryExecutionPlanId && <a href={`/?tenantId=${tenant.tenantId}&executionPlanId=${tenant.primaryExecutionPlanId}`}>Abrir operação →</a>}</div>
           <div className="work-next"><span>Responsabilidade atual</span><strong>Operador {tenant.operatorCount} · Sistema {tenant.systemCount} · Ambiente Meta {tenant.metaEnvironmentCount}</strong></div>
           <p>{tenant.pendingCount} pendência(s) atuais · {tenant.resolvedCount} resolvida(s) · {tenant.improvedCount} melhorada(s) desde o baseline disponível.</p>
         </article>)}
