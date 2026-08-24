@@ -2,6 +2,7 @@ import { OperatorRole } from './operator-access';
 
 export type OperatorWorkOwner = 'system' | 'operator' | 'meta_environment';
 export type OperatorWorkPriority = 'critical' | 'high' | 'normal';
+export type OperatorWorkChangeKind = 'entered' | 'worsened' | 'improved' | 'unchanged' | 'resolved';
 
 export interface OperatorWorkItemV1 {
   workItemId: string;
@@ -37,9 +38,39 @@ export interface OperatorWorkQueueSnapshotV1 {
   generatedAt: string;
 }
 
+export interface OperatorWorkQueueStoredSnapshotV1 extends OperatorWorkQueueSnapshotV1 {
+  items: OperatorWorkItemV1[];
+}
+
+export interface OperatorWorkQueueChangeV1 {
+  workItemId: string;
+  tenantId: string;
+  tenantDisplayName: string;
+  campaignId: string;
+  executionPlanId: string;
+  blockerCode: string;
+  kind: OperatorWorkChangeKind;
+  previousPriority: OperatorWorkPriority | null;
+  currentPriority: OperatorWorkPriority | null;
+  meaning: string;
+  evidenceRefs: string[];
+  previousQueueDate: string | null;
+  currentQueueDate: string;
+}
+
 export interface OperatorWorkQueueV1 {
   items: OperatorWorkItemV1[];
   snapshots: OperatorWorkQueueSnapshotV1[];
+  changes: OperatorWorkQueueChangeV1[];
+  changeSummary: {
+    baselineAvailableTenantCount: number;
+    baselineMissingTenantCount: number;
+    enteredCount: number;
+    worsenedCount: number;
+    improvedCount: number;
+    unchangedCount: number;
+    resolvedCount: number;
+  };
   summary: {
     authorizedTenantCount: number;
     pendingItemCount: number;
@@ -55,6 +86,8 @@ export interface OperatorWorkQueueV1 {
     deadlinesFabricated: false;
     completionInferred: false;
     dailySnapshotsPersisted: true;
+    changesDerivedFromPersistedSnapshots: true;
+    missingBaselineDoesNotInferChanges: true;
     publicationAuthorized: false;
     externalWritesAllowed: false;
     externalWritesPerformed: false;
