@@ -30,4 +30,13 @@ export class MetaConnectionController {
   ) {
     return this.service.listAssets(tenantId, connectionId);
   }
+
+  @Get(':connectionId/ad-accounts/:adAccountId')
+  readAdAccount(
+    @Param('connectionId') connectionId: string,
+    @Param('adAccountId') adAccountId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.readDiscoveredAdAccount(tenantId, connectionId, adAccountId);
+  }
 }
