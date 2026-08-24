@@ -180,8 +180,9 @@ contrato. Isso atualiza o Centro de Pendências, mas declara explicitamente
 `externalWritesAllowed: false`. Aprovação não substitui autorização curta,
 preflight, Kill Switch ou validação do executor real.
 
-### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/target`
-Body: `{"tenantId":"...","connectionId":"...","adAccountId":"act_..."}`.
+### `POST /v1/operator/tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/target`
+Body: `{"connectionId":"...","adAccountId":"act_..."}`. Exige autenticação,
+membership ativa e `manage_campaign_preparation`.
 Vincula ao plano somente uma conta de anúncios presente no snapshot de descoberta
 da mesma conexão e tenant. IDs arbitrários, conexões não prontas e planos antigos
 são recusados antes da persistência.
@@ -190,9 +191,9 @@ O vínculo produz um novo plano, hash e idempotency key, mantém os objetos paus
 e os efeitos externos desabilitados. Aprovações do hash anterior são invalidadas
 imediatamente, com auditoria na mesma transação da invalidação.
 
-### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/simulations`
-Body: `{"tenantId":"...","approvalId":"..."}`. Executa um dry-run local e
-persistente, sem chamar endpoints de escrita. A simulação comprova:
+### Simulação interna protegida
+As rotas públicas de simulação foram removidas. O dry-run é invocado apenas pelo
+fluxo autenticado de aprovação/prontidão, sem chamar endpoints de escrita, e comprova:
 
 - plano mais recente e grafo de dependências sem ciclos;
 - conexão Meta pronta e conta ainda presente nos ativos descobertos;
@@ -203,8 +204,7 @@ persistente, sem chamar endpoints de escrita. A simulação comprova:
 
 O relatório ordena campanha, criativo, conjunto e anúncio pelas dependências,
 mas todas as operações registram `willExecute: false`. Mesmo um relatório
-`ready_for_execution` não publica nada. O último relatório fica disponível em
-`GET /v1/plans/:executionPlanId/simulations/latest?tenantId=...`.
+`ready_for_execution` não publica nada e não é exposto como autorização pública.
 
 ### `POST /v1/creative-packages/:campaignId/versions`
 Registra uma nova versão completa do pacote criativo com `tenantId`,
@@ -228,8 +228,9 @@ Retorna somente a versão criativa mais recente do tenant. O dry-run exige que o
 plano referencie exatamente o ID, a versão e o hash desse pacote em estado
 `approved`; marcar apenas `copyStatus` no plano não é suficiente.
 
-### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/readiness-decisions`
-Body: `{"tenantId":"...","approvalId":"..."}`. Gera uma decisão operacional
+### Decisões internas de prontidão
+As rotas públicas de geração foram removidas. O fluxo autenticado de aprovação
+gera uma decisão operacional
 em linguagem simples. Quando `approvalId` é omitido, o serviço reaproveita a
 referência da última simulação e sempre executa um novo dry-run seguro para
 detectar aprovação expirada, plano alterado ou evidência que deixou de ser válida.
@@ -252,8 +253,8 @@ O estado máximo nesta fase é `ready_for_executor_validation`. Mesmo nele,
 `campaignPublished`, `campaignActive`, `campaignDelivering`,
 `externalWritesAllowed` e `externalWritesPerformed` permanecem `false`.
 
-### `GET /v1/plans/:executionPlanId/readiness-decisions/latest?tenantId=...`
-Retorna a última decisão persistida somente depois de comprovar que o plano
+`GET /v1/operator/tenants/:tenantId/plans/:executionPlanId/readiness` retorna a
+última decisão persistida somente depois de autenticar, validar membership e comprovar que o plano
 pertence ao tenant. Decisões semanticamente iguais retornam o mesmo snapshot e
 somente a primeira inserção gera o evento de auditoria.
 

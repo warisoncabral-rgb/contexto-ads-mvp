@@ -40,6 +40,7 @@ import { CampaignContextService } from '../campaign-context/campaign-context.ser
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 import { ApprovalService } from '../approval/approval.service';
 import { OperationalReadinessService } from '../operational-readiness/operational-readiness.service';
+import { ExecutionSimulationService } from '../execution-simulation/execution-simulation.service';
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
   owner: [
@@ -76,6 +77,7 @@ export class OperatorAccessService {
     private readonly executionPlans: ExecutionPlanService,
     private readonly approvalService: ApprovalService,
     private readonly operationalReadiness: OperationalReadinessService,
+    private readonly executionSimulations: ExecutionSimulationService,
   ) {}
 
   async listTenants(
@@ -284,6 +286,15 @@ export class OperatorAccessService {
       tenantId, campaignId, executionPlanId, operator.subject,
     );
     return this.approvalReadiness(approval);
+  }
+
+  async bindExecutionTarget(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string, executionPlanId: string, connectionId?: string, adAccountId?: string) {
+    const { membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertCanPrepareCampaign(membership.role);
+    return this.executionSimulations.bindTarget(
+      tenantId, campaignId, executionPlanId, connectionId, adAccountId,
+    );
   }
 
   async getPlanApproval(authorizationHeader: string | undefined, tenantId: string,

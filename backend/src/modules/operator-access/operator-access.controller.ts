@@ -75,6 +75,20 @@ export class OperatorAccessController {
     );
   }
 
+  @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/target')
+  bindExecutionTarget(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Param('executionPlanId') executionPlanId: string,
+    @Body() body: { connectionId?: string; adAccountId?: string },
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.service.bindExecutionTarget(
+      authorization, tenantId, campaignId, executionPlanId,
+      body?.connectionId, body?.adAccountId,
+    );
+  }
+
   @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/approvals')
   requestPlanApproval(
     @Param('tenantId') tenantId: string,
