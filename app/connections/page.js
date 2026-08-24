@@ -1,5 +1,6 @@
 import { loadMetaConnectionSetup } from '../../lib/meta-connection-setup.mjs'
 import MetaConnectionForm from './meta-connection-form'
+import MetaSmokeForm from './meta-smoke-form'
 
 const copy = {
   configuration_required: ['Configuração necessária', 'Conecte a Central ao backend seguro antes de iniciar OAuth.'],
@@ -21,6 +22,7 @@ export default async function ConnectionsPage({ searchParams }) {
     <section className="work-hero"><div><span className="eyebrow">Primeiro gate real</span><h1>Conectar {setup.selectedTenant.displayName} em modo somente leitura.</h1><p>O OAuth será iniciado pelo servidor e a credencial nunca será enviada ao navegador.</p></div></section>
     <nav className="campaign-nav" aria-label="Clientes configuráveis">{setup.tenants.map((tenant) => <a className={tenant.tenantId === setup.selectedTenant.tenantId ? 'active' : ''} key={tenant.tenantId} href={`/connections?tenantId=${tenant.tenantId}`}>{tenant.displayName}</a>)}</nav>
     <MetaConnectionForm tenantId={setup.selectedTenant.tenantId} />
-    <div className="portfolio-boundary">Esta etapa apenas abre o consentimento OAuth de leitura. Publicação, ativação, entrega e escrita externa continuam bloqueadas.</div>
+    <MetaSmokeForm tenantId={setup.selectedTenant.tenantId} />
+    <div className="portfolio-boundary">O smoke real permanece somente leitura. Publicação, ativação, entrega e escrita externa continuam bloqueadas mesmo quando as quatro etapas passam.</div>
   </main></>
 }
