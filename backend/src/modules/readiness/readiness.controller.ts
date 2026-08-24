@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { MetaTenantOwnerGuard } from '../meta-connection/meta-tenant-owner.guard';
 import { ReadinessService } from './readiness.service';
 
 @Controller('readiness')
+@UseGuards(MetaTenantOwnerGuard)
 export class ReadinessController {
   constructor(private readonly service: ReadinessService) {}
 

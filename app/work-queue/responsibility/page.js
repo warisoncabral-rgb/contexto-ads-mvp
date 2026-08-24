@@ -1,0 +1,11 @@
+import { loadOperatorWorkQueue } from '../../../lib/operator-work-queue.mjs'
+import { deriveOperatorControlBoundaries } from '../../../lib/operator-control-boundaries.mjs'
+
+function Lane({title,data}){return <article><span>{title}</span><strong>{data.count}</strong><small>{data.criticalCount} crítica(s) · {data.highCount} alta(s) · {data.tenantCount} cliente(s)</small></article>}
+
+export default async function ResponsibilityPage(){
+  const result=await loadOperatorWorkQueue()
+  if(result.kind!=='ready') return <main className="portfolio-state"><span className="eyebrow">Domínios de responsabilidade</span><h1>Dados não confirmados.</h1><a href="/work-queue">Voltar à fila</a></main>
+  const view=deriveOperatorControlBoundaries(result.queue)
+  return <><header className="topbar"><a className="brand" href="/"><span className="brand-mark">C</span><span><strong>Contexto Ads</strong><small>Domínios de responsabilidade</small></span></a><div className="environment"><span />Somente leitura</div></header><main className="work-shell"><section className="work-hero"><div><span className="eyebrow">Responsabilidade comprovada</span><h1>Onde cada pendência pertence.</h1><p>A separação usa somente o owner persistido. Não presume controle, autorização ou capacidade de resolver.</p></div><a href="/work-queue">Voltar à fila</a></section><section className="work-metrics"><Lane title="Operador" data={view.operator}/><Lane title="Sistema" data={view.system}/><Lane title="Ambiente Meta" data={view.metaEnvironment}/><article><span>Dependência externa explícita</span><strong>{view.externalEnvironmentCount}</strong><small>Somente owner=meta_environment</small></article></section><section className="work-list">{[['Operador',view.operator],['Sistema',view.system],['Ambiente Meta',view.metaEnvironment]].map(([title,data])=><article className="work-item" key={title}><div className="work-item-head"><div><span>{title}</span><h3>{data.count} pendência(s)</h3></div></div>{data.items.map((item)=><p key={item.workItemId}>{item.tenantDisplayName} · {item.priority} · {item.blockerCode}</p>)}</article>)}</section><div className="portfolio-boundary">Responsabilidade derivada exclusivamente de owner. Nenhuma controlabilidade, autorização, prazo ou escrita externa foi inferida.</div></main></>
+}

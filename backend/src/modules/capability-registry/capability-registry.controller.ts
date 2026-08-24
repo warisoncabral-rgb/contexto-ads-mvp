@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { MetaTenantOwnerGuard } from '../meta-connection/meta-tenant-owner.guard';
 import { CapabilityRegistryService } from './capability-registry.service';
 
 @Controller('meta/connections')
+@UseGuards(MetaTenantOwnerGuard)
 export class CapabilityRegistryController {
   constructor(private readonly service: CapabilityRegistryService) {}
 

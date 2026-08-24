@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
+import { AuditEvent } from '../../domain/contracts/audit-event';
 import {
   CampaignBudget,
   CampaignContextFacts,
@@ -37,6 +38,16 @@ const REQUIRED_FIELDS: CampaignContextField[] = [
   'budget',
   'durationDays',
 ];
+const FIELD_LABELS: Record<CampaignContextField, string> = {
+  businessName: 'nome do negócio',
+  offer: 'produto ou serviço anunciado',
+  objective: 'objetivo principal',
+  audience: 'público desejado',
+  destination: 'destino do contato',
+  geography: 'local de veiculação',
+  budget: 'orçamento',
+  durationDays: 'duração da campanha',
+};
 
 @Injectable()
 export class CampaignContextService {
@@ -45,13 +56,24 @@ export class CampaignContextService {
     private readonly contexts: CampaignContextRepository,
   ) {}
 
-  async create(tenantId: unknown, input?: CampaignContextInput) {
+  async create(
+    tenantId: unknown,
+    input?: CampaignContextInput,
+    operatorSubject?: string,
+  ) {
     this.assertUuid(tenantId, 'tenantId');
     const now = new Date().toISOString();
     const campaignId = randomUUID();
     const context = this.buildContext(tenantId, campaignId, input, now);
     const versioned: CampaignContextPackageV1 = { ...context, version: 1 };
-    await this.contexts.create(versioned);
+    if (operatorSubject) {
+      await this.contexts.create(
+        versioned,
+        this.changeEvent(versioned, operatorSubject, 'created'),
+      );
+    } else {
+      await this.contexts.create(versioned);
+    }
     return versioned;
   }
 
@@ -59,6 +81,7 @@ export class CampaignContextService {
     tenantId: unknown,
     campaignId: string,
     input?: CampaignContextInput,
+    operatorSubject?: string,
   ) {
     this.assertUuid(tenantId, 'tenantId');
     this.assertUuid(campaignId, 'campaignId');
@@ -68,9 +91,41 @@ export class CampaignContextService {
       input,
       new Date().toISOString(),
     );
-    const versioned = await this.contexts.appendNext(context);
+    const versioned = operatorSubject
+      ? await this.contexts.appendNext(
+        context,
+        this.changeEvent(context, operatorSubject, 'updated'),
+      )
+      : await this.contexts.appendNext(context);
     if (!versioned) throw new NotFoundException('Campaign context not found');
     return versioned;
+  }
+
+  private changeEvent(
+    context: UnversionedCampaignContextPackageV1,
+    operatorSubject: string,
+    action: 'created' | 'updated',
+  ): AuditEvent {
+    return {
+      auditEventId: randomUUID(),
+      tenantId: context.tenantId,
+      correlationId: randomUUID(),
+      actorType: 'user',
+      actorId: operatorSubject,
+      eventType: `operator_campaign_context_${action}`,
+      objectType: 'campaign_context_package',
+      objectId: context.packageId,
+      newState: {
+        campaignId: context.campaignId,
+        status: context.status,
+        blockerCount: context.validationIssues.length,
+        contentHash: context.contentHash,
+        publicationAuthorized: false,
+        externalWritesAllowed: false,
+      },
+      result: 'success',
+      createdAt: context.createdAt,
+    };
   }
 
   async latest(tenantId: string, campaignId: string) {
@@ -137,8 +192,8 @@ export class CampaignContextService {
         code: 'required_fact_missing',
         field,
         severity: 'blocker',
-        message: `A informação obrigatória "${field}" ainda não foi informada.`,
-        nextAction: `Solicitar e registrar "${field}" antes de gerar a campanha.`,
+        message: `A informação obrigatória "${FIELD_LABELS[field]}" ainda não foi informada.`,
+        nextAction: `Informar ${FIELD_LABELS[field]} antes de gerar a campanha.`,
       }));
   }
 
