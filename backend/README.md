@@ -316,6 +316,23 @@ retorna o protocolo somente dentro do tenant. Sua existência passa a aparecer
 como referência no preflight, mas o check `real_meta_write_validation` permanece
 `blocked`: preparar o teste não significa executá-lo nem aprová-lo.
 
+### Acesso do operador e seleção de clientes
+`GET /v1/operator/tenants` exige `Authorization: Bearer <token>` e retorna
+somente tenants ativos vinculados ao sujeito autenticado por uma membership
+ativa. Perfis suspensos, memberships revogadas e vínculos de outro sujeito não
+aparecem na resposta.
+
+O primeiro adapter é um bootstrap sem dependência cloud: a hospedagem configura
+`OPERATOR_BOOTSTRAP_SUBJECT` e apenas o SHA-256 do token em
+`OPERATOR_BOOTSTRAP_TOKEN_SHA256`. Comparação é feita em tempo constante e
+configuração ausente ou inválida responde fail-closed. O token em texto puro
+nunca entra no Git, PostgreSQL, resposta ou auditoria.
+
+As permissões são derivadas exclusivamente do papel persistido (`owner`,
+`operator` ou `viewer`). Nenhum papel autoriza publicação ou escrita externa
+por si só. Cada tenant retornado gera evidência de acesso de leitura em
+`AuditEvent`; falha ao auditar impede a resposta.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -331,6 +348,7 @@ como referência no preflight, mas o check `real_meta_write_validation` permanec
 - Autorizações curtas não substituem os demais gates; preflight bloqueado não é registrado como execução.
 - Kill Switch ausente ou acionado bloqueia; liberá-lo não substitui autorização, validação Meta ou adapter.
 - Protocolo de validação é somente instrução/evidência esperada; não é comando de execução nem prova de escrita real.
+- Identidade autenticada não concede acesso global; toda seleção deriva de membership ativa e tenant ativo.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega

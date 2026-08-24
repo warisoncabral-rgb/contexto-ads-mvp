@@ -14,6 +14,7 @@ import { ExecutionManifestModule } from './modules/execution-manifest/execution-
 import { ExecutionAuthorizationModule } from './modules/execution-authorization/execution-authorization.module';
 import { KillSwitchModule } from './modules/kill-switch/kill-switch.module';
 import { MetaWriteValidationModule } from './modules/meta-write-validation/meta-write-validation.module';
+import { OperatorAccessModule } from './modules/operator-access/operator-access.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { MetaWriteValidationModule } from './modules/meta-write-validation/meta-
     ExecutionAuthorizationModule,
     KillSwitchModule,
     MetaWriteValidationModule,
+    OperatorAccessModule,
   ],
 })
 export class AppModule {}
