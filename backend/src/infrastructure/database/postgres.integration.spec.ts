@@ -187,6 +187,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       identity,
       memberships,
       new PostgresAuditRepository(pool),
+      new PostgresAuditRepository(pool),
       planRepository,
       new PostgresOperationalReadinessRepository(pool),
       new PostgresCampaignContextRepository(pool),

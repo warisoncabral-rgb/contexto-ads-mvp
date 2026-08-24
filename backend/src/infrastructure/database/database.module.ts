@@ -12,6 +12,7 @@ import {
   EXECUTION_PLAN_REPOSITORY,
   APPROVAL_REPOSITORY,
   AUDIT_REPOSITORY,
+  AUDIT_TIMELINE_REPOSITORY,
   EXECUTION_SIMULATION_REPOSITORY,
   CREATIVE_PACKAGE_REPOSITORY,
   OPERATIONAL_READINESS_REPOSITORY,
@@ -94,6 +95,11 @@ import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-
       useFactory: (pool: Pool) => new PostgresAuditRepository(pool),
     },
     {
+      provide: AUDIT_TIMELINE_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresAuditRepository(pool),
+    },
+    {
       provide: EXECUTION_SIMULATION_REPOSITORY,
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresExecutionSimulationRepository(pool),
@@ -145,6 +151,7 @@ import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-
     EXECUTION_PLAN_REPOSITORY,
     APPROVAL_REPOSITORY,
     AUDIT_REPOSITORY,
+    AUDIT_TIMELINE_REPOSITORY,
     EXECUTION_SIMULATION_REPOSITORY,
     CREATIVE_PACKAGE_REPOSITORY,
     OPERATIONAL_READINESS_REPOSITORY,

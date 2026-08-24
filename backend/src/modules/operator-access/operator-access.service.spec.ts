@@ -8,6 +8,7 @@ import {
 } from '../../domain/ports/operator-identity.port';
 import {
   AuditRepository,
+  AuditTimelineRepository,
   OperatorPlanSelectionRepository,
   OperatorCampaignContextSelectionRepository,
   OperationalReadinessRepository,
@@ -55,6 +56,7 @@ describe('OperatorAccessService', () => {
   let identity: jest.Mocked<OperatorIdentityPort>;
   let memberships: jest.Mocked<OperatorTenantMembershipRepository>;
   let audit: jest.Mocked<AuditRepository>;
+  let auditTimeline: jest.Mocked<AuditTimelineRepository>;
   let plans: jest.Mocked<OperatorPlanSelectionRepository>;
   let readiness: jest.Mocked<OperationalReadinessRepository>;
   let contextSelection: jest.Mocked<OperatorCampaignContextSelectionRepository>;
@@ -79,6 +81,7 @@ describe('OperatorAccessService', () => {
       listActiveForSubject: jest.fn().mockResolvedValue(membershipsFixture),
     };
     audit = { append: jest.fn().mockResolvedValue(undefined) };
+    auditTimeline = { listForCampaign: jest.fn().mockResolvedValue([]) };
     plans = {
       listLatestForTenant: jest.fn().mockResolvedValue([]),
       findById: jest.fn(),
@@ -111,6 +114,7 @@ describe('OperatorAccessService', () => {
       identity,
       memberships,
       audit,
+      auditTimeline,
       plans,
       readiness,
       contextSelection,
@@ -125,6 +129,41 @@ describe('OperatorAccessService', () => {
       killSwitch as unknown as KillSwitchService,
       metaWriteValidation as unknown as MetaWriteValidationService,
     );
+  });
+
+  it('returns a sanitized campaign timeline after membership and plan verification', async () => {
+    const tenantId = membershipsFixture[0].tenantId;
+    const campaignId = '55555555-5555-4555-8555-555555555555';
+    const executionPlanId = '66666666-6666-4666-8666-666666666666';
+    plans.findById.mockResolvedValueOnce({ tenantId, campaignId, executionPlanId } as ExecutionPlanV1);
+    auditTimeline.listForCampaign.mockResolvedValueOnce([{
+      auditEventId: '77777777-7777-4777-8777-777777777777', tenantId,
+      correlationId: '88888888-8888-4888-8888-888888888888', actorType: 'user',
+      actorId: 'sensitive-subject', eventType: 'campaign_plan_approved',
+      objectType: 'plan_approval', objectId: '99999999-9999-4999-8999-999999999999',
+      newState: { secret: 'must-not-leak' }, result: 'success',
+      createdAt: '2026-08-24T18:00:00.000Z',
+    }]);
+    const result = await service.campaignTimeline(
+      'Bearer token', tenantId, campaignId, executionPlanId,
+    );
+    expect(auditTimeline.listForCampaign).toHaveBeenCalledWith(tenantId, campaignId, 100);
+    expect(result.items[0]).toEqual(expect.objectContaining({
+      title: 'Plano aprovado', actor: 'Usuário autenticado',
+      evidenceRef: 'plan_approval:99999999-9999-4999-8999-999999999999',
+    }));
+    expect(JSON.stringify(result)).not.toContain('sensitive-subject');
+    expect(JSON.stringify(result)).not.toContain('must-not-leak');
+    expect(result.boundaries.secretsExposed).toBe(false);
+  });
+
+  it('does not reveal campaign history for another tenant or mismatched plan', async () => {
+    await expect(service.campaignTimeline('Bearer token',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      '55555555-5555-4555-8555-555555555555',
+      '66666666-6666-4666-8666-666666666666'))
+      .rejects.toBeInstanceOf(UnauthorizedException);
+    expect(auditTimeline.listForCampaign).not.toHaveBeenCalled();
   });
 
   it('protects the executor preflight and derives every actor from authentication', async () => {

@@ -43,6 +43,9 @@ export interface CapabilityRepository {
   listForConnection(tenantId: string, connectionId: string): Promise<CapabilityRecord[]>;
 }
 export interface AuditRepository { append(event: AuditEvent): Promise<void>; }
+export interface AuditTimelineRepository {
+  listForCampaign(tenantId: string, campaignId: string, limit: number): Promise<AuditEvent[]>;
+}
 export interface ReadinessRepository {
   save(snapshot: ReadinessSnapshot): Promise<void>;
   latestForConnection(tenantId: string, connectionId: string): Promise<ReadinessSnapshot | null>;

@@ -87,6 +87,9 @@
 - A identidade usada em solicitações e decisões do executor é derivada do token server-side; campos de autoria enviados pelo cliente foram eliminados dessas rotas.
 - Operadores podem preparar e solicitar validação, proprietários decidem autorizações e controlam switches/protocolos, e viewers permanecem somente leitura.
 - As rotas internas públicas do controle de execução foram removidas; conhecer UUIDs não contorna membership nem isolamento por tenant.
+- Linha do tempo operacional tenant-scoped consolida somente eventos críticos realmente persistidos e vinculados aos objetos da campanha.
+- A resposta de histórico é sanitizada por contrato: não expõe ator identificável, estados JSON brutos, erros internos ou credenciais.
+- Marcos de contexto, plano, criativo, aprovação, prontidão, executor e segurança são traduzidos para linguagem operacional sem inferir publicação ou entrega.
 
 ## Bloco interno de validação controlada concluído
 1. O contrato do primeiro teste de criação pausada está persistido e auditável.
