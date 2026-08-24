@@ -27,7 +27,11 @@ import {
 } from '../contracts/kill-switch';
 import { MetaWriteValidationProtocolV1 } from '../contracts/meta-write-validation';
 import { OperatorTenantMembershipV1 } from '../contracts/operator-access';
-import { OperatorWorkItemV1, OperatorWorkQueueSnapshotV1 } from '../contracts/operator-work-queue';
+import {
+  OperatorWorkItemV1,
+  OperatorWorkQueueSnapshotInputV1,
+  OperatorWorkQueueSnapshotV1,
+} from '../contracts/operator-work-queue';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -223,7 +227,7 @@ export interface OperatorTenantMembershipRepository {
 }
 
 export interface OperatorWorkQueueSnapshotRepository {
-  saveDaily(snapshot: OperatorWorkQueueSnapshotV1, items: OperatorWorkItemV1[]):
+  saveDaily(snapshot: OperatorWorkQueueSnapshotInputV1, items: OperatorWorkItemV1[]):
     Promise<OperatorWorkQueueSnapshotV1>;
 }
 
