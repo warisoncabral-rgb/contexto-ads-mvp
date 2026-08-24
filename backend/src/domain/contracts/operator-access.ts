@@ -43,3 +43,27 @@ export interface OperatorWorkspaceAccessV1 {
   };
   generatedAt: string;
 }
+
+export interface OperatorExecutionPlanSummaryV1 {
+  tenantId: string;
+  campaignId: string;
+  executionPlanId: string;
+  status: 'draft' | 'pending' | 'blocked' | 'ready_for_approval' | 'approved' | 'executing';
+  campaignPackageVersion: number;
+  maximumPlannedSpendMinor: number;
+  currency: string;
+  createdAt: string;
+}
+
+export interface OperatorTenantPlansV1 {
+  tenantId: string;
+  plans: OperatorExecutionPlanSummaryV1[];
+  boundaries: {
+    tenantAccessVerified: true;
+    latestPlanPerCampaign: true;
+    publicationAuthorized: false;
+    externalWritesAllowed: false;
+    externalWritesPerformed: false;
+  };
+  generatedAt: string;
+}

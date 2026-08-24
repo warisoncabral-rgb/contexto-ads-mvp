@@ -333,6 +333,20 @@ As permissões são derivadas exclusivamente do papel persistido (`owner`,
 por si só. Cada tenant retornado gera evidência de acesso de leitura em
 `AuditEvent`; falha ao auditar impede a resposta.
 
+`GET /v1/operator/tenants/:tenantId/plans` repete a autenticação, confirma a
+membership ativa antes de consultar o repositório e retorna somente o plano mais
+recente de cada campanha daquele tenant. Tentativas de descoberta entre tenants
+são recusadas antes da consulta de planos e toda listagem autorizada é auditada.
+
+A Central Operacional consome os dois endpoints exclusivamente no servidor com
+`CONTEXT_ADS_OPERATOR_TOKEN`. O token não usa prefixo `NEXT_PUBLIC_`, não integra
+o HTML e não é enviado ao navegador. Cliente e plano passam a ser selecionados
+por nome/estado, sem digitação manual de UUID. Respostas fora do tenant ou que
+aleguem publicação/escrita são rejeitadas pela interface em modo fail-closed.
+`GET /v1/operator/tenants/:tenantId/plans/:executionPlanId/readiness` protege
+também a decisão final: autentica novamente, confirma membership, comprova que o
+plano pertence ao tenant e audita a leitura antes de devolver a evidência.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.

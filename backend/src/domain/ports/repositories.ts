@@ -77,6 +77,11 @@ export interface ExecutionPlanRepository {
   findById(tenantId: string, executionPlanId: string): Promise<ExecutionPlanV1 | null>;
 }
 
+export interface OperatorPlanSelectionRepository {
+  listLatestForTenant(tenantId: string): Promise<ExecutionPlanV1[]>;
+  findById(tenantId: string, executionPlanId: string): Promise<ExecutionPlanV1 | null>;
+}
+
 export interface ApprovalRepository {
   request(approval: ApprovalV1, event: AuditEvent): Promise<ApprovalV1>;
   findById(tenantId: string, approvalId: string): Promise<ApprovalV1 | null>;

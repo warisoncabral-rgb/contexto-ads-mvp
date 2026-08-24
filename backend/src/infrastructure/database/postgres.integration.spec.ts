@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { UnauthorizedException } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Pool } from 'pg';
@@ -152,7 +153,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     );
   });
 
-  it('derives operator tenant selection only from active memberships', async () => {
+  it('derives operator tenant and plan selection only from active memberships', async () => {
     const subject = 'operator:integration';
     const membershipId = randomUUID();
     await pool.query(
@@ -178,10 +179,13 @@ describeWithPostgres('PostgreSQL integration', () => {
         authenticatedAt: '2026-08-24T15:00:00.000Z',
       }),
     };
+    const planRepository = new PostgresExecutionPlanRepository(pool);
     const service = new OperatorAccessService(
       identity,
       memberships,
       new PostgresAuditRepository(pool),
+      planRepository,
+      new PostgresOperationalReadinessRepository(pool),
     );
     const result = await service.listTenants(
       'Bearer integration-token-with-at-least-32-characters',
@@ -202,6 +206,69 @@ describeWithPostgres('PostgreSQL integration', () => {
       [tenantId, subject],
     );
     expect(accessAudit.rows[0].count).toBe('1');
+
+    const campaignId = randomUUID();
+    await new PostgresCampaignContextRepository(pool).create({
+      packageId: randomUUID(),
+      tenantId,
+      campaignId,
+      version: 1,
+      schemaVersion: '1.0',
+      status: 'ready_for_generation',
+      facts: {},
+      inferences: [],
+      validationIssues: [],
+      contentHash: '9'.repeat(64),
+      createdAt: '2026-08-24T15:30:00.000Z',
+    });
+    const executionPlanId = randomUUID();
+    await planRepository.saveIdempotent({
+      executionPlanId,
+      tenantId,
+      campaignId,
+      campaignPackageVersion: 1,
+      planVersion: '1.0',
+      correlationId: randomUUID(),
+      planHash: '8'.repeat(64),
+      idempotencyKey: '7'.repeat(64),
+      status: 'draft',
+      meta: { assetBindings: [], requiredCapabilities: [] },
+      objectsToCreate: [],
+      readiness: [],
+      autonomy: { level: 'A0', approvalRequired: true },
+      financials: {
+        currency: 'BRL',
+        budgetMode: 'daily',
+        configuredAmountMinor: 1000,
+        maximumPlannedSpendMinor: 7000,
+        calculation: '1000 x 7 days',
+      },
+      decisions: [],
+      risks: [],
+      externalEffects: { writesAllowed: false, writesPerformed: false },
+      createdAt: '2026-08-24T15:30:00.000Z',
+    });
+    const planResult = await service.listTenantPlans(
+      'Bearer integration-token-with-at-least-32-characters',
+      tenantId,
+    );
+    expect(planResult.plans).toEqual([expect.objectContaining({
+      tenantId,
+      campaignId,
+      executionPlanId,
+      maximumPlannedSpendMinor: 7000,
+    })]);
+    await expect(service.listTenantPlans(
+      'Bearer integration-token-with-at-least-32-characters',
+      otherTenantId,
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    const planAudit = await pool.query<{ count: string }>(
+      `select count(*)::text as count from audit_events
+      where tenant_id = $1 and actor_id = $2
+        and event_type = 'operator_tenant_plans_listed'`,
+      [tenantId, subject],
+    );
+    expect(planAudit.rows[0].count).toBe('1');
   });
 
   it('replaces asset snapshots and enforces tenant scope in PostgreSQL', async () => {

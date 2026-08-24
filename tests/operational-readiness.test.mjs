@@ -7,6 +7,7 @@ import {
 
 const tenantId = '11111111-1111-4111-8111-111111111111'
 const executionPlanId = '22222222-2222-4222-8222-222222222222'
+process.env.CONTEXT_ADS_OPERATOR_TOKEN = 'test-server-only-token'
 
 function decision(overrides = {}) {
   return {
@@ -69,6 +70,19 @@ test('requires explicit backend configuration', async () => {
   assert.deepEqual(result, { kind: 'configuration_required' })
 })
 
+test('requires the server-side operator credential before reading a decision', async () => {
+  let called = false
+  const result = await loadOperationalReadiness({
+    tenantId,
+    executionPlanId,
+    apiBaseUrl: 'https://api.example.test',
+    operatorToken: '',
+    fetchImpl: async () => { called = true },
+  })
+  assert.deepEqual(result, { kind: 'configuration_required' })
+  assert.equal(called, false)
+})
+
 test('loads only a matching fail-closed operational decision', async () => {
   let requestedUrl
   const result = await loadOperationalReadiness({
@@ -78,12 +92,14 @@ test('loads only a matching fail-closed operational decision', async () => {
     fetchImpl: async (url, options) => {
       requestedUrl = url
       assert.equal(options.cache, 'no-store')
+      assert.equal(options.headers.authorization, 'Bearer server-only-secret')
       return { ok: true, status: 200, json: async () => decision() }
     },
+    operatorToken: 'server-only-secret',
   })
   assert.equal(result.kind, 'ready')
   assert.equal(requestedUrl,
-    `https://api.example.test/v1/plans/${executionPlanId}/readiness-decisions/latest?tenantId=${tenantId}`)
+    `https://api.example.test/v1/operator/tenants/${tenantId}/plans/${executionPlanId}/readiness`)
 })
 
 test('refuses payloads that claim an external state not proven by the contract', async () => {

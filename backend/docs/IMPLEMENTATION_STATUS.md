@@ -68,6 +68,11 @@
 - Perfis de tenant e memberships persistentes com papéis `owner`, `operator` e `viewer`; somente dois estados ativos produzem acesso.
 - Endpoint de seleção retorna apenas tenants associados ao sujeito autenticado, deriva permissões do papel e audita cada leitura antes de responder.
 - Autenticação ausente, credencial inválida, tenant suspenso, membership revogada ou falha de auditoria bloqueiam fail-closed.
+- Central Operacional integrada ao acesso autenticado com credencial exclusiva do servidor, nunca exposta ao navegador.
+- Seleção de cliente deriva somente das memberships retornadas pelo backend; UUID manual deixou de ser necessário.
+- Endpoint tenant-scoped retorna o plano mais recente de cada campanha somente após revalidar a membership e audita a leitura.
+- A interface valida o contrato e recusa respostas cruzadas entre tenants, credenciais rejeitadas ou fronteiras externas inconsistentes.
+- A decisão operacional exibida usa rota autenticada de ponta a ponta; conhecer UUIDs não permite contornar a membership.
 
 ## Bloco interno de validação controlada concluído
 1. O contrato do primeiro teste de criação pausada está persistido e auditável.
@@ -75,9 +80,9 @@
 3. O adapter permanece ausente até ambiente real, autorização curta e todos os gates comprovados.
 
 ## Próximo bloco interno de produto
-1. Integrar a Central Operacional ao endpoint autenticado de tenants sem expor o token ao navegador.
-2. Adicionar seleção tenant-scoped de campanhas e planos recentes.
-3. Manter publicação e escrita fora desta navegação até autorização específica e validação Meta real.
+1. Criar o fluxo guiado para cadastrar o contexto da campanha e transformar bloqueios em tarefas operacionais.
+2. Respeitar as permissões do papel na apresentação de ações sem conceder autorização de publicação.
+3. Manter publicação e escrita fora da interface até autorização específica e validação Meta real.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
