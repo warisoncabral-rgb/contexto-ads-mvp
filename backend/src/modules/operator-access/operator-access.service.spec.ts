@@ -131,6 +131,56 @@ describe('OperatorAccessService', () => {
     );
   });
 
+  it('builds a membership-scoped portfolio ordered by deterministic urgency', async () => {
+    const [owner, viewer] = membershipsFixture;
+    const ownerPlan = {
+      tenantId: owner.tenantId, campaignId: '55555555-5555-4555-8555-555555555555',
+      executionPlanId: '66666666-6666-4666-8666-666666666666', status: 'approved',
+      financials: { maximumPlannedSpendMinor: 12000, currency: 'BRL' },
+      createdAt: '2026-08-24T17:00:00.000Z',
+    } as ExecutionPlanV1;
+    const viewerPlan = {
+      tenantId: viewer.tenantId, campaignId: '77777777-7777-4777-8777-777777777777',
+      executionPlanId: '88888888-8888-4888-8888-888888888888', status: 'draft',
+      financials: { maximumPlannedSpendMinor: 5000, currency: 'BRL' },
+      createdAt: '2026-08-24T16:00:00.000Z',
+    } as ExecutionPlanV1;
+    plans.listLatestForTenant.mockImplementation(async (tenantId) =>
+      tenantId === owner.tenantId ? [ownerPlan] : [viewerPlan]);
+    readiness.latestForPlan.mockImplementation(async (tenantId) => tenantId === owner.tenantId
+      ? ({ tenantId: owner.tenantId, campaignId: ownerPlan.campaignId,
+        executionPlanId: ownerPlan.executionPlanId, status: 'blocked',
+        headline: 'Ambiente bloqueado', nextAction: 'Validar ambiente.', blockers: [{}, {}],
+        generatedAt: '2026-08-24T18:00:00.000Z' } as never)
+      : null);
+
+    const result = await service.portfolio('Bearer token');
+
+    expect(result.items.map((item) => item.readinessStatus)).toEqual(['blocked', 'not_evaluated']);
+    expect(result.items[0]).toEqual(expect.objectContaining({
+      tenantDisplayName: 'Rosa VIP Calçados', blockerCount: 2,
+      maximumPlannedSpendMinor: 12000, currency: 'BRL',
+    }));
+    expect(result.summary).toEqual({ authorizedTenantCount: 2, campaignCount: 2,
+      blockedCount: 1, actionRequiredCount: 0, readyCount: 0, notEvaluatedCount: 1 });
+    expect(result.boundaries).toEqual(expect.objectContaining({
+      tenantAccessDerivedFromMembership: true, priorityRuleIsDeterministic: true,
+      externalWritesAllowed: false, externalWritesPerformed: false,
+    }));
+  });
+
+  it('fails closed when a portfolio repository leaks another tenant scope', async () => {
+    plans.listLatestForTenant.mockResolvedValueOnce([{
+      tenantId: membershipsFixture[1].tenantId,
+      campaignId: '55555555-5555-4555-8555-555555555555',
+      executionPlanId: '66666666-6666-4666-8666-666666666666',
+    } as ExecutionPlanV1]);
+
+    await expect(service.portfolio('Bearer token')).rejects
+      .toBeInstanceOf(ServiceUnavailableException);
+    expect(readiness.latestForPlan).not.toHaveBeenCalled();
+  });
+
   it('returns a sanitized campaign timeline after membership and plan verification', async () => {
     const tenantId = membershipsFixture[0].tenantId;
     const campaignId = '55555555-5555-4555-8555-555555555555';
