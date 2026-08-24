@@ -51,6 +51,7 @@ import { KillSwitchService } from '../kill-switch/kill-switch.service';
 import { MetaWriteValidationService } from '../meta-write-validation/meta-write-validation.service';
 import { KillSwitchStatus } from '../../domain/contracts/kill-switch';
 import { OperatorCampaignTimelineV1, OperatorTimelineItemV1 } from '../../domain/contracts/operator-timeline';
+import { OperatorPortfolioItemV1, OperatorPortfolioV1 } from '../../domain/contracts/operator-portfolio';
 
 const TIMELINE_COPY: Record<string, Pick<OperatorTimelineItemV1, 'category' | 'title' | 'detail'>> = {
   operator_campaign_context_created: { category: 'context', title: 'Contexto da campanha criado', detail: 'Os fatos iniciais foram registrados e versionados.' },
@@ -149,6 +150,67 @@ export class OperatorAccessService {
         externalWritesAllowed: false,
         externalWritesPerformed: false,
       },
+      generatedAt,
+    };
+  }
+
+  async portfolio(authorizationHeader: string | undefined): Promise<OperatorPortfolioV1> {
+    const operator = await this.authenticate(authorizationHeader);
+    const memberships = await this.memberships.listActiveForSubject(operator.subject);
+    const rows = await Promise.all(memberships.map(async (membership) => {
+      const plans = await this.plans.listLatestForTenant(membership.tenantId);
+      return Promise.all(plans.map(async (plan): Promise<OperatorPortfolioItemV1> => {
+        if (plan.tenantId !== membership.tenantId) throw new ServiceUnavailableException({
+          code: 'portfolio_scope_inconsistent', message: 'Portfolio scope is inconsistent',
+        });
+        const decision = await this.readiness.latestForPlan(membership.tenantId, plan.executionPlanId);
+        if (decision && (decision.tenantId !== membership.tenantId
+          || decision.campaignId !== plan.campaignId
+          || decision.executionPlanId !== plan.executionPlanId)) {
+          throw new ServiceUnavailableException({
+            code: 'portfolio_readiness_inconsistent', message: 'Portfolio readiness is inconsistent',
+          });
+        }
+        return {
+          tenantId: membership.tenantId,
+          tenantDisplayName: membership.tenantDisplayName,
+          role: membership.role,
+          campaignId: plan.campaignId,
+          executionPlanId: plan.executionPlanId,
+          planStatus: plan.status,
+          readinessStatus: decision?.status ?? 'not_evaluated',
+          headline: decision?.headline ?? 'Prontidão operacional ainda não calculada',
+          nextAction: decision?.nextAction ?? 'Calcular a prontidão operacional deste plano.',
+          blockerCount: decision?.blockers.length ?? 0,
+          maximumPlannedSpendMinor: plan.financials.maximumPlannedSpendMinor,
+          currency: plan.financials.currency,
+          updatedAt: decision?.generatedAt ?? plan.createdAt,
+        };
+      }));
+    }));
+    const priority = { blocked: 0, action_required: 1, not_evaluated: 2,
+      ready_for_executor_validation: 3 } as const;
+    const items = rows.flat().sort((a, b) => priority[a.readinessStatus]
+      - priority[b.readinessStatus] || a.tenantDisplayName.localeCompare(b.tenantDisplayName)
+      || a.campaignId.localeCompare(b.campaignId));
+    const generatedAt = new Date().toISOString();
+    await Promise.all(memberships.map((membership) => this.audit.append(
+      this.portfolioAccessEvent(membership.tenantId, membership.membershipId,
+        operator.subject, generatedAt),
+    )));
+    return {
+      items,
+      summary: {
+        authorizedTenantCount: memberships.length,
+        campaignCount: items.length,
+        blockedCount: items.filter((item) => item.readinessStatus === 'blocked').length,
+        actionRequiredCount: items.filter((item) => item.readinessStatus === 'action_required').length,
+        readyCount: items.filter((item) => item.readinessStatus === 'ready_for_executor_validation').length,
+        notEvaluatedCount: items.filter((item) => item.readinessStatus === 'not_evaluated').length,
+      },
+      boundaries: { tenantAccessDerivedFromMembership: true, latestPlanPerCampaign: true,
+        priorityRuleIsDeterministic: true, publicationAuthorized: false,
+        externalWritesAllowed: false, externalWritesPerformed: false },
       generatedAt,
     };
   }
@@ -644,6 +706,23 @@ export class OperatorAccessService {
       },
       result: 'info',
       createdAt,
+    };
+  }
+
+  private portfolioAccessEvent(
+    tenantId: string,
+    membershipId: string,
+    operatorSubject: string,
+    createdAt: string,
+  ): AuditEvent {
+    return {
+      auditEventId: randomUUID(), tenantId, correlationId: randomUUID(),
+      actorType: 'user', actorId: operatorSubject,
+      eventType: 'operator_portfolio_viewed', objectType: 'operator_tenant_membership',
+      objectId: membershipId,
+      newState: { accessType: 'read_only_portfolio', latestPlanPerCampaign: true,
+        publicationAuthorized: false, externalWritesAllowed: false },
+      result: 'info', createdAt,
     };
   }
 

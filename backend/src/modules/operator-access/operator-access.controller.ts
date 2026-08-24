@@ -13,6 +13,11 @@ export class OperatorAccessController {
     return this.service.listTenants(authorization);
   }
 
+  @Get('portfolio')
+  portfolio(@Headers('authorization') authorization: string | undefined) {
+    return this.service.portfolio(authorization);
+  }
+
   @Get('tenants/:tenantId/plans')
   listTenantPlans(
     @Param('tenantId') tenantId: string,
