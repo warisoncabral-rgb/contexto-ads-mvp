@@ -39,6 +39,7 @@ import { OPERATOR_IDENTITY } from '../../infrastructure/operator-access/operator
 import { CampaignContextService } from '../campaign-context/campaign-context.service';
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 import { ApprovalService } from '../approval/approval.service';
+import { OperationalReadinessService } from '../operational-readiness/operational-readiness.service';
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
   owner: [
@@ -74,6 +75,7 @@ export class OperatorAccessService {
     private readonly campaignContexts: CampaignContextService,
     private readonly executionPlans: ExecutionPlanService,
     private readonly approvalService: ApprovalService,
+    private readonly operationalReadiness: OperationalReadinessService,
   ) {}
 
   async listTenants(
@@ -278,7 +280,10 @@ export class OperatorAccessService {
     campaignId: string, executionPlanId: string) {
     const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
     this.assertPermission(membership.role, 'request_approval');
-    return this.approvalService.request(tenantId, campaignId, executionPlanId, operator.subject);
+    const approval = await this.approvalService.request(
+      tenantId, campaignId, executionPlanId, operator.subject,
+    );
+    return this.approvalReadiness(approval);
   }
 
   async getPlanApproval(authorizationHeader: string | undefined, tenantId: string,
@@ -292,16 +297,42 @@ export class OperatorAccessService {
     const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
     this.assertPermission(membership.role, 'decide_approval');
     if (decision === 'approve') {
-      return this.approvalService.approve(tenantId, approvalId, operator.subject);
+      const approval = await this.approvalService.approve(tenantId, approvalId, operator.subject);
+      return this.approvalReadiness(approval);
     }
     if (decision === 'reject') {
-      return this.approvalService.reject(tenantId, approvalId, operator.subject, reason);
+      const approval = await this.approvalService.reject(
+        tenantId, approvalId, operator.subject, reason,
+      );
+      return this.approvalReadiness(approval);
     }
     if (decision === 'revoke') {
-      return this.approvalService.revoke(tenantId, approvalId, operator.subject, reason);
+      const approval = await this.approvalService.revoke(
+        tenantId, approvalId, operator.subject, reason,
+      );
+      return this.approvalReadiness(approval);
     }
     throw new BadRequestException({ code: 'invalid_approval_decision',
       message: 'Decision must be approve, reject or revoke' });
+  }
+
+  private async approvalReadiness(approval: import('../../domain/contracts/approval').ApprovalV1) {
+    const readiness = await this.operationalReadiness.generate(
+      approval.tenantId,
+      approval.campaignId,
+      approval.executionPlanId,
+      approval.approvalId,
+    );
+    return {
+      approval,
+      readiness,
+      boundaries: {
+        approvalIsExecutionAuthorization: false as const,
+        publicationAuthorized: false as const,
+        externalWritesAllowed: false as const,
+        externalWritesPerformed: false as const,
+      },
+    };
   }
 
   private async authenticate(authorizationHeader: string | undefined) {

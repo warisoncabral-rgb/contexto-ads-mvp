@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { parseCampaignForm } from '../lib/campaign-preparation.mjs'
 import { parsePlanGenerationForm, validGeneratedPlan } from '../lib/execution-plan-view.mjs'
 import { parseApprovalAction, validApproval } from '../lib/plan-approval.mjs'
+import { validOperationalDecision } from '../lib/operational-readiness.mjs'
 
 export async function saveCampaignContext(_previousState, formData) {
   const parsed = parseCampaignForm(formData)
@@ -130,8 +131,8 @@ export async function changePlanApproval(_previousState, formData) {
   } catch { return { error: 'Não foi possível registrar a decisão. Nada foi liberado.' } }
   if (response.status === 401 || response.status === 403) return { error: 'Seu papel não permite esta ação.' }
   if (!response.ok) return { error: 'A decisão foi recusada com segurança pelo backend.' }
-  let approval
-  try { approval = await response.json() } catch { return { error: 'O backend não confirmou a decisão.' } }
+  let result
+  try { result = await response.json() } catch { return { error: 'O backend não confirmou a decisão.' } }
   const expected = {
     tenantId: parsed.tenantId, campaignId: parsed.campaignId,
     executionPlanId: parsed.executionPlanId,
@@ -139,6 +140,14 @@ export async function changePlanApproval(_previousState, formData) {
     maximumPlannedSpendMinor: Number(formData.get('maximumPlannedSpendMinor')),
     currency: String(formData.get('currency') ?? ''),
   }
-  if (!validApproval(approval, expected)) return { error: 'A confirmação não corresponde ao plano revisado.' }
+  const approval = result?.approval
+  if (!validApproval(approval, expected)
+    || !validOperationalDecision(result?.readiness, parsed.tenantId, parsed.executionPlanId)
+    || result.boundaries?.approvalIsExecutionAuthorization !== false
+    || result.boundaries?.publicationAuthorized !== false
+    || result.boundaries?.externalWritesAllowed !== false
+    || result.boundaries?.externalWritesPerformed !== false) {
+    return { error: 'A confirmação operacional não corresponde ao plano revisado.' }
+  }
   redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}&executionPlanId=${encodeURIComponent(parsed.executionPlanId)}&approvalId=${encodeURIComponent(approval.approvalId)}`)
 }

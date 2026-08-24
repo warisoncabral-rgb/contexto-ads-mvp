@@ -173,6 +173,13 @@ somente consultar. A identidade decisora vem da autenticação. A aprovação
 acontece atomicamente apenas se o hash ainda corresponder ao plano
 mais recente e o prazo não tiver vencido. Rejeição e revogação exigem motivo.
 
+Cada solicitação ou decisão protegida também gera uma nova fotografia de
+prontidão pela simulação interna e devolve aprovação e prontidão no mesmo
+contrato. Isso atualiza o Centro de Pendências, mas declara explicitamente
+`approvalIsExecutionAuthorization: false`, `publicationAuthorized: false` e
+`externalWritesAllowed: false`. Aprovação não substitui autorização curta,
+preflight, Kill Switch ou validação do executor real.
+
 ### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/target`
 Body: `{"tenantId":"...","connectionId":"...","adAccountId":"act_..."}`.
 Vincula ao plano somente uma conta de anúncios presente no snapshot de descoberta
