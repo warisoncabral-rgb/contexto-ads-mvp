@@ -1,5 +1,6 @@
 import CampaignContextForm from './campaign-context-form'
 import { loadCampaignPreparation } from '../../lib/campaign-preparation.mjs'
+import PlanGenerationReview from './plan-generation-review'
 
 const stateCopy = {
   configuration_required: ['Configuração necessária', 'Conecte a central ao backend seguro.'],
@@ -49,6 +50,12 @@ export default async function CampaignsPage({ searchParams }) {
           context={preparation.selectedContext}
           canEdit={preparation.canEdit}
         />
+        {preparation.selectedContext?.status === 'ready_for_generation' && (
+          <PlanGenerationReview
+            context={preparation.selectedContext}
+            canGenerate={preparation.canEdit}
+          />
+        )}
       </section>
       <footer><span>Contexto Ads</span><p>Preparação sem adivinhação, com histórico e controle humano.</p></footer>
     </main>

@@ -80,6 +80,22 @@ describe('ExecutionPlanService', () => {
     expect(plans.saveIdempotent).toHaveBeenCalledWith(result);
   });
 
+  it('attaches operator audit evidence to authenticated generation', async () => {
+    const result = await service.generate(tenantId, campaignId, 3, 'operator:warison');
+
+    expect(plans.saveIdempotent).toHaveBeenCalledWith(result, expect.objectContaining({
+      tenantId,
+      actorId: 'operator:warison',
+      eventType: 'operator_execution_plan_generated',
+      newState: expect.objectContaining({
+        contextVersion: 3,
+        planHash: result.planHash,
+        humanApprovalRequired: true,
+        externalWritesAllowed: false,
+      }),
+    }));
+  });
+
   it('maps only explicit facts and records every system decision', async () => {
     const result = await service.generate(tenantId, campaignId);
 

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
+import { AuditEvent } from '../../domain/contracts/audit-event';
 import {
   CampaignContextFacts,
   CampaignContextPackageV1,
@@ -47,6 +48,7 @@ export class ExecutionPlanService {
     tenantId: unknown,
     campaignId: unknown,
     contextVersion?: unknown,
+    operatorSubject?: string,
   ): Promise<ExecutionPlanV1> {
     this.assertUuid(tenantId, 'tenantId');
     this.assertUuid(campaignId, 'campaignId');
@@ -56,7 +58,9 @@ export class ExecutionPlanService {
     if (!context) throw new NotFoundException('Campaign context not found');
     const facts = this.assertReadyContext(context);
     const plan = this.buildPlan(context, facts);
-    return this.plans.saveIdempotent(plan);
+    return operatorSubject
+      ? this.plans.saveIdempotent(plan, this.generationEvent(plan, context, operatorSubject))
+      : this.plans.saveIdempotent(plan);
   }
 
   async latest(tenantId: unknown, campaignId: unknown): Promise<ExecutionPlanV1> {
@@ -342,6 +346,39 @@ export class ExecutionPlanService {
 
   private hash(value: unknown): string {
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  }
+
+  private generationEvent(
+    plan: ExecutionPlanV1,
+    context: CampaignContextPackageV1,
+    operatorSubject: string,
+  ): AuditEvent {
+    return {
+      auditEventId: randomUUID(),
+      tenantId: plan.tenantId,
+      correlationId: plan.correlationId,
+      actorType: 'user',
+      actorId: operatorSubject,
+      eventType: 'operator_execution_plan_generated',
+      objectType: 'execution_plan',
+      objectId: plan.executionPlanId,
+      newState: {
+        campaignId: plan.campaignId,
+        contextPackageId: context.packageId,
+        contextVersion: context.version,
+        contextHash: context.contentHash,
+        planHash: plan.planHash,
+        status: plan.status,
+        maximumPlannedSpendMinor: plan.financials.maximumPlannedSpendMinor,
+        currency: plan.financials.currency,
+        humanApprovalRequired: true,
+        publicationAuthorized: false,
+        externalWritesAllowed: false,
+        externalWritesPerformed: false,
+      },
+      result: 'success',
+      createdAt: plan.createdAt,
+    };
   }
 
   private assertUuid(value: unknown, field: string): asserts value is string {

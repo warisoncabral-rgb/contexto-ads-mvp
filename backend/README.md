@@ -121,11 +121,12 @@ bloqueantes em linguagem operacional. Somente `owner` e `operator` podem gravar;
 transação. Um pacote só recebe `ready_for_generation` quando todos os fatos
 críticos estão válidos; isso não publica nem modifica nada na Meta.
 
-### `POST /v1/campaigns/:campaignId/plans`
-Body: `{"tenantId":"...","contextVersion":1}`. Transforma uma versão pronta do
-Campaign Context em um plano lógico imutável. Se `contextVersion` for omitida, a
-versão mais recente é fixada no plano. A mesma entrada é idempotente e retorna o
-plano originalmente persistido, inclusive sob requisições concorrentes.
+### `POST /v1/operator/tenants/:tenantId/campaigns/:campaignId/plans`
+Body: `{"contextVersion":1}`. Depois de autenticar, validar a membership e exigir
+permissão de preparação, transforma a versão indicada do Campaign Context em um
+plano lógico imutável. A rota pública anterior foi removida para impedir bypass
+por UUID. A mesma entrada é idempotente e retorna o plano originalmente
+persistido, inclusive sob requisições concorrentes.
 
 O plano calcula o teto financeiro, mapeia o objetivo por regras versionadas,
 preserva público, geografia e destino informados, cria a dependência lógica entre
@@ -133,7 +134,15 @@ campanha, conjunto, briefing criativo e anúncio e registra a justificativa de
 cada decisão. Todos os objetos permanecem `PAUSED`; conteúdo criativo, alvo Meta,
 capacidades de escrita e aprovação são pendências bloqueantes explícitas.
 
-### `GET /v1/campaigns/:campaignId/plans/latest?tenantId=...`
+Plano e evidência `operator_execution_plan_generated` são gravados na mesma
+transação. Repetir a mesma geração recupera o plano idempotente sem duplicar
+auditoria. A Central mostra a revisão dos fatos e do teto antes do botão e,
+depois, apresenta decisões, regras, riscos e limites do plano. O resultado
+permanece `draft`, autonomia A0 e aprovação humana obrigatória.
+
+### Consulta de planos pelo operador
+`GET /v1/operator/tenants/:tenantId/plans` lista o plano mais recente por
+campanha dentro da membership autenticada.
 Recupera somente o plano mais recente do tenant. O payload inclui hash,
 idempotência, teto financeiro, decisões, riscos, prontidão e a garantia
 `writesAllowed: false` / `writesPerformed: false`.

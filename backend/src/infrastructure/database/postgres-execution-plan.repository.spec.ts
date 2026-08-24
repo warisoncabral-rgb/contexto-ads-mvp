@@ -1,4 +1,5 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
+import { AuditEvent } from '../../domain/contracts/audit-event';
 import { ExecutionPlanV1 } from '../../domain/contracts/execution-plan';
 import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repository';
 
@@ -30,9 +31,30 @@ describe('PostgresExecutionPlanRepository', () => {
     createdAt: '2026-08-24T07:00:00.000Z',
   } as ExecutionPlanV1;
   const query = jest.fn();
-  const repository = new PostgresExecutionPlanRepository({ query } as unknown as Pool);
+  const clientQuery = jest.fn();
+  const release = jest.fn();
+  const repository = new PostgresExecutionPlanRepository({
+    query,
+    connect: jest.fn().mockResolvedValue({ query: clientQuery, release } as unknown as PoolClient),
+  } as unknown as Pool);
+  const event: AuditEvent = {
+    auditEventId: '55555555-5555-4555-8555-555555555555',
+    tenantId: plan.tenantId,
+    correlationId: plan.correlationId,
+    actorType: 'user',
+    actorId: 'operator:warison',
+    eventType: 'operator_execution_plan_generated',
+    objectType: 'execution_plan',
+    objectId: plan.executionPlanId,
+    result: 'success',
+    createdAt: plan.createdAt,
+  };
 
-  beforeEach(() => query.mockReset());
+  beforeEach(() => {
+    query.mockReset();
+    clientQuery.mockReset();
+    release.mockReset();
+  });
 
   it('inserts by idempotency key and returns the persisted plan', async () => {
     query
@@ -54,6 +76,42 @@ describe('PostgresExecutionPlanRepository', () => {
       .mockResolvedValueOnce({ rows: [{ payload: original }] });
 
     await expect(repository.saveIdempotent(plan)).resolves.toEqual(original);
+  });
+
+  it('commits a new plan and operator audit evidence atomically', async () => {
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ execution_plan_id: plan.executionPlanId }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ payload: plan }] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(repository.saveIdempotent(plan, event)).resolves.toEqual(plan);
+    expect(clientQuery.mock.calls.map(([sql]) => sql)).toEqual([
+      'begin',
+      expect.stringContaining('insert into execution_plans'),
+      expect.stringContaining('where idempotency_key = $1 and tenant_id = $2'),
+      expect.stringContaining('insert into audit_events'),
+      'commit',
+    ]);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not duplicate generation audit after an idempotency conflict', async () => {
+    const original = { ...plan, executionPlanId: '66666666-6666-4666-8666-666666666666' };
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [{ payload: original }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(repository.saveIdempotent(plan, event)).resolves.toEqual(original);
+    expect(clientQuery.mock.calls.map(([sql]) => sql)).toEqual([
+      'begin',
+      expect.stringContaining('insert into execution_plans'),
+      expect.stringContaining('where idempotency_key = $1 and tenant_id = $2'),
+      'commit',
+    ]);
   });
 
   it('loads only the latest plan in tenant scope', async () => {
