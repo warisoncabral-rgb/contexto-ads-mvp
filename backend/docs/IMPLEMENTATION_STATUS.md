@@ -9,14 +9,21 @@
 - Endpoint de prontidão `GET /v1/readiness/:connectionId?tenantId=...`.
 - Migração PostgreSQL inicial para conexão, bindings, capabilities, auditoria e prontidão.
 - Separação explícita de credenciais via `CredentialVaultPort`.
+- Cofre PostgreSQL com AES-256-GCM, isolamento por tenant e revogação lógica.
+- CI com PostgreSQL 18 real para migrações, concorrência OAuth e cofre criptografado.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real e definir o fluxo oficial de OAuth/onboarding.
 2. Validar permissões e App Review aplicáveis ao caso multi-cliente.
-3. Implementar um Credential Vault real no provedor de hospedagem escolhido.
-4. Implementar persistência PostgreSQL concreta dos repositórios.
-5. Implementar `discoverAssets`, `validateCapabilities` e `readAdAccount` contra a Graph/Marketing API vigente.
-6. Rodar o primeiro teste real somente leitura.
+3. Guardar a chave mestra do cofre nas configurações protegidas da hospedagem.
+4. Implementar `discoverAssets`, `validateCapabilities` e `readAdAccount` contra a Graph/Marketing API vigente.
+5. Rodar o primeiro teste real somente leitura.
+
+## Evolução opcional do cofre
+O PostgreSQL criptografado desbloqueia o MVP sem Google Cloud. A porta
+`CredentialVaultPort` permanece independente do provedor, permitindo migrar
+posteriormente para Google Secret Manager ou outro cofre gerenciado sem alterar
+o fluxo OAuth ou os serviços de negócio.
 
 ## Trava de segurança
 Nenhuma função de criação, alteração, pausa, ativação ou publicação na Meta foi implementada nesta fundação.

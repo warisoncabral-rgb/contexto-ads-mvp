@@ -1,0 +1,89 @@
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { Pool } from 'pg';
+import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
+import { PostgresCredentialVaultAdapter } from '../vault/postgres-credential-vault.adapter';
+
+const databaseUrl = process.env.TEST_DATABASE_URL;
+const describeWithPostgres = databaseUrl ? describe : describe.skip;
+
+describeWithPostgres('PostgreSQL integration', () => {
+  const pool = new Pool({ connectionString: databaseUrl });
+  const tenantId = randomUUID();
+  const otherTenantId = randomUUID();
+  const connectionId = randomUUID();
+
+  beforeAll(async () => {
+    for (const migration of [
+      '001_foundation.sql',
+      '002_meta_oauth_attempts.sql',
+      '003_meta_oauth_credential_compensations.sql',
+      '004_postgres_credential_vault.sql',
+    ]) {
+      await pool.query(
+        await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
+      );
+    }
+    await pool.query(
+      `insert into meta_connections (
+        connection_id, tenant_id, status, created_at, updated_at
+      ) values ($1, $2, 'authorization_pending', now(), now())`,
+      [connectionId, tenantId],
+    );
+  });
+
+  afterAll(async () => {
+    await pool.query('delete from credential_vault_secrets where tenant_id = any($1::uuid[])', [
+      [tenantId, otherTenantId],
+    ]);
+    await pool.query('delete from meta_oauth_attempts where tenant_id = $1', [tenantId]);
+    await pool.query('delete from meta_connections where tenant_id = $1', [tenantId]);
+    await pool.end();
+  });
+
+  it('atomically allows only one consumer for an OAuth state', async () => {
+    const repository = new PostgresMetaOAuthAttemptRepository(pool);
+    const stateHash = 'a'.repeat(64);
+    const now = new Date();
+    await repository.replaceActive({
+      attemptId: randomUUID(),
+      tenantId,
+      connectionId,
+      stateHash,
+      requestedScopes: ['public_profile'],
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => repository.consumeActive(stateHash)),
+    );
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('stores no plaintext and enforces tenant isolation and revocation', async () => {
+    const vault = new PostgresCredentialVaultAdapter(pool, Buffer.alloc(32, 7));
+    const secret = '{"accessToken":"integration-only-secret"}';
+    const credentialRef = await vault.putSecret(tenantId, secret);
+    const credentialId = credentialRef.slice('postgres-vault://'.length);
+
+    const persisted = await pool.query<{ ciphertext_text: string }>(
+      `select encode(ciphertext, 'escape') as ciphertext_text
+      from credential_vault_secrets where credential_id = $1`,
+      [credentialId],
+    );
+    expect(persisted.rows[0].ciphertext_text).not.toContain('integration-only-secret');
+    await expect(vault.getSecret(tenantId, credentialRef)).resolves.toBe(secret);
+    await expect(vault.getSecret(otherTenantId, credentialRef)).rejects.toThrow(
+      'Credential Vault operation failed',
+    );
+
+    await vault.revokeSecret(tenantId, credentialRef);
+    await vault.revokeSecret(tenantId, credentialRef);
+    await expect(vault.getSecret(tenantId, credentialRef)).rejects.toThrow(
+      'Credential Vault operation failed',
+    );
+  });
+});

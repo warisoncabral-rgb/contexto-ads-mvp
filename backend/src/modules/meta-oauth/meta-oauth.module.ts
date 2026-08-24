@@ -6,6 +6,10 @@ import { MetaOAuthService } from './meta-oauth.service';
 import { ConfigService } from '@nestjs/config';
 import { MetaOAuthHttpAdapter } from '../../infrastructure/meta/meta-oauth-http.adapter';
 import { UnavailableCredentialVaultAdapter } from '../../infrastructure/vault/unavailable-credential-vault.adapter';
+import { PostgresCredentialVaultAdapter } from '../../infrastructure/vault/postgres-credential-vault.adapter';
+import { CredentialVaultPort } from '../../domain/ports/credential-vault.port';
+import { DATABASE_POOL } from '../../infrastructure/database/database.tokens';
+import { Pool } from 'pg';
 import { CREDENTIAL_VAULT, META_OAUTH_TOKEN_EXCHANGE } from './meta-oauth.tokens';
 import { MetaOAuthCallbackController } from './meta-oauth-callback.controller';
 
@@ -21,7 +25,22 @@ import { MetaOAuthCallbackController } from './meta-oauth-callback.controller';
     },
     {
       provide: CREDENTIAL_VAULT,
-      useClass: UnavailableCredentialVaultAdapter,
+      inject: [ConfigService, DATABASE_POOL],
+      useFactory: (config: ConfigService, pool: Pool): CredentialVaultPort => {
+        if (config.get<string>('CREDENTIAL_VAULT_PROVIDER') !== 'postgres') {
+          return new UnavailableCredentialVaultAdapter();
+        }
+        const encodedKey = config.get<string>('CREDENTIAL_VAULT_MASTER_KEY')?.trim();
+        if (!encodedKey) return new UnavailableCredentialVaultAdapter();
+        try {
+          return new PostgresCredentialVaultAdapter(
+            pool,
+            PostgresCredentialVaultAdapter.decodeMasterKey(encodedKey),
+          );
+        } catch {
+          return new UnavailableCredentialVaultAdapter();
+        }
+      },
     },
   ],
 })
