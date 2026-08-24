@@ -51,8 +51,8 @@ export class MetaConnectionService {
     return connection;
   }
 
-  async validateReadOnly(credentialRef: string) {
-    return this.meta.validateConnection(credentialRef);
+  async validateReadOnly(tenantId: string, credentialRef: string) {
+    return this.meta.validateConnection(tenantId, credentialRef);
   }
 
   async discoverAssets(tenantId: string, connectionId: string) {

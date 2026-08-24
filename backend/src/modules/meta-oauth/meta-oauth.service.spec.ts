@@ -36,7 +36,7 @@ describe('MetaOAuthService', () => {
     tenantId,
     connectionId,
     stateHash: createHash('sha256').update(validState).digest('hex'),
-    requestedScopes: ['public_profile'],
+    requestedScopes: ['public_profile', 'ads_read', 'pages_show_list'],
     createdAt: '2026-08-19T02:00:00.000Z',
     expiresAt: '2026-08-19T02:10:00.000Z',
     consumedAt: '2026-08-19T02:01:00.000Z',
@@ -119,7 +119,7 @@ describe('MetaOAuthService', () => {
     expect(url.searchParams.get('redirect_uri'))
       .toBe('http://localhost:3000/v1/meta/oauth/callback');
     expect(url.searchParams.get('response_type')).toBe('code');
-    expect(url.searchParams.get('scope')).toBe('public_profile');
+    expect(url.searchParams.get('scope')).toBe('public_profile,ads_read,pages_show_list');
   });
 
   it('persists only the SHA-256 digest of the generated state', async () => {

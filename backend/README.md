@@ -58,6 +58,12 @@ Body: `{"tenantId":"..."}`. Executa descoberta somente leitura para uma conexão
 OAuth já conectada e substitui o snapshot anterior atomicamente apenas em caso de
 sucesso. Enquanto a Graph API real não estiver configurada, permanece fail-closed.
 
+O cliente somente leitura usa os edges versionados `/me/adaccounts` e
+`/me/accounts`, solicita apenas `id,name`, pagina por cursor com limite defensivo,
+envia o token somente no header `Authorization` e assina chamadas com
+`appsecret_proof`. O OAuth solicita apenas `public_profile`, `ads_read` e
+`pages_show_list` nesta etapa.
+
 ### `GET /v1/meta/connections/:connectionId/assets?tenantId=...`
 Lista somente os ativos persistidos para o tenant e a conexão informados.
 
@@ -71,6 +77,7 @@ continua fail-closed enquanto o app real não estiver configurado.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
 - Capacidade desconhecida não é tratada como disponível.
 - A Fase 1 não possui escrita na Meta.
+- Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
 Validar o OAuth com um app Meta real e depois implementar descoberta de ativos,

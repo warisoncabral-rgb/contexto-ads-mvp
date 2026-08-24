@@ -1,0 +1,1 @@
+export const CREDENTIAL_VAULT = Symbol('CREDENTIAL_VAULT');
