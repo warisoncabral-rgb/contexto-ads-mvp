@@ -10,6 +10,7 @@ import { ApprovalModule } from './modules/approval/approval.module';
 import { ExecutionSimulationModule } from './modules/execution-simulation/execution-simulation.module';
 import { CreativePackageModule } from './modules/creative-package/creative-package.module';
 import { OperationalReadinessModule } from './modules/operational-readiness/operational-readiness.module';
+import { ExecutionManifestModule } from './modules/execution-manifest/execution-manifest.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { OperationalReadinessModule } from './modules/operational-readiness/oper
     ExecutionSimulationModule,
     CreativePackageModule,
     OperationalReadinessModule,
+    ExecutionManifestModule,
   ],
 })
 export class AppModule {}

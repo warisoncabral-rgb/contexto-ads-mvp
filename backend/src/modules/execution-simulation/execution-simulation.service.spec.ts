@@ -203,6 +203,7 @@ describe('ExecutionSimulationService', () => {
     };
     simulations = {
       save: jest.fn().mockResolvedValue(undefined),
+      findById: jest.fn(),
       latestForPlan: jest.fn(),
     };
     creativePackages = {

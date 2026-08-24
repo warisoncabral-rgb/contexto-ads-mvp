@@ -20,6 +20,8 @@ import { MetaReadonlyAdapter } from '../../modules/meta-adapter/meta-readonly.ad
 import { PostgresCreativePackageRepository } from './postgres-creative-package.repository';
 import { PostgresOperationalReadinessRepository } from './postgres-operational-readiness.repository';
 import { OperationalReadinessService } from '../../modules/operational-readiness/operational-readiness.service';
+import { PostgresExecutionManifestRepository } from './postgres-execution-manifest.repository';
+import { ExecutionManifestService } from '../../modules/execution-manifest/execution-manifest.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -45,6 +47,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '011_execution_simulations.sql',
       '012_creative_packages.sql',
       '013_operational_readiness_decisions.sql',
+      '014_execution_manifests.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -59,6 +62,7 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from execution_manifests where tenant_id = $1', [tenantId]);
     await pool.query('delete from operational_readiness_decisions where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_simulation_reports where tenant_id = $1', [tenantId]);
     await pool.query('delete from plan_approvals where tenant_id = $1', [tenantId]);
@@ -503,6 +507,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     const simulationRepository = new PostgresExecutionSimulationRepository(pool);
     const creativePackageRepository = new PostgresCreativePackageRepository(pool);
     const readinessDecisionRepository = new PostgresOperationalReadinessRepository(pool);
+    const executionManifestRepository = new PostgresExecutionManifestRepository(pool);
     const connectionRepository = new PostgresMetaConnectionRepository(pool);
     const capabilityRepository = new PostgresCapabilityRepository(pool);
     const meta = {} as MetaReadonlyAdapter;
@@ -526,6 +531,12 @@ describeWithPostgres('PostgreSQL integration', () => {
       simulationService,
       plans,
       readinessDecisionRepository,
+    );
+    const executionManifestService = new ExecutionManifestService(
+      operationalReadinessService,
+      plans,
+      simulationRepository,
+      executionManifestRepository,
     );
     const campaignId = randomUUID();
     const executionConnectionId = randomUUID();
@@ -799,6 +810,29 @@ describeWithPostgres('PostgreSQL integration', () => {
       .toBe(1);
     expect(new Set(concurrentDecisions.map((item) => item.decisionHash)))
       .toEqual(new Set([readinessDecision.decisionHash]));
+    const manifests = await Promise.all(Array.from({ length: 5 }, () =>
+      executionManifestService.prepare(
+        tenantId,
+        campaignId,
+        targeted.executionPlanId,
+        approvedTarget.approvalId,
+      )));
+    expect(new Set(manifests.map((item) => item.executionManifestId)).size).toBe(1);
+    expect(manifests[0].status).toBe('prepared_gate_closed');
+    expect(manifests[0].operations).toHaveLength(4);
+    expect(manifests[0].operations.every((operation) =>
+      !operation.executionAllowed && operation.effectState === 'not_started')).toBe(true);
+    expect(manifests[0].boundaries).toEqual({
+      executable: false,
+      campaignPublished: false,
+      campaignActive: false,
+      campaignDelivering: false,
+      externalWritesAllowed: false,
+      externalWritesPerformed: false,
+    });
+    await expect(executionManifestService.latest(
+      tenantId, targeted.executionPlanId,
+    )).resolves.toEqual(manifests[0]);
     await expect(simulationRepository.save({
       ...simulation,
       simulationId: randomUUID(),

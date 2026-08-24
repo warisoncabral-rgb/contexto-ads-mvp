@@ -49,14 +49,32 @@ implements ExecutionSimulationRepository {
     tenantId: string,
     executionPlanId: string,
   ): Promise<ExecutionSimulationReportV1 | null> {
+    return this.findOne(
+      `where tenant_id = $1 and execution_plan_id = $2
+      order by generated_at desc, simulation_id desc limit 1`,
+      [tenantId, executionPlanId],
+    );
+  }
+
+  async findById(
+    tenantId: string,
+    executionPlanId: string,
+    simulationId: string,
+  ): Promise<ExecutionSimulationReportV1 | null> {
+    return this.findOne(
+      `where tenant_id = $1 and execution_plan_id = $2 and simulation_id = $3
+      limit 1`,
+      [tenantId, executionPlanId, simulationId],
+    );
+  }
+
+  private async findOne(where: string, values: string[]): Promise<ExecutionSimulationReportV1 | null> {
     const result = await this.pool.query<SimulationRow>(
       `select simulation_id, tenant_id, campaign_id, execution_plan_id, plan_hash,
         approval_id, status, checks, operations, blockers, external_effects, generated_at
       from execution_simulation_reports
-      where tenant_id = $1 and execution_plan_id = $2
-      order by generated_at desc, simulation_id desc
-      limit 1`,
-      [tenantId, executionPlanId],
+      ${where}`,
+      values,
     );
     const row = result.rows[0];
     return row ? {

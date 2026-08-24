@@ -237,6 +237,24 @@ Retorna a última decisão persistida somente depois de comprovar que o plano
 pertence ao tenant. Decisões semanticamente iguais retornam o mesmo snapshot e
 somente a primeira inserção gera o evento de auditoria.
 
+### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/execution-manifests`
+Body: `{"tenantId":"...","approvalId":"..."}`. Refaz a decisão operacional e,
+somente quando todas as verificações internas passam, prepara um manifesto
+imutável das operações futuras. Cada operação recebe chave idempotente,
+fingerprint da configuração, dependências, pré-condições e regras fail-closed
+para falha parcial, compensação e reconciliação.
+
+O manifesto não é um comando de execução. Seu único estado é
+`prepared_gate_closed`; todas as operações continuam `PAUSED`, `not_started` e
+`executionAllowed: false`. O gate registra como ausentes a aprovação específica
+de execução, a validação real de escrita e o adapter de escrita. Resultado
+externo desconhecido jamais poderá ser repetido antes de reconciliação.
+
+### `GET /v1/plans/:executionPlanId/execution-manifests/latest?tenantId=...`
+Retorna o manifesto mais recente somente dentro do tenant e plano informados.
+Solicitações semanticamente iguais recuperam o mesmo manifesto; a persistência e
+o evento de auditoria ocorrem atomicamente apenas na primeira inserção.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -248,11 +266,12 @@ somente a primeira inserção gera o evento de auditoria.
 - Simulações validam o plano inteiro e jamais executam as operações apresentadas.
 - Mudanças criativas invalidam o plano anterior; mídias e conteúdo são ligados por hash.
 - A linguagem operacional nunca confunde preparação com publicação, ativação ou entrega.
+- Manifestos descrevem efeitos futuros, mas não são executáveis e não contêm IDs externos inventados.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Preparar o contrato interno do executor real, incluindo idempotência,
-compensação e reconciliação, sem adicionar um adapter de escrita ou liberar
+Preparar o registro do ciclo de vida das futuras tentativas e o gate humano
+específico de execução, ainda sem adicionar um adapter de escrita ou liberar
 efeitos externos. A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
 um OAuth real e acionar o smoke test automatizado continua sendo a única
 validação externa restante para o vertical atual.
