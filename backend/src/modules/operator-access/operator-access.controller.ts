@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query } from '@nestjs/common';
 import { CampaignContextInput } from '../../domain/contracts/campaign-context';
 import { CreativePackageInputV1 } from '../../domain/contracts/creative-package';
 import { KillSwitchStatus } from '../../domain/contracts/kill-switch';
@@ -19,6 +19,13 @@ export class OperatorAccessController {
     @Headers('authorization') authorization: string | undefined,
   ) {
     return this.service.listTenantPlans(authorization, tenantId);
+  }
+
+  @Get('tenants/:tenantId/campaigns/:campaignId/timeline')
+  campaignTimeline(@Param('tenantId') tenantId: string, @Param('campaignId') campaignId: string,
+    @Query('executionPlanId') executionPlanId: string,
+    @Headers('authorization') authorization: string | undefined) {
+    return this.service.campaignTimeline(authorization, tenantId, campaignId, executionPlanId);
   }
 
   @Get('tenants/:tenantId/plans/:executionPlanId/readiness')

@@ -23,6 +23,7 @@ import {
 } from '../../domain/ports/operator-identity.port';
 import {
   AuditRepository,
+  AuditTimelineRepository,
   OperatorPlanSelectionRepository,
   OperatorCampaignContextSelectionRepository,
   OperationalReadinessRepository,
@@ -30,6 +31,7 @@ import {
 } from '../../domain/ports/repositories';
 import {
   AUDIT_REPOSITORY,
+  AUDIT_TIMELINE_REPOSITORY,
   CAMPAIGN_CONTEXT_REPOSITORY,
   EXECUTION_PLAN_REPOSITORY,
   OPERATIONAL_READINESS_REPOSITORY,
@@ -48,6 +50,29 @@ import { ExecutionAuthorizationService } from '../execution-authorization/execut
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
 import { MetaWriteValidationService } from '../meta-write-validation/meta-write-validation.service';
 import { KillSwitchStatus } from '../../domain/contracts/kill-switch';
+import { OperatorCampaignTimelineV1, OperatorTimelineItemV1 } from '../../domain/contracts/operator-timeline';
+
+const TIMELINE_COPY: Record<string, Pick<OperatorTimelineItemV1, 'category' | 'title' | 'detail'>> = {
+  operator_campaign_context_created: { category: 'context', title: 'Contexto da campanha criado', detail: 'Os fatos iniciais foram registrados e versionados.' },
+  operator_campaign_context_updated: { category: 'context', title: 'Contexto atualizado', detail: 'Uma nova versão dos fatos substituiu a anterior sem apagar o histórico.' },
+  operator_execution_plan_generated: { category: 'plan', title: 'Plano lógico gerado', detail: 'O Gerador consolidou estratégia, teto e objetos pausados.' },
+  creative_package_version_created: { category: 'creative', title: 'Versão criativa registrada', detail: 'Textos, mídia e checklist receberam um hash imutável.' },
+  creative_package_approved: { category: 'creative', title: 'Criativo aprovado', detail: 'O proprietário aprovou a versão e o hash criativo exatos.' },
+  campaign_plan_approval_requested: { category: 'approval', title: 'Aprovação do plano solicitada', detail: 'Hash e teto financeiro foram enviados para decisão humana.' },
+  campaign_plan_approved: { category: 'approval', title: 'Plano aprovado', detail: 'A decisão humana ficou vinculada ao hash e teto exatos.' },
+  campaign_plan_rejected: { category: 'approval', title: 'Plano rejeitado', detail: 'A continuidade foi interrompida para revisão.' },
+  campaign_plan_approval_revoked: { category: 'approval', title: 'Aprovação revogada', detail: 'A autorização anterior deixou de valer.' },
+  operational_readiness_decided: { category: 'readiness', title: 'Prontidão recalculada', detail: 'Bloqueios e próxima ação foram consolidados novamente.' },
+  execution_manifest_prepared: { category: 'executor', title: 'Manifesto preparado', detail: 'As operações pausadas foram ordenadas com idempotência e gate fechado.' },
+  execution_authorization_requested: { category: 'executor', title: 'Autorização curta solicitada', detail: 'Uma decisão específica de alto risco foi aberta por 15 minutos.' },
+  execution_authorization_approved: { category: 'executor', title: 'Autorização curta aprovada', detail: 'A decisão humana foi registrada, mas o gate continuou fechado.' },
+  execution_authorization_rejected: { category: 'executor', title: 'Autorização curta rejeitada', detail: 'Nenhuma tentativa externa foi permitida.' },
+  execution_authorization_revoked: { category: 'executor', title: 'Autorização curta revogada', detail: 'A decisão deixou de ser válida antes de qualquer tentativa.' },
+  execution_preflight_blocked: { category: 'executor', title: 'Preflight bloqueado', detail: 'O diagnóstico interrompeu o fluxo antes de criar tentativa externa.' },
+  kill_switch_engaged: { category: 'safety', title: 'Kill Switch acionado', detail: 'As escritas foram bloqueadas explicitamente.' },
+  kill_switch_released: { category: 'safety', title: 'Kill Switch liberado', detail: 'A trava foi liberada, sem autorizar escrita por si só.' },
+  meta_write_validation_protocol_prepared: { category: 'safety', title: 'Protocolo real preparado', detail: 'As onze evidências externas foram definidas, ainda não coletadas.' },
+};
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
   owner: [
@@ -79,6 +104,8 @@ export class OperatorAccessService {
     private readonly memberships: OperatorTenantMembershipRepository,
     @Inject(AUDIT_REPOSITORY)
     private readonly audit: AuditRepository,
+    @Inject(AUDIT_TIMELINE_REPOSITORY)
+    private readonly auditTimeline: AuditTimelineRepository,
     @Inject(EXECUTION_PLAN_REPOSITORY)
     private readonly plans: OperatorPlanSelectionRepository,
     @Inject(OPERATIONAL_READINESS_REPOSITORY)
@@ -212,6 +239,32 @@ export class OperatorAccessService {
       generatedAt,
     ));
     return decision;
+  }
+
+  async campaignTimeline(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string, executionPlanId: string): Promise<OperatorCampaignTimelineV1> {
+    await this.authorizedMembership(authorizationHeader, tenantId);
+    const plan = await this.plans.findById(tenantId, executionPlanId);
+    if (!plan || plan.campaignId !== campaignId) throw new NotFoundException({
+      code: 'campaign_timeline_not_found', message: 'Campaign timeline not found',
+    });
+    const events = await this.auditTimeline.listForCampaign(tenantId, campaignId, 100);
+    const actors: Record<import('../../domain/contracts/audit-event').AuditEvent['actorType'], OperatorTimelineItemV1['actor']> = {
+      user: 'Usuário autenticado', system: 'Sistema', contexto_ads: 'Contexto Ads',
+      generator: 'Gerador', analyst: 'Analista', meta_adapter: 'Adaptador Meta',
+    };
+    return {
+      tenantId, campaignId, executionPlanId,
+      items: events.flatMap((event) => {
+        const copy = TIMELINE_COPY[event.eventType];
+        return copy ? [{ auditEventId: event.auditEventId, ...copy, result: event.result,
+          actor: actors[event.actorType], evidenceRef: `${event.objectType ?? 'audit_event'}:${event.objectId ?? event.auditEventId}`,
+          createdAt: event.createdAt }] : [];
+      }),
+      boundaries: { sanitizedOperationalHistory: true, immutableAuditSource: true,
+        secretsExposed: false, publicationAuthorized: false, externalWritesAllowed: false,
+        externalWritesPerformed: false }, generatedAt: new Date().toISOString(),
+    };
   }
 
   async listCampaignContexts(

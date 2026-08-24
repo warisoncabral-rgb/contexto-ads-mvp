@@ -6,6 +6,8 @@ import PlanApprovalPanel from './plan-approval-panel'
 import CreativeMediaCenter from './creative-media-center'
 import { loadExecutorWorkspace } from '../lib/executor-preflight.mjs'
 import ExecutorPreflightPanel from './executor-preflight-panel'
+import { loadOperationalTimeline } from '../lib/operational-timeline.mjs'
+import OperationalTimeline from './operational-timeline'
 
 const phases = [
   ['campaignPreparation', 'Campanha'],
@@ -146,7 +148,7 @@ function WorkspaceSelector({ workspace }) {
   )
 }
 
-function DecisionDashboard({ decision, workspace, approvalResult, creativeResult, executorResult }) {
+function DecisionDashboard({ decision, workspace, approvalResult, creativeResult, executorResult, timelineResult }) {
   const statusLabel = {
     blocked: 'Bloqueado',
     action_required: 'Ação necessária',
@@ -255,6 +257,7 @@ function DecisionDashboard({ decision, workspace, approvalResult, creativeResult
       <PlanApprovalPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} />
       <CreativeMediaCenter plan={workspace.selectedPlan} role={workspace.selectedTenant.role} result={creativeResult} />
       <ExecutorPreflightPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} result={executorResult} />
+      <OperationalTimeline result={timelineResult} />
     </>
   )
 }
@@ -294,6 +297,11 @@ export default async function Page({ searchParams }) {
       apiBaseUrl: process.env.CONTEXT_ADS_API_BASE_URL,
       operatorToken: process.env.CONTEXT_ADS_OPERATOR_TOKEN })
     : { kind: 'none' }
+  const timelineResult = workspace.kind === 'ready' && workspace.selectedPlan
+    ? await loadOperationalTimeline({ plan: workspace.selectedPlan,
+      apiBaseUrl: process.env.CONTEXT_ADS_API_BASE_URL,
+      operatorToken: process.env.CONTEXT_ADS_OPERATOR_TOKEN })
+    : { kind: 'none' }
 
   return (
     <main>
@@ -318,7 +326,7 @@ export default async function Page({ searchParams }) {
 
       <div className="content-shell">
         {result.kind === 'ready'
-          ? <DecisionDashboard decision={result.decision} workspace={workspace} approvalResult={approvalResult} creativeResult={creativeResult} executorResult={executorResult} />
+          ? <DecisionDashboard decision={result.decision} workspace={workspace} approvalResult={approvalResult} creativeResult={creativeResult} executorResult={executorResult} timelineResult={timelineResult} />
           : <EmptyState result={result} />}
       </div>
 
