@@ -9,13 +9,16 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "test": "jest --runInBand",
+    "test:gcp-secret-manager-smoke": "npm run build && node scripts/google-secret-manager.smoke.js",
     "lint": "eslint . --max-warnings=0"
   },
   "dependencies": {
+    "@google-cloud/secret-manager": "^6.3.0",
     "@nestjs/common": "^11.2.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.2.1",
     "@nestjs/platform-express": "^11.2.1",
+    "google-auth-library": "^10.5.0",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
