@@ -13,6 +13,8 @@ const copy = {
 export default async function ConnectionsPage({ searchParams }) {
   const params = await searchParams
   const requestedTenantId = typeof params?.tenantId === 'string' ? params.tenantId : ''
+  const returnedConnectionId = typeof params?.connectionId === 'string' ? params.connectionId : ''
+  const oauthConnected = params?.oauth === 'connected'
   const setup = await loadMetaConnectionSetup(requestedTenantId)
   if (setup.kind !== 'ready') {
     const [title, detail] = copy[setup.kind] ?? copy.unavailable
@@ -20,9 +22,10 @@ export default async function ConnectionsPage({ searchParams }) {
   }
   return <><header className="topbar"><a className="brand" href="/"><span className="brand-mark">C</span><span><strong>Contexto Ads</strong><small>Conexão Meta</small></span></a><a href="/work-queue/overview">Central de comando</a></header><main className="work-shell">
     <section className="work-hero"><div><span className="eyebrow">Primeiro gate real</span><h1>Conectar {setup.selectedTenant.displayName} em modo somente leitura.</h1><p>O OAuth será iniciado pelo servidor e a credencial nunca será enviada ao navegador.</p></div></section>
+    {oauthConnected && returnedConnectionId && <div className="save-confirmation" role="status">OAuth concluído. A conexão retornou à Central e já pode seguir para o smoke somente leitura.</div>}
     <nav className="campaign-nav" aria-label="Clientes configuráveis">{setup.tenants.map((tenant) => <a className={tenant.tenantId === setup.selectedTenant.tenantId ? 'active' : ''} key={tenant.tenantId} href={`/connections?tenantId=${tenant.tenantId}`}>{tenant.displayName}</a>)}</nav>
     <MetaConnectionForm tenantId={setup.selectedTenant.tenantId} />
-    <MetaSmokeForm tenantId={setup.selectedTenant.tenantId} />
+    <MetaSmokeForm tenantId={setup.selectedTenant.tenantId} initialConnectionId={returnedConnectionId} />
     <div className="portfolio-boundary">O smoke real permanece somente leitura. Publicação, ativação, entrega e escrita externa continuam bloqueadas mesmo quando as quatro etapas passam.</div>
   </main></>
 }
