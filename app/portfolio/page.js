@@ -33,7 +33,7 @@ export default async function PortfolioPage() {
   return <>
     <header className="topbar"><a className="brand" href="/"><span className="brand-mark">C</span><span><strong>Contexto Ads</strong><small>Central operacional</small></span></a><div className="environment"><span />Portfólio somente leitura</div></header>
     <main className="portfolio-shell">
-      <section className="portfolio-hero"><div><span className="eyebrow">Visão executiva</span><h1>Prioridade clara entre clientes e campanhas.</h1><p>A fila reúne somente operações às quais você possui acesso e mostra uma próxima ação verificável por campanha.</p></div><a href="/">Abrir operação detalhada</a></section>
+      <section className="portfolio-hero"><div><span className="eyebrow">Visão executiva</span><h1>Prioridade clara entre clientes e campanhas.</h1><p>A fila reúne somente operações às quais você possui acesso e mostra uma próxima ação verificável por campanha.</p></div><div className="portfolio-links"><a href="/work-queue">Abrir fila diária</a><a href="/">Operação detalhada</a></div></section>
       <section className="portfolio-metrics">{metrics.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>
       <section className="portfolio-list">
         <div className="section-heading"><div><span className="eyebrow">Fila priorizada</span><h2>Bloqueios primeiro</h2></div><small>Atualizado em {new Date(portfolio.generatedAt).toLocaleString('pt-BR')}</small></div>

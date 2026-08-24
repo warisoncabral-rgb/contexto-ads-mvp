@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AuditEvent } from '../../domain/contracts/audit-event';
 import { CampaignContextInput } from '../../domain/contracts/campaign-context';
 import {
@@ -52,6 +52,7 @@ import { MetaWriteValidationService } from '../meta-write-validation/meta-write-
 import { KillSwitchStatus } from '../../domain/contracts/kill-switch';
 import { OperatorCampaignTimelineV1, OperatorTimelineItemV1 } from '../../domain/contracts/operator-timeline';
 import { OperatorPortfolioItemV1, OperatorPortfolioV1 } from '../../domain/contracts/operator-portfolio';
+import { OperatorWorkItemV1, OperatorWorkPriority, OperatorWorkQueueV1 } from '../../domain/contracts/operator-work-queue';
 
 const TIMELINE_COPY: Record<string, Pick<OperatorTimelineItemV1, 'category' | 'title' | 'detail'>> = {
   operator_campaign_context_created: { category: 'context', title: 'Contexto da campanha criado', detail: 'Os fatos iniciais foram registrados e versionados.' },
@@ -213,6 +214,75 @@ export class OperatorAccessService {
         externalWritesAllowed: false, externalWritesPerformed: false },
       generatedAt,
     };
+  }
+
+  async workQueue(authorizationHeader: string | undefined): Promise<OperatorWorkQueueV1> {
+    const operator = await this.authenticate(authorizationHeader);
+    const memberships = await this.memberships.listActiveForSubject(operator.subject);
+    const rows = await Promise.all(memberships.map(async (membership) => {
+      const plans = await this.plans.listLatestForTenant(membership.tenantId);
+      return Promise.all(plans.map(async (plan): Promise<OperatorWorkItemV1[]> => {
+        if (plan.tenantId !== membership.tenantId) throw new ServiceUnavailableException({
+          code: 'work_queue_scope_inconsistent', message: 'Work queue scope is inconsistent',
+        });
+        const decision = await this.readiness.latestForPlan(membership.tenantId, plan.executionPlanId);
+        if (decision && (decision.tenantId !== membership.tenantId
+          || decision.campaignId !== plan.campaignId
+          || decision.executionPlanId !== plan.executionPlanId)) {
+          throw new ServiceUnavailableException({
+            code: 'work_queue_readiness_inconsistent', message: 'Work queue readiness is inconsistent',
+          });
+        }
+        const common = { tenantId: membership.tenantId,
+          tenantDisplayName: membership.tenantDisplayName, role: membership.role,
+          campaignId: plan.campaignId, executionPlanId: plan.executionPlanId };
+        if (!decision) return [{ ...common,
+          workItemId: this.workItemId(plan.executionPlanId, 'readiness_not_evaluated'),
+          source: 'readiness_not_evaluated', blockerCode: 'readiness_not_evaluated',
+          owner: 'system', priority: 'normal',
+          meaning: 'A prontidão operacional deste plano ainda não foi calculada.',
+          nextAction: 'Calcular a prontidão operacional usando as evidências atuais.',
+          evidenceRefs: [`execution_plan:${plan.executionPlanId}`], observedAt: plan.createdAt,
+        }];
+        return decision.blockers.map((blocker) => ({ ...common,
+          workItemId: this.workItemId(plan.executionPlanId, blocker.code),
+          source: 'operational_blocker' as const, blockerCode: blocker.code,
+          owner: blocker.owner, priority: this.workPriority(decision.status, blocker.owner),
+          meaning: blocker.meaning, nextAction: blocker.nextAction,
+          evidenceRefs: [...blocker.evidenceRefs], observedAt: decision.generatedAt,
+        }));
+      }));
+    }));
+    const priority = { critical: 0, high: 1, normal: 2 } as const;
+    const items = rows.flat(2).sort((a, b) => priority[a.priority] - priority[b.priority]
+      || a.tenantDisplayName.localeCompare(b.tenantDisplayName)
+      || a.campaignId.localeCompare(b.campaignId) || a.blockerCode.localeCompare(b.blockerCode));
+    const generatedAt = new Date().toISOString();
+    await Promise.all(memberships.map((membership) => this.audit.append(
+      this.workQueueAccessEvent(membership.tenantId, membership.membershipId,
+        operator.subject, generatedAt),
+    )));
+    return { items, summary: { authorizedTenantCount: memberships.length,
+      pendingItemCount: items.length,
+      criticalCount: items.filter((item) => item.priority === 'critical').length,
+      operatorCount: items.filter((item) => item.owner === 'operator').length,
+      systemCount: items.filter((item) => item.owner === 'system').length,
+      metaEnvironmentCount: items.filter((item) => item.owner === 'meta_environment').length },
+      boundaries: { derivedFromCurrentReadiness: true, tenantAccessDerivedFromMembership: true,
+        priorityRuleIsDeterministic: true, deadlinesFabricated: false, completionInferred: false,
+        publicationAuthorized: false, externalWritesAllowed: false, externalWritesPerformed: false },
+      generatedAt };
+  }
+
+  private workPriority(status: 'blocked' | 'action_required' | 'ready_for_executor_validation',
+    owner: OperatorWorkItemV1['owner']): OperatorWorkPriority {
+    if (status === 'blocked') return 'critical';
+    if (status === 'action_required' || owner === 'operator') return 'high';
+    return 'normal';
+  }
+
+  private workItemId(executionPlanId: string, code: string) {
+    return createHash('sha256').update(`${executionPlanId}:${code}`).digest('hex');
   }
 
   async listTenantPlans(
@@ -724,6 +794,16 @@ export class OperatorAccessService {
         publicationAuthorized: false, externalWritesAllowed: false },
       result: 'info', createdAt,
     };
+  }
+
+  private workQueueAccessEvent(tenantId: string, membershipId: string,
+    operatorSubject: string, createdAt: string): AuditEvent {
+    return { auditEventId: randomUUID(), tenantId, correlationId: randomUUID(),
+      actorType: 'user', actorId: operatorSubject, eventType: 'operator_work_queue_viewed',
+      objectType: 'operator_tenant_membership', objectId: membershipId,
+      newState: { accessType: 'read_only_work_queue', derivedFromCurrentReadiness: true,
+        deadlinesFabricated: false, publicationAuthorized: false, externalWritesAllowed: false },
+      result: 'info', createdAt };
   }
 
   private readinessAccessEvent(
