@@ -30,6 +30,7 @@ import { KillSwitchService } from '../../modules/kill-switch/kill-switch.service
 import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-write-validation-protocol.repository';
 import { MetaWriteValidationService } from '../../modules/meta-write-validation/meta-write-validation.service';
 import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-tenant-membership.repository';
+import { PostgresOperatorWorkQueueSnapshotRepository } from './postgres-operator-work-queue-snapshot.repository';
 import { PostgresAuditRepository } from './postgres-audit.repository';
 import { OperatorAccessService } from '../../modules/operator-access/operator-access.service';
 import { OperatorIdentityPort } from '../../domain/ports/operator-identity.port';
@@ -66,6 +67,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '016_kill_switch_states.sql',
       '017_meta_write_validation_protocols.sql',
       '018_operator_access.sql',
+      '019_operator_work_queue_snapshots.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -190,6 +192,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       new PostgresAuditRepository(pool),
       planRepository,
       new PostgresOperationalReadinessRepository(pool),
+      new PostgresOperatorWorkQueueSnapshotRepository(pool),
       new PostgresCampaignContextRepository(pool),
       new CampaignContextService(new PostgresCampaignContextRepository(pool)),
       new ExecutionPlanService(

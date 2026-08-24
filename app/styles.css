@@ -542,6 +542,16 @@ footer p { margin: 0; }
 .work-tabs { margin-bottom: 18px; padding: 6px; border: 1px solid var(--line); border-radius: 13px; background: white; display: flex; gap: 5px; overflow-x: auto; }
 .work-tabs a { padding: 10px 14px; border-radius: 9px; color: var(--muted); font-size: 11px; font-weight: 750; white-space: nowrap; }
 .work-tabs a.active { color: var(--green); background: var(--green-soft); }
+.source-coverage { margin-bottom: 18px; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: white; }
+.source-coverage h2 { margin: 8px 0 0; font-size: 24px; }
+.source-coverage > div:last-child { margin-top: 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
+.source-coverage article { padding: 14px; border: 1px solid var(--line); border-radius: 11px; display: grid; gap: 7px; }
+.source-coverage article > span { font-size: 8px; font-weight: 850; text-transform: uppercase; letter-spacing: .07em; }
+.source-included { color: var(--green); }
+.source-deferred { color: var(--amber); }
+.source-ignored { color: var(--muted); }
+.source-coverage strong { font-size: 11px; }
+.source-coverage p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .work-list { padding: 28px; border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,.78); box-shadow: var(--shadow); }
 .work-list h2 { margin: 8px 0 0; font-size: 28px; }
 .work-item { margin-top: 14px; padding: 20px; border: 1px solid var(--line); border-left: 4px solid #789487; border-radius: 14px; background: white; }
@@ -573,6 +583,7 @@ footer p { margin: 0; }
   .executor-facts, .safety-controls { grid-template-columns: repeat(2, 1fr); }
   .portfolio-metrics { grid-template-columns: repeat(3, 1fr); }
   .work-metrics { grid-template-columns: repeat(3, 1fr); }
+  .source-coverage > div:last-child { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -611,6 +622,7 @@ footer p { margin: 0; }
   .work-shell { padding: 0 18px; }
   .work-metrics { grid-template-columns: 1fr 1fr; }
   .work-list { padding: 18px; }
+  .source-coverage > div:last-child { grid-template-columns: 1fr; }
   .work-item-head { flex-direction: column; }
   .portfolio-item-head, .portfolio-item footer { flex-direction: column; align-items: flex-start; }
   .portfolio-item footer a { margin-left: 0; }

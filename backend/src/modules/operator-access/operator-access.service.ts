@@ -28,6 +28,7 @@ import {
   OperatorCampaignContextSelectionRepository,
   OperationalReadinessRepository,
   OperatorTenantMembershipRepository,
+  OperatorWorkQueueSnapshotRepository,
 } from '../../domain/ports/repositories';
 import {
   AUDIT_REPOSITORY,
@@ -36,6 +37,7 @@ import {
   EXECUTION_PLAN_REPOSITORY,
   OPERATIONAL_READINESS_REPOSITORY,
   OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
+  OPERATOR_WORK_QUEUE_SNAPSHOT_REPOSITORY,
 } from '../../infrastructure/database/database.tokens';
 import { OPERATOR_IDENTITY } from '../../infrastructure/operator-access/operator-access.tokens';
 import { CampaignContextService } from '../campaign-context/campaign-context.service';
@@ -52,7 +54,7 @@ import { MetaWriteValidationService } from '../meta-write-validation/meta-write-
 import { KillSwitchStatus } from '../../domain/contracts/kill-switch';
 import { OperatorCampaignTimelineV1, OperatorTimelineItemV1 } from '../../domain/contracts/operator-timeline';
 import { OperatorPortfolioItemV1, OperatorPortfolioV1 } from '../../domain/contracts/operator-portfolio';
-import { OperatorWorkItemV1, OperatorWorkPriority, OperatorWorkQueueV1 } from '../../domain/contracts/operator-work-queue';
+import { OperatorWorkItemV1, OperatorWorkPriority, OperatorWorkQueueSourceDecisionV1, OperatorWorkQueueV1 } from '../../domain/contracts/operator-work-queue';
 
 const TIMELINE_COPY: Record<string, Pick<OperatorTimelineItemV1, 'category' | 'title' | 'detail'>> = {
   operator_campaign_context_created: { category: 'context', title: 'Contexto da campanha criado', detail: 'Os fatos iniciais foram registrados e versionados.' },
@@ -112,6 +114,8 @@ export class OperatorAccessService {
     private readonly plans: OperatorPlanSelectionRepository,
     @Inject(OPERATIONAL_READINESS_REPOSITORY)
     private readonly readiness: OperationalReadinessRepository,
+    @Inject(OPERATOR_WORK_QUEUE_SNAPSHOT_REPOSITORY)
+    private readonly workQueueSnapshots: OperatorWorkQueueSnapshotRepository,
     @Inject(CAMPAIGN_CONTEXT_REPOSITORY)
     private readonly campaignContextSelection: OperatorCampaignContextSelectionRepository,
     private readonly campaignContexts: CampaignContextService,
@@ -258,11 +262,31 @@ export class OperatorAccessService {
       || a.tenantDisplayName.localeCompare(b.tenantDisplayName)
       || a.campaignId.localeCompare(b.campaignId) || a.blockerCode.localeCompare(b.blockerCode));
     const generatedAt = new Date().toISOString();
+    const sourceDecisions: OperatorWorkQueueSourceDecisionV1[] = [
+      { source: 'campaign_plans', status: 'included',
+        reason: 'Planos mais recentes por campanha foram carregados do PostgreSQL.' },
+      { source: 'operational_readiness', status: 'included',
+        reason: 'Bloqueios atuais foram derivados das decisões persistidas de prontidão.' },
+      { source: 'execution_lifecycle', status: 'deferred',
+        reason: 'Nenhum registro de execução real autorizado existe neste estágio somente leitura.' },
+      { source: 'delivery_metrics', status: 'ignored',
+        reason: 'Não existe fonte externa de métricas verificada; nenhum desempenho foi inferido.' },
+    ];
+    const queueDate = generatedAt.slice(0, 10);
+    const snapshots = await Promise.all(memberships.map(async (membership) => {
+      const tenantItems = items.filter((item) => item.tenantId === membership.tenantId);
+      const snapshotHash = createHash('sha256').update(JSON.stringify({
+        tenantId: membership.tenantId, queueDate, items: tenantItems, sourceDecisions,
+      })).digest('hex');
+      return this.workQueueSnapshots.saveDaily({ snapshotId: randomUUID(),
+        tenantId: membership.tenantId, queueDate, calendarBasis: 'UTC', snapshotHash,
+        itemCount: tenantItems.length, sourceDecisions, generatedAt }, tenantItems);
+    }));
     await Promise.all(memberships.map((membership) => this.audit.append(
       this.workQueueAccessEvent(membership.tenantId, membership.membershipId,
         operator.subject, generatedAt),
     )));
-    return { items, summary: { authorizedTenantCount: memberships.length,
+    return { items, snapshots, summary: { authorizedTenantCount: memberships.length,
       pendingItemCount: items.length,
       criticalCount: items.filter((item) => item.priority === 'critical').length,
       operatorCount: items.filter((item) => item.owner === 'operator').length,
@@ -270,6 +294,7 @@ export class OperatorAccessService {
       metaEnvironmentCount: items.filter((item) => item.owner === 'meta_environment').length },
       boundaries: { derivedFromCurrentReadiness: true, tenantAccessDerivedFromMembership: true,
         priorityRuleIsDeterministic: true, deadlinesFabricated: false, completionInferred: false,
+        dailySnapshotsPersisted: true,
         publicationAuthorized: false, externalWritesAllowed: false, externalWritesPerformed: false },
       generatedAt };
   }

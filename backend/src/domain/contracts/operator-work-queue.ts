@@ -20,8 +20,26 @@ export interface OperatorWorkItemV1 {
   observedAt: string;
 }
 
+export interface OperatorWorkQueueSourceDecisionV1 {
+  source: 'campaign_plans' | 'operational_readiness' | 'execution_lifecycle' | 'delivery_metrics';
+  status: 'included' | 'deferred' | 'ignored';
+  reason: string;
+}
+
+export interface OperatorWorkQueueSnapshotV1 {
+  snapshotId: string;
+  tenantId: string;
+  queueDate: string;
+  calendarBasis: 'UTC';
+  snapshotHash: string;
+  itemCount: number;
+  sourceDecisions: OperatorWorkQueueSourceDecisionV1[];
+  generatedAt: string;
+}
+
 export interface OperatorWorkQueueV1 {
   items: OperatorWorkItemV1[];
+  snapshots: OperatorWorkQueueSnapshotV1[];
   summary: {
     authorizedTenantCount: number;
     pendingItemCount: number;
@@ -36,6 +54,7 @@ export interface OperatorWorkQueueV1 {
     priorityRuleIsDeterministic: true;
     deadlinesFabricated: false;
     completionInferred: false;
+    dailySnapshotsPersisted: true;
     publicationAuthorized: false;
     externalWritesAllowed: false;
     externalWritesPerformed: false;

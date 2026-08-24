@@ -21,6 +21,7 @@ import {
   KILL_SWITCH_REPOSITORY,
   META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
   OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
+  OPERATOR_WORK_QUEUE_SNAPSHOT_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -39,6 +40,7 @@ import { PostgresExecutionAuthorizationRepository } from './postgres-execution-a
 import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository';
 import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-write-validation-protocol.repository';
 import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-tenant-membership.repository';
+import { PostgresOperatorWorkQueueSnapshotRepository } from './postgres-operator-work-queue-snapshot.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -139,6 +141,11 @@ import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresOperatorTenantMembershipRepository(pool),
     },
+    {
+      provide: OPERATOR_WORK_QUEUE_SNAPSHOT_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresOperatorWorkQueueSnapshotRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -160,6 +167,7 @@ import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-
     KILL_SWITCH_REPOSITORY,
     META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
     OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
+    OPERATOR_WORK_QUEUE_SNAPSHOT_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

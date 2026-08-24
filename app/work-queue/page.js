@@ -2,6 +2,9 @@ import { loadOperatorWorkQueue } from '../../lib/operator-work-queue.mjs'
 
 const ownerLabels = { operator: 'Operador', system: 'Sistema', meta_environment: 'Ambiente Meta' }
 const priorityLabels = { critical: 'Crítica', high: 'Alta', normal: 'Normal' }
+const sourceLabels = { campaign_plans: 'Campanhas e planos', operational_readiness: 'Prontidão',
+  execution_lifecycle: 'Ciclo de execução', delivery_metrics: 'Métricas de entrega' }
+const sourceStatusLabels = { included: 'Incluída', deferred: 'Adiada', ignored: 'Ignorada' }
 const allowedFilters = new Set(['all', 'operator', 'system', 'meta_environment'])
 
 function State({ kind }) {
@@ -25,6 +28,7 @@ export default async function WorkQueuePage({ searchParams }) {
       <section className="work-hero"><div><span className="eyebrow">Trabalho diário</span><h1>Uma fila objetiva para fazer o que importa agora.</h1><p>Cada item nasce da prontidão atual e conserva responsável, evidência e ação recomendada. Nenhum prazo ou conclusão é inventado.</p></div><a href="/portfolio">Ver portfólio</a></section>
       <section className="work-metrics"><article><span>Pendências</span><strong>{queue.summary.pendingItemCount}</strong></article><article><span>Críticas</span><strong>{queue.summary.criticalCount}</strong></article><article><span>Do operador</span><strong>{queue.summary.operatorCount}</strong></article><article><span>Do sistema</span><strong>{queue.summary.systemCount}</strong></article><article><span>Ambiente Meta</span><strong>{queue.summary.metaEnvironmentCount}</strong></article></section>
       <nav className="work-tabs" aria-label="Filtrar responsável">{tabs.map(([key, label]) => <a className={filter === key ? 'active' : ''} href={key === 'all' ? '/work-queue' : `/work-queue?owner=${key}`} key={key}>{label}</a>)}</nav>
+      <section className="source-coverage"><div className="section-heading"><div><span className="eyebrow">Transparência das fontes</span><h2>O que entrou no cálculo</h2></div><small>{queue.snapshots.length} checkpoint(s) diário(s) · UTC</small></div><div>{queue.snapshots[0]?.sourceDecisions.map((decision) => <article key={decision.source}><span className={`source-${decision.status}`}>{sourceStatusLabels[decision.status]}</span><strong>{sourceLabels[decision.source]}</strong><p>{decision.reason}</p></article>)}</div></section>
       <section className="work-list">
         <div className="section-heading"><div><span className="eyebrow">Fila comprovada</span><h2>{items.length} item(ns) neste recorte</h2></div><small>Atualizado em {new Date(queue.generatedAt).toLocaleString('pt-BR')}</small></div>
         {!items.length && <div className="portfolio-empty">Nenhuma pendência para este responsável.</div>}
