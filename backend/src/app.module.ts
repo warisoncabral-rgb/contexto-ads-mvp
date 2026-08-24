@@ -8,6 +8,7 @@ import { CampaignContextModule } from './modules/campaign-context/campaign-conte
 import { ExecutionPlanModule } from './modules/execution-plan/execution-plan.module';
 import { ApprovalModule } from './modules/approval/approval.module';
 import { ExecutionSimulationModule } from './modules/execution-simulation/execution-simulation.module';
+import { CreativePackageModule } from './modules/creative-package/creative-package.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ExecutionSimulationModule } from './modules/execution-simulation/execut
     ExecutionPlanModule,
     ApprovalModule,
     ExecutionSimulationModule,
+    CreativePackageModule,
   ],
 })
 export class AppModule {}

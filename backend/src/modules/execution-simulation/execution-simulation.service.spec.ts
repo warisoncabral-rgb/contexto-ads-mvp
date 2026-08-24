@@ -5,6 +5,7 @@ import { ExecutionSimulationReportV1 } from '../../domain/contracts/execution-si
 import { ExecutionPlanV1 } from '../../domain/contracts/execution-plan';
 import {
   ApprovalRepository,
+  CreativePackageRepository,
   ExecutionPlanRepository,
   ExecutionSimulationRepository,
 } from '../../domain/ports/repositories';
@@ -156,6 +157,7 @@ describe('ExecutionSimulationService', () => {
   let plans: jest.Mocked<ExecutionPlanRepository>;
   let approvals: jest.Mocked<ApprovalRepository>;
   let simulations: jest.Mocked<ExecutionSimulationRepository>;
+  let creativePackages: jest.Mocked<CreativePackageRepository>;
   let service: ExecutionSimulationService;
 
   beforeEach(() => {
@@ -203,6 +205,12 @@ describe('ExecutionSimulationService', () => {
       save: jest.fn().mockResolvedValue(undefined),
       latestForPlan: jest.fn(),
     };
+    creativePackages = {
+      appendNext: jest.fn(),
+      latest: jest.fn().mockResolvedValue(null),
+      findVersion: jest.fn(),
+      approveLatest: jest.fn(),
+    };
     service = new ExecutionSimulationService(
       connections,
       capabilities,
@@ -210,6 +218,7 @@ describe('ExecutionSimulationService', () => {
       plans,
       approvals,
       simulations,
+      creativePackages,
     );
   });
 
@@ -307,12 +316,45 @@ describe('ExecutionSimulationService', () => {
   });
 
   it('becomes ready only when target, capabilities, approval and creative all pass', async () => {
+    const creativePackageId = '99999999-9999-4999-8999-999999999999';
+    const creativeContentHash = 'c'.repeat(64);
     const readyPlan: ExecutionPlanV1 = {
       ...boundPlan,
       objectsToCreate: boundPlan.objectsToCreate.map((object) => object.type === 'creative'
-        ? { ...object, logicalConfig: { ...object.logicalConfig, copyStatus: 'approved' } }
+        ? { ...object, logicalConfig: {
+          ...object.logicalConfig,
+          copyStatus: 'approved',
+          creativePackageId,
+          creativePackageVersion: 1,
+          creativeContentHash,
+        } }
         : object),
     };
+    creativePackages.latest.mockResolvedValueOnce({
+      creativePackageId,
+      tenantId,
+      campaignId,
+      sourceExecutionPlanId: executionPlanId,
+      sourcePlanHash: readyPlan.planHash,
+      version: 1,
+      schemaVersion: '1.0',
+      status: 'approved',
+      copies: [],
+      claims: [],
+      assets: [],
+      reviewChecklist: {
+        claimsVerifiedAgainstSources: true,
+        visualFidelityReviewed: true,
+        safeAreaReviewed: true,
+        requiredFieldsReviewed: true,
+        automaticEnhancementsReviewed: true,
+      },
+      validationIssues: [],
+      contentHash: creativeContentHash,
+      approvedBy: 'warison',
+      approvedAt: '2026-08-24T12:00:00.000Z',
+      createdAt: '2026-08-24T11:00:00.000Z',
+    });
     plans.findById.mockResolvedValueOnce(readyPlan);
     plans.latest.mockResolvedValueOnce(readyPlan);
     approvalService.get.mockResolvedValueOnce({

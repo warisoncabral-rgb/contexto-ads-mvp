@@ -36,11 +36,17 @@
 - Mudança do alvo gera novo hash e invalida imediatamente aprovações anteriores.
 - Dry-run persistido valida grafo, alvo, capacidades, aprovação, criativo e trava externa.
 - Sequência de operações é calculada por dependências e sempre registrada com `willExecute: false`.
+- Pacote criativo imutável e versionado, vinculado ao plano e protegido por hash SHA-256.
+- Textos, CTA, alegações e mídias são validados por contrato; cada alegação exige referências de origem e cada mídia exige digest próprio.
+- Checklist humano cobre fontes, fidelidade visual, área segura, campos obrigatórios e aprimoramentos automáticos.
+- Nova versão criativa gera imediatamente um novo plano bloqueado e invalida aprovações anteriores.
+- Aprovação criativa aceita somente a versão e o hash mais recentes e produz outro plano imutável ainda em A0.
+- O dry-run compara o plano com o pacote criativo aprovado mais recente, impedindo reuso de conteúdo antigo.
 
 ## Próximo bloco interno sem dependência externa
-1. Criar um pacote criativo versionado vinculado ao plano e às fontes do contexto.
-2. Validar alegações, destinos, formatos e aprovação humana das peças.
-3. Substituir o briefing pendente por conteúdo aprovado sem habilitar escrita Meta.
+1. Criar o resumo operacional final, compreensível para o usuário, a partir do plano e das evidências atuais.
+2. Consolidar bloqueadores, próxima ação e limites de autonomia em uma decisão única de prontidão.
+3. Preparar o contrato do executor real sem implementar chamadas de escrita Meta.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
