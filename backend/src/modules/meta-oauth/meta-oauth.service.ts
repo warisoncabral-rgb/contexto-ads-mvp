@@ -25,7 +25,11 @@ import { CREDENTIAL_VAULT } from '../../infrastructure/vault/credential-vault.to
 import { META_OAUTH_TOKEN_EXCHANGE } from './meta-oauth.tokens';
 
 const OAUTH_ATTEMPT_TTL_MS = 10 * 60 * 1000;
-const META_OAUTH_SCOPES = ['public_profile', 'ads_read', 'pages_show_list'] as const;
+export type MetaOAuthScopeProfile = 'read_only' | 'controlled_write_validation';
+const META_OAUTH_SCOPE_PROFILES: Record<MetaOAuthScopeProfile, readonly string[]> = {
+  read_only: ['public_profile', 'ads_read', 'pages_show_list'],
+  controlled_write_validation: ['public_profile', 'ads_read', 'pages_show_list', 'ads_management'],
+};
 const META_AUTHORIZATION_ORIGIN = 'https://www.facebook.com';
 
 export interface MetaOAuthCallbackInput {
@@ -49,12 +53,16 @@ export class MetaOAuthService {
     private readonly connectionStore: MetaConnectionStore,
   ) {}
 
-  async start(tenantId: string, connectionId: string) {
+  async start(tenantId: string, connectionId: string, scopeProfile: MetaOAuthScopeProfile = 'read_only') {
     const connection = await this.connections.getConnection(tenantId, connectionId);
     if (connection.status !== 'authorization_pending') {
       throw new ConflictException('Meta connection is not awaiting authorization');
     }
+    if (!(scopeProfile in META_OAUTH_SCOPE_PROFILES)) {
+      throw new BadRequestException('Invalid Meta OAuth scope profile');
+    }
 
+    const requestedScopes = META_OAUTH_SCOPE_PROFILES[scopeProfile];
     const oauth = this.getValidatedConfiguration();
     const state = randomBytes(32).toString('base64url');
     const now = new Date();
@@ -64,7 +72,7 @@ export class MetaOAuthService {
       tenantId: connection.tenantId,
       connectionId: connection.connectionId,
       stateHash: createHash('sha256').update(state).digest('hex'),
-      requestedScopes: [...META_OAUTH_SCOPES],
+      requestedScopes: [...requestedScopes],
       createdAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
     };
@@ -79,14 +87,17 @@ export class MetaOAuthService {
     authorizationUrl.searchParams.set('redirect_uri', oauth.redirectUri);
     authorizationUrl.searchParams.set('response_type', 'code');
     authorizationUrl.searchParams.set('state', state);
-    authorizationUrl.searchParams.set('scope', META_OAUTH_SCOPES.join(','));
+    authorizationUrl.searchParams.set('scope', requestedScopes.join(','));
 
     return {
       attemptId: attempt.attemptId,
       connectionId: attempt.connectionId,
+      scopeProfile,
+      requestedScopes: [...requestedScopes],
       authorizationUrl: authorizationUrl.toString(),
       expiresAt: attempt.expiresAt,
       externalCallPerformed: false,
+      writeAuthorized: false,
     };
   }
 

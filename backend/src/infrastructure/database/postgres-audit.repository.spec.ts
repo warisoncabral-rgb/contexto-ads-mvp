@@ -44,4 +44,26 @@ describe('PostgresAuditRepository', () => {
       ],
     );
   });
+
+  it('lists only campaign-linked objects inside the tenant boundary', async () => {
+    query.mockResolvedValueOnce({ rows: [{
+      audit_event_id: event.auditEventId, tenant_id: event.tenantId,
+      correlation_id: event.correlationId, actor_type: event.actorType,
+      actor_id: event.actorId, event_type: event.eventType,
+      object_type: event.objectType, object_id: event.objectId,
+      result: event.result, created_at: new Date(event.createdAt),
+    }] });
+    const result = await repository.listForCampaign(
+      event.tenantId, '55555555-5555-4555-8555-555555555555', 100,
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('where tenant_id = $1 and object_id in'),
+      [event.tenantId, '55555555-5555-4555-8555-555555555555', 100],
+    );
+    expect(query.mock.calls[0][0]).toContain("event_type not like 'operator_%_viewed'");
+    expect(result).toEqual([expect.objectContaining({
+      auditEventId: event.auditEventId, eventType: event.eventType,
+      createdAt: event.createdAt,
+    })]);
+  });
 });

@@ -12,12 +12,16 @@ import {
   EXECUTION_PLAN_REPOSITORY,
   APPROVAL_REPOSITORY,
   AUDIT_REPOSITORY,
+  AUDIT_TIMELINE_REPOSITORY,
   EXECUTION_SIMULATION_REPOSITORY,
   CREATIVE_PACKAGE_REPOSITORY,
   OPERATIONAL_READINESS_REPOSITORY,
   EXECUTION_MANIFEST_REPOSITORY,
   EXECUTION_AUTHORIZATION_REPOSITORY,
   KILL_SWITCH_REPOSITORY,
+  META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
+  OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
+  OPERATOR_WORK_QUEUE_SNAPSHOT_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -34,6 +38,9 @@ import { PostgresOperationalReadinessRepository } from './postgres-operational-r
 import { PostgresExecutionManifestRepository } from './postgres-execution-manifest.repository';
 import { PostgresExecutionAuthorizationRepository } from './postgres-execution-authorization.repository';
 import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository';
+import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-write-validation-protocol.repository';
+import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-tenant-membership.repository';
+import { PostgresOperatorWorkQueueSnapshotRepository } from './postgres-operator-work-queue-snapshot.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -90,6 +97,11 @@ import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository'
       useFactory: (pool: Pool) => new PostgresAuditRepository(pool),
     },
     {
+      provide: AUDIT_TIMELINE_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresAuditRepository(pool),
+    },
+    {
       provide: EXECUTION_SIMULATION_REPOSITORY,
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresExecutionSimulationRepository(pool),
@@ -119,6 +131,21 @@ import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository'
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresKillSwitchRepository(pool),
     },
+    {
+      provide: META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresMetaWriteValidationProtocolRepository(pool),
+    },
+    {
+      provide: OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresOperatorTenantMembershipRepository(pool),
+    },
+    {
+      provide: OPERATOR_WORK_QUEUE_SNAPSHOT_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresOperatorWorkQueueSnapshotRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -131,12 +158,16 @@ import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository'
     EXECUTION_PLAN_REPOSITORY,
     APPROVAL_REPOSITORY,
     AUDIT_REPOSITORY,
+    AUDIT_TIMELINE_REPOSITORY,
     EXECUTION_SIMULATION_REPOSITORY,
     CREATIVE_PACKAGE_REPOSITORY,
     OPERATIONAL_READINESS_REPOSITORY,
     EXECUTION_MANIFEST_REPOSITORY,
     EXECUTION_AUTHORIZATION_REPOSITORY,
     KILL_SWITCH_REPOSITORY,
+    META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
+    OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
+    OPERATOR_WORK_QUEUE_SNAPSHOT_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

@@ -9,7 +9,8 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "test": "jest --runInBand",
-    "lint": "eslint . --max-warnings=0"
+    "lint": "eslint . --max-warnings=0",
+    "preflight:real-meta-env": "node scripts/check-real-meta-environment.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.1",
