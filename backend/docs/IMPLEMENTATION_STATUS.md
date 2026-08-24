@@ -83,6 +83,10 @@
 - Plano idempotente e auditoria de geração são persistidos atomicamente, sem duplicar evidência em repetição concorrente.
 - A interface recusa plano cruzado, versão diferente, objetos ativos ou qualquer alegação de escrita externa.
 - Resultado apresentado permanece `draft`, A0, com aprovação humana obrigatória, riscos bloqueantes e objetos `PAUSED`.
+- Manifesto, autorização curta, preflight, Kill Switch e protocolo de validação de escrita agora são acessíveis somente pela fachada autenticada do operador.
+- A identidade usada em solicitações e decisões do executor é derivada do token server-side; campos de autoria enviados pelo cliente foram eliminados dessas rotas.
+- Operadores podem preparar e solicitar validação, proprietários decidem autorizações e controlam switches/protocolos, e viewers permanecem somente leitura.
+- As rotas internas públicas do controle de execução foram removidas; conhecer UUIDs não contorna membership nem isolamento por tenant.
 
 ## Bloco interno de validação controlada concluído
 1. O contrato do primeiro teste de criação pausada está persistido e auditável.

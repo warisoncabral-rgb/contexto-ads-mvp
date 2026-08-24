@@ -199,6 +199,10 @@ describeWithPostgres('PostgreSQL integration', () => {
       {} as OperationalReadinessService,
       {} as ExecutionSimulationService,
       {} as CreativePackageService,
+      {} as import('../../modules/execution-manifest/execution-manifest.service').ExecutionManifestService,
+      {} as import('../../modules/execution-authorization/execution-authorization.service').ExecutionAuthorizationService,
+      {} as import('../../modules/kill-switch/kill-switch.service').KillSwitchService,
+      {} as import('../../modules/meta-write-validation/meta-write-validation.service').MetaWriteValidationService,
     );
     const result = await service.listTenants(
       'Bearer integration-token-with-at-least-32-characters',
