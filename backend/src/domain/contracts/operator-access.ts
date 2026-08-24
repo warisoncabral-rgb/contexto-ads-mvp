@@ -22,6 +22,10 @@ export type OperatorPermission =
   | 'manage_campaign_preparation'
   | 'request_approval'
   | 'decide_approval'
+  | 'manage_execution_preflight'
+  | 'decide_execution_authorization'
+  | 'manage_kill_switch'
+  | 'prepare_write_validation'
   | 'configure_tenant';
 
 export interface OperatorTenantAccessV1 {

@@ -43,6 +43,11 @@ import { OperationalReadinessService } from '../operational-readiness/operationa
 import { ExecutionSimulationService } from '../execution-simulation/execution-simulation.service';
 import { CreativePackageService } from '../creative-package/creative-package.service';
 import { CreativePackageInputV1 } from '../../domain/contracts/creative-package';
+import { ExecutionManifestService } from '../execution-manifest/execution-manifest.service';
+import { ExecutionAuthorizationService } from '../execution-authorization/execution-authorization.service';
+import { KillSwitchService } from '../kill-switch/kill-switch.service';
+import { MetaWriteValidationService } from '../meta-write-validation/meta-write-validation.service';
+import { KillSwitchStatus } from '../../domain/contracts/kill-switch';
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
   owner: [
@@ -50,12 +55,17 @@ const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
     'manage_campaign_preparation',
     'request_approval',
     'decide_approval',
+    'manage_execution_preflight',
+    'decide_execution_authorization',
+    'manage_kill_switch',
+    'prepare_write_validation',
     'configure_tenant',
   ],
   operator: [
     'view_workspace',
     'manage_campaign_preparation',
     'request_approval',
+    'manage_execution_preflight',
   ],
   viewer: ['view_workspace'],
 };
@@ -81,6 +91,10 @@ export class OperatorAccessService {
     private readonly operationalReadiness: OperationalReadinessService,
     private readonly executionSimulations: ExecutionSimulationService,
     private readonly creativePackages: CreativePackageService,
+    private readonly executionManifests: ExecutionManifestService,
+    private readonly executionAuthorizations: ExecutionAuthorizationService,
+    private readonly killSwitch: KillSwitchService,
+    private readonly metaWriteValidation: MetaWriteValidationService,
   ) {}
 
   async listTenants(
@@ -324,6 +338,89 @@ export class OperatorAccessService {
     campaignId: string) {
     await this.authorizedMembership(authorizationHeader, tenantId);
     return this.creativePackages.latest(tenantId, campaignId);
+  }
+
+  async prepareExecutionManifest(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string, executionPlanId: string, approvalId?: string) {
+    const { membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'manage_execution_preflight');
+    return this.executionManifests.prepare(tenantId, campaignId, executionPlanId, approvalId);
+  }
+
+  async latestExecutionManifest(authorizationHeader: string | undefined, tenantId: string,
+    executionPlanId: string) {
+    await this.authorizedMembership(authorizationHeader, tenantId);
+    return this.executionManifests.latest(tenantId, executionPlanId);
+  }
+
+  async requestExecutionAuthorization(authorizationHeader: string | undefined, tenantId: string,
+    executionManifestId: string) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'manage_execution_preflight');
+    return this.executionAuthorizations.request(tenantId, executionManifestId, operator.subject);
+  }
+
+  async getExecutionAuthorization(authorizationHeader: string | undefined, tenantId: string,
+    executionAuthorizationId: string) {
+    await this.authorizedMembership(authorizationHeader, tenantId);
+    return this.executionAuthorizations.get(tenantId, executionAuthorizationId);
+  }
+
+  async decideExecutionAuthorization(authorizationHeader: string | undefined, tenantId: string,
+    executionAuthorizationId: string, decision: string, reason?: string) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'decide_execution_authorization');
+    if (decision === 'approve') return this.executionAuthorizations.approve(
+      tenantId, executionAuthorizationId, operator.subject,
+    );
+    if (decision === 'reject') return this.executionAuthorizations.reject(
+      tenantId, executionAuthorizationId, operator.subject, reason,
+    );
+    if (decision === 'revoke') return this.executionAuthorizations.revoke(
+      tenantId, executionAuthorizationId, operator.subject, reason,
+    );
+    throw new BadRequestException({ code: 'invalid_execution_authorization_decision',
+      message: 'Decision must be approve, reject or revoke' });
+  }
+
+  async runExecutionPreflight(authorizationHeader: string | undefined, tenantId: string,
+    executionAuthorizationId: string) {
+    const { membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'manage_execution_preflight');
+    return this.executionAuthorizations.preflight(tenantId, executionAuthorizationId);
+  }
+
+  async changeKillSwitch(authorizationHeader: string | undefined, tenantId: string,
+    scope: 'tenant' | 'campaign', campaignId: string | undefined,
+    status: KillSwitchStatus, reason: string) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'manage_kill_switch');
+    if (!['tenant', 'campaign'].includes(scope)) {
+      throw new BadRequestException({ code: 'invalid_kill_switch_scope',
+        message: 'Scope must be tenant or campaign' });
+    }
+    return scope === 'tenant'
+      ? this.killSwitch.changeTenant(tenantId, status, operator.subject, reason)
+      : this.killSwitch.changeCampaign(tenantId, campaignId, status, operator.subject, reason);
+  }
+
+  async effectiveKillSwitch(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string) {
+    await this.authorizedMembership(authorizationHeader, tenantId);
+    return this.killSwitch.effective(tenantId, campaignId);
+  }
+
+  async prepareMetaWriteValidation(authorizationHeader: string | undefined, tenantId: string,
+    executionManifestId: string) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'prepare_write_validation');
+    return this.metaWriteValidation.prepare(tenantId, executionManifestId, operator.subject);
+  }
+
+  async latestMetaWriteValidation(authorizationHeader: string | undefined, tenantId: string,
+    executionManifestId: string) {
+    await this.authorizedMembership(authorizationHeader, tenantId);
+    return this.metaWriteValidation.latest(tenantId, executionManifestId);
   }
 
   private async creativeReadiness(result: Awaited<ReturnType<CreativePackageService['appendVersion']>>) {

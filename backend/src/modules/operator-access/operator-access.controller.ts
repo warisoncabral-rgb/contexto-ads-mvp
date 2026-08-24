@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
 import { CampaignContextInput } from '../../domain/contracts/campaign-context';
 import { CreativePackageInputV1 } from '../../domain/contracts/creative-package';
+import { KillSwitchStatus } from '../../domain/contracts/kill-switch';
 import { OperatorAccessService } from './operator-access.service';
 
 @Controller('operator')
@@ -123,6 +124,82 @@ export class OperatorAccessController {
     @Headers('authorization') authorization: string | undefined,
   ) {
     return this.service.latestCreativePackage(authorization, tenantId, campaignId);
+  }
+
+  @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/execution-manifests')
+  prepareExecutionManifest(@Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string, @Param('executionPlanId') executionPlanId: string,
+    @Body() body: { approvalId?: string }, @Headers('authorization') authorization?: string) {
+    return this.service.prepareExecutionManifest(
+      authorization, tenantId, campaignId, executionPlanId, body?.approvalId,
+    );
+  }
+
+  @Get('tenants/:tenantId/plans/:executionPlanId/execution-manifests/latest')
+  latestExecutionManifest(@Param('tenantId') tenantId: string,
+    @Param('executionPlanId') executionPlanId: string,
+    @Headers('authorization') authorization?: string) {
+    return this.service.latestExecutionManifest(authorization, tenantId, executionPlanId);
+  }
+
+  @Post('tenants/:tenantId/execution-manifests/:executionManifestId/authorizations')
+  requestExecutionAuthorization(@Param('tenantId') tenantId: string,
+    @Param('executionManifestId') executionManifestId: string,
+    @Headers('authorization') authorization?: string) {
+    return this.service.requestExecutionAuthorization(authorization, tenantId, executionManifestId);
+  }
+
+  @Get('tenants/:tenantId/execution-authorizations/:executionAuthorizationId')
+  getExecutionAuthorization(@Param('tenantId') tenantId: string,
+    @Param('executionAuthorizationId') executionAuthorizationId: string,
+    @Headers('authorization') authorization?: string) {
+    return this.service.getExecutionAuthorization(authorization, tenantId, executionAuthorizationId);
+  }
+
+  @Post('tenants/:tenantId/execution-authorizations/:executionAuthorizationId/:decision')
+  decideExecutionAuthorization(@Param('tenantId') tenantId: string,
+    @Param('executionAuthorizationId') executionAuthorizationId: string,
+    @Param('decision') decision: string, @Body() body: { reason?: string },
+    @Headers('authorization') authorization?: string) {
+    return this.service.decideExecutionAuthorization(
+      authorization, tenantId, executionAuthorizationId, decision, body?.reason,
+    );
+  }
+
+  @Post('tenants/:tenantId/execution-authorizations/:executionAuthorizationId/preflights')
+  runExecutionPreflight(@Param('tenantId') tenantId: string,
+    @Param('executionAuthorizationId') executionAuthorizationId: string,
+    @Headers('authorization') authorization?: string) {
+    return this.service.runExecutionPreflight(authorization, tenantId, executionAuthorizationId);
+  }
+
+  @Post('tenants/:tenantId/kill-switch/:scope')
+  changeKillSwitch(@Param('tenantId') tenantId: string, @Param('scope') scope: 'tenant' | 'campaign',
+    @Body() body: { campaignId?: string; status: KillSwitchStatus; reason: string },
+    @Headers('authorization') authorization?: string) {
+    return this.service.changeKillSwitch(
+      authorization, tenantId, scope, body?.campaignId, body?.status, body?.reason,
+    );
+  }
+
+  @Get('tenants/:tenantId/campaigns/:campaignId/kill-switch/effective')
+  effectiveKillSwitch(@Param('tenantId') tenantId: string, @Param('campaignId') campaignId: string,
+    @Headers('authorization') authorization?: string) {
+    return this.service.effectiveKillSwitch(authorization, tenantId, campaignId);
+  }
+
+  @Post('tenants/:tenantId/execution-manifests/:executionManifestId/meta-write-validation-protocols')
+  prepareMetaWriteValidation(@Param('tenantId') tenantId: string,
+    @Param('executionManifestId') executionManifestId: string,
+    @Headers('authorization') authorization?: string) {
+    return this.service.prepareMetaWriteValidation(authorization, tenantId, executionManifestId);
+  }
+
+  @Get('tenants/:tenantId/execution-manifests/:executionManifestId/meta-write-validation-protocols/latest')
+  latestMetaWriteValidation(@Param('tenantId') tenantId: string,
+    @Param('executionManifestId') executionManifestId: string,
+    @Headers('authorization') authorization?: string) {
+    return this.service.latestMetaWriteValidation(authorization, tenantId, executionManifestId);
   }
 
   @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/approvals')

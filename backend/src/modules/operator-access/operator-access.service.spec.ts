@@ -21,6 +21,10 @@ import { ApprovalService } from '../approval/approval.service';
 import { OperationalReadinessService } from '../operational-readiness/operational-readiness.service';
 import { ExecutionSimulationService } from '../execution-simulation/execution-simulation.service';
 import { CreativePackageService } from '../creative-package/creative-package.service';
+import { ExecutionManifestService } from '../execution-manifest/execution-manifest.service';
+import { ExecutionAuthorizationService } from '../execution-authorization/execution-authorization.service';
+import { KillSwitchService } from '../kill-switch/kill-switch.service';
+import { MetaWriteValidationService } from '../meta-write-validation/meta-write-validation.service';
 
 describe('OperatorAccessService', () => {
   const principal = {
@@ -60,6 +64,10 @@ describe('OperatorAccessService', () => {
   let operationalReadiness: jest.Mocked<Pick<OperationalReadinessService, 'generate'>>;
   let executionSimulations: jest.Mocked<Pick<ExecutionSimulationService, 'bindTarget'>>;
   let creativePackages: jest.Mocked<Pick<CreativePackageService, 'appendVersion' | 'approve' | 'latest'>>;
+  let executionManifests: jest.Mocked<Pick<ExecutionManifestService, 'prepare' | 'latest'>>;
+  let executionAuthorizations: jest.Mocked<Pick<ExecutionAuthorizationService, 'request' | 'get' | 'approve' | 'reject' | 'revoke' | 'preflight'>>;
+  let killSwitch: jest.Mocked<Pick<KillSwitchService, 'changeTenant' | 'changeCampaign' | 'effective'>>;
+  let metaWriteValidation: jest.Mocked<Pick<MetaWriteValidationService, 'prepare' | 'latest'>>;
   let service: OperatorAccessService;
 
   beforeEach(() => {
@@ -94,6 +102,11 @@ describe('OperatorAccessService', () => {
     } as never) };
     executionSimulations = { bindTarget: jest.fn() };
     creativePackages = { appendVersion: jest.fn(), approve: jest.fn(), latest: jest.fn() };
+    executionManifests = { prepare: jest.fn(), latest: jest.fn() };
+    executionAuthorizations = { request: jest.fn(), get: jest.fn(), approve: jest.fn(),
+      reject: jest.fn(), revoke: jest.fn(), preflight: jest.fn() };
+    killSwitch = { changeTenant: jest.fn(), changeCampaign: jest.fn(), effective: jest.fn() };
+    metaWriteValidation = { prepare: jest.fn(), latest: jest.fn() };
     service = new OperatorAccessService(
       identity,
       memberships,
@@ -107,7 +120,72 @@ describe('OperatorAccessService', () => {
       operationalReadiness as unknown as OperationalReadinessService,
       executionSimulations as unknown as ExecutionSimulationService,
       creativePackages as unknown as CreativePackageService,
+      executionManifests as unknown as ExecutionManifestService,
+      executionAuthorizations as unknown as ExecutionAuthorizationService,
+      killSwitch as unknown as KillSwitchService,
+      metaWriteValidation as unknown as MetaWriteValidationService,
     );
+  });
+
+  it('protects the executor preflight and derives every actor from authentication', async () => {
+    const tenantId = membershipsFixture[0].tenantId;
+    const campaignId = '55555555-5555-4555-8555-555555555555';
+    const planId = '66666666-6666-4666-8666-666666666666';
+    const manifestId = '77777777-7777-4777-8777-777777777777';
+    const authorizationId = '88888888-8888-4888-8888-888888888888';
+    executionManifests.prepare.mockResolvedValueOnce({ executionManifestId: manifestId } as never);
+    executionAuthorizations.request.mockResolvedValueOnce({ executionAuthorizationId: authorizationId } as never);
+    executionAuthorizations.approve.mockResolvedValueOnce({ status: 'approved' } as never);
+
+    await service.prepareExecutionManifest('Bearer token', tenantId, campaignId, planId);
+    await service.requestExecutionAuthorization('Bearer token', tenantId, manifestId);
+    await service.decideExecutionAuthorization('Bearer token', tenantId, authorizationId, 'approve');
+
+    expect(executionManifests.prepare).toHaveBeenCalledWith(
+      tenantId, campaignId, planId, undefined,
+    );
+    expect(executionAuthorizations.request).toHaveBeenCalledWith(
+      tenantId, manifestId, principal.subject,
+    );
+    expect(executionAuthorizations.approve).toHaveBeenCalledWith(
+      tenantId, authorizationId, principal.subject,
+    );
+  });
+
+  it('lets operators prepare but reserves execution decisions and safety controls for owners', async () => {
+    const membership = { ...membershipsFixture[0], role: 'operator' as const };
+    memberships.listActiveForSubject.mockResolvedValue([membership]);
+    const tenantId = membership.tenantId;
+    const manifestId = '77777777-7777-4777-8777-777777777777';
+    executionAuthorizations.request.mockResolvedValueOnce({ executionAuthorizationId: manifestId } as never);
+    await service.requestExecutionAuthorization('Bearer token', tenantId, manifestId);
+    expect(executionAuthorizations.request).toHaveBeenCalled();
+
+    await expect(service.decideExecutionAuthorization(
+      'Bearer token', tenantId, manifestId, 'approve',
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.changeKillSwitch(
+      'Bearer token', tenantId, 'tenant', undefined, 'released', 'Teste controlado',
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.prepareMetaWriteValidation(
+      'Bearer token', tenantId, manifestId,
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(executionAuthorizations.approve).not.toHaveBeenCalled();
+    expect(killSwitch.changeTenant).not.toHaveBeenCalled();
+    expect(metaWriteValidation.prepare).not.toHaveBeenCalled();
+  });
+
+  it('blocks viewers and cross-tenant requests before executor services are reached', async () => {
+    const campaignId = '55555555-5555-4555-8555-555555555555';
+    const planId = '66666666-6666-4666-8666-666666666666';
+    await expect(service.prepareExecutionManifest(
+      'Bearer token', membershipsFixture[1].tenantId, campaignId, planId,
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.latestExecutionManifest(
+      'Bearer token', '99999999-9999-4999-8999-999999999999', planId,
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(executionManifests.prepare).not.toHaveBeenCalled();
+    expect(executionManifests.latest).not.toHaveBeenCalled();
   });
 
   it('derives creative authorship from authentication and reserves approval for owners', async () => {
