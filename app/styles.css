@@ -348,6 +348,27 @@ footer p { margin: 0; }
 .approval-actions form:last-child button { background: #843b35; }
 .approval-evidence { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .approval-evidence span { padding: 8px 10px; border-radius: 8px; background: #eef2ef; font-size: 10px; }
+.creative-center { margin-top: 20px; }
+.creative-boundary { margin: 14px 0 0; padding: 13px 15px; border-left: 3px solid var(--green); color: var(--muted); background: var(--green-soft); font-size: 12px; line-height: 1.55; }
+.creative-summary { margin-top: 18px; display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 10px; }
+.creative-summary div { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f8faf8; display: grid; gap: 7px; }
+.creative-summary span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.creative-summary strong { overflow-wrap: anywhere; font-size: 12px; }
+.creative-center .form-error { margin: 16px 0 0; }
+.creative-approve-form { margin-top: 16px; }
+.creative-approve-form button, .creative-form > button { width: 100%; padding: 14px; border: 0; border-radius: 10px; color: white; background: var(--green); font-weight: 800; cursor: pointer; }
+.creative-approve-form button:disabled, .creative-form > button:disabled { opacity: .55; cursor: wait; }
+.creative-form-shell { margin-top: 18px; border: 1px solid var(--line); border-radius: 14px; }
+.creative-form-shell summary { padding: 16px; color: var(--green); font-size: 12px; font-weight: 800; cursor: pointer; }
+.creative-form { padding: 0 16px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.creative-form > label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 750; }
+.creative-form .wide { grid-column: 1 / -1; }
+.creative-form input, .creative-form select, .creative-form textarea { width: 100%; min-width: 0; padding: 12px 13px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: white; outline: none; resize: vertical; }
+.creative-form input:focus, .creative-form select:focus, .creative-form textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(24,92,61,.1); }
+.creative-checklist { padding: 15px; border: 1px solid var(--line); border-radius: 11px; display: grid; gap: 10px; }
+.creative-checklist legend { padding: 0 7px; color: var(--ink); font-size: 11px; font-weight: 800; }
+.creative-checklist label { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; }
+.creative-checklist input { width: auto; }
 
 .back-link { color: var(--green); font-size: 12px; font-weight: 800; }
 .preparation-hero {
@@ -435,6 +456,7 @@ footer p { margin: 0; }
   .basis-grid { grid-template-columns: repeat(2, 1fr); }
   .review-facts { grid-template-columns: repeat(2, 1fr); }
   .approval-facts { grid-template-columns: repeat(2, 1fr); }
+  .creative-summary { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 640px) {
@@ -455,6 +477,8 @@ footer p { margin: 0; }
   .plan-boundaries { grid-template-columns: 1fr 1fr; }
   .generated-plan-hero, .plan-review-heading { flex-direction: column; }
   .approval-facts, .approval-actions { grid-template-columns: 1fr; }
+  .creative-summary, .creative-form { grid-template-columns: 1fr; }
+  .creative-form .wide { grid-column: auto; }
   .preparation-hero, .preparation-shell { padding-left: 18px; padding-right: 18px; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid label.wide { grid-column: auto; }
