@@ -6,7 +6,7 @@
 - Porta `MetaAdapterPort` somente leitura.
 - Adapter Meta em modo fail-closed: não executa nada sem configuração real.
 - Endpoint inicial `POST /v1/meta/connections/start`.
-- Endpoint de prontidão `GET /v1/readiness/:connectionId?tenantId=...`.
+- Diagnóstico dinâmico de prontidão para configuração, cofre, OAuth, ativos e capacidades.
 - Migração PostgreSQL inicial para conexão, bindings, capabilities, auditoria e prontidão.
 - Separação explícita de credenciais via `CredentialVaultPort`.
 - Cofre PostgreSQL com AES-256-GCM, isolamento por tenant e revogação lógica.
@@ -19,12 +19,13 @@
 - Tokens resolvidos pelo cofre por tenant, enviados apenas no header e protegidos com `appsecret_proof`.
 - Endpoint tenant-scoped que lê somente contas de anúncio presentes no snapshot de descoberta da conexão.
 - Validação de capacidades via `/me/permissions`, cruzada com ativos descobertos e persistida atomicamente.
+- Smoke test orquestrado e fail-closed: identidade → descoberta → capacidades → leitura de conta.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
 2. Validar permissões e App Review aplicáveis ao caso multi-cliente.
 3. Guardar a chave mestra do cofre nas configurações protegidas da hospedagem.
-4. Rodar o primeiro teste real somente leitura.
+4. Acionar o smoke test automatizado e guardar o relatório de aprovação.
 
 ## Evolução opcional do cofre
 O PostgreSQL criptografado desbloqueia o MVP sem Google Cloud. A porta

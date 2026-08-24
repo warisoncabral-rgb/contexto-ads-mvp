@@ -2,7 +2,10 @@ import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CapabilityRecord } from '../../domain/contracts/capability';
 import { CapabilityStatus } from '../../domain/enums/states';
-import { MetaCapabilityEvidence } from '../../domain/ports/meta-adapter.port';
+import {
+  MetaAdapterResult,
+  MetaCapabilityEvidence,
+} from '../../domain/ports/meta-adapter.port';
 import { CapabilityRepository } from '../../domain/ports/repositories';
 import { CAPABILITY_REPOSITORY } from '../../infrastructure/database/database.tokens';
 import { MetaReadonlyAdapter } from '../meta-adapter/meta-readonly.adapter';
@@ -24,7 +27,10 @@ export class CapabilityRegistryService {
     return this.capabilities.listForConnection(tenantId, connectionId);
   }
 
-  async validateReadOnly(tenantId: string, connectionId: string) {
+  async validateReadOnly(
+    tenantId: string,
+    connectionId: string,
+  ): Promise<MetaAdapterResult<CapabilityRecord[]>> {
     const connection = await this.connections.getConnection(tenantId, connectionId);
     if (!['connected', 'ready'].includes(connection.status) || !connection.credentialRef) {
       throw new ConflictException('Meta connection is not ready for capability validation');
@@ -37,7 +43,15 @@ export class CapabilityRegistryService {
       bindings,
       [...READ_ONLY_CAPABILITIES],
     );
-    if (!result.success || !result.data) return result;
+    if (!result.success || !result.data) {
+      return {
+        success: false,
+        observedAt: result.observedAt,
+        retryable: result.retryable,
+        normalizedError: result.normalizedError ?? 'VALIDATION',
+        ...(result.requestReference ? { requestReference: result.requestReference } : {}),
+      };
+    }
 
     const records = result.data.map((evidence): CapabilityRecord => ({
       capabilityId: randomUUID(),

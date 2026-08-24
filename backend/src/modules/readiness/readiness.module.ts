@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { CredentialVaultModule } from '../../infrastructure/vault/credential-vault.module';
+import { CapabilityRegistryModule } from '../capability-registry/capability-registry.module';
 import { MetaConnectionModule } from '../meta-connection/meta-connection.module';
 import { ReadinessController } from './readiness.controller';
 import { ReadinessService } from './readiness.service';
 
 @Module({
-  imports: [MetaConnectionModule],
+  imports: [CapabilityRegistryModule, CredentialVaultModule, MetaConnectionModule],
   controllers: [ReadinessController],
   providers: [ReadinessService],
 })

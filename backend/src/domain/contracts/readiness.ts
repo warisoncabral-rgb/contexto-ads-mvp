@@ -18,3 +18,21 @@ export interface ReadinessSnapshot {
   blockers: string[];
   generatedAt: string;
 }
+
+export interface ReadOnlySmokeTestStep {
+  key: 'identity' | 'asset_discovery' | 'capability_validation' | 'ad_account_read';
+  status: 'passed' | 'blocked';
+  meaning: string;
+  evidenceRefs: string[];
+  observedAt?: string;
+}
+
+export interface ReadOnlySmokeTestReport {
+  smokeTestId: string;
+  tenantId: string;
+  connectionId: string;
+  passed: boolean;
+  steps: ReadOnlySmokeTestStep[];
+  blockers: string[];
+  generatedAt: string;
+}
