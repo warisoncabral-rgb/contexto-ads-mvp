@@ -8,6 +8,7 @@ import { PostgresCredentialVaultAdapter } from '../vault/postgres-credential-vau
 import { PostgresCapabilityRepository } from './postgres-capability.repository';
 import { PostgresReadinessRepository } from './postgres-readiness.repository';
 import { PostgresSmokeTestReportRepository } from './postgres-smoke-test-report.repository';
+import { PostgresCampaignContextRepository } from './postgres-campaign-context.repository';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -27,6 +28,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '005_tenant_scoped_asset_bindings.sql',
       '006_tenant_scoped_capability_registry.sql',
       '007_validation_evidence.sql',
+      '008_campaign_context.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -41,6 +43,8 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from campaign_context_versions where tenant_id = $1', [tenantId]);
+    await pool.query('delete from campaigns where tenant_id = $1', [tenantId]);
     await pool.query('delete from meta_smoke_test_reports where tenant_id = $1', [tenantId]);
     await pool.query('delete from readiness_snapshots where tenant_id = $1', [tenantId]);
     await pool.query('delete from credential_vault_secrets where tenant_id = any($1::uuid[])', [
@@ -213,5 +217,49 @@ describeWithPostgres('PostgreSQL integration', () => {
       smokeTestId: randomUUID(),
       tenantId: otherTenantId,
     })).rejects.toThrow();
+  });
+
+  it('versions campaign context atomically and isolates it by tenant', async () => {
+    const repository = new PostgresCampaignContextRepository(pool);
+    const campaignId = randomUUID();
+    const first = {
+      packageId: randomUUID(),
+      tenantId,
+      campaignId,
+      version: 1,
+      schemaVersion: '1.0' as const,
+      status: 'needs_information' as const,
+      facts: {},
+      inferences: [] as [],
+      validationIssues: [{
+        code: 'required_fact_missing' as const,
+        field: 'offer' as const,
+        severity: 'blocker' as const,
+        message: 'Missing offer',
+        nextAction: 'Provide offer',
+      }],
+      contentHash: 'a'.repeat(64),
+      createdAt: '2026-08-24T05:00:00.000Z',
+    };
+    await repository.create(first);
+
+    const versions = await Promise.all(
+      Array.from({ length: 4 }, (_, index) => repository.appendNext({
+        ...first,
+        packageId: randomUUID(),
+        contentHash: (index + 1).toString(16).repeat(64),
+        createdAt: new Date(Date.parse(first.createdAt) + index + 1).toISOString(),
+      })),
+    );
+
+    expect(versions.map((version) => version?.version).sort()).toEqual([2, 3, 4, 5]);
+    await expect(repository.latest(tenantId, campaignId)).resolves
+      .toEqual(expect.objectContaining({ tenantId, campaignId, version: 5 }));
+    await expect(repository.latest(otherTenantId, campaignId)).resolves.toBeNull();
+    await expect(repository.appendNext({
+      ...first,
+      packageId: randomUUID(),
+      tenantId: otherTenantId,
+    })).resolves.toBeNull();
   });
 });
