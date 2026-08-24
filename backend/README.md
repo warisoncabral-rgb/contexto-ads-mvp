@@ -22,6 +22,26 @@ npm install
 npm run start:dev
 ```
 
+Aplique os arquivos SQL de `db/migrations` em ordem numérica antes de iniciar a API.
+
+## Credential Vault sem Google Cloud
+O MVP suporta um cofre PostgreSQL criptografado com:
+
+```bash
+CREDENTIAL_VAULT_PROVIDER=postgres
+CREDENTIAL_VAULT_MASTER_KEY=<32 bytes aleatórios codificados em base64>
+```
+
+Gere a chave uma única vez com `openssl rand -base64 32`. Guarde-a somente nas
+configurações protegidas do ambiente de hospedagem, separada do banco. Perder a
+chave torna as credenciais irrecuperáveis; expor a chave junto com uma cópia do
+banco elimina a proteção do cofre. O banco contém apenas ciphertext autenticado
+com AES-256-GCM e referências opacas.
+
+PRs que alteram o backend executam a suíte completa contra PostgreSQL 18 real,
+incluindo migrações, consumo concorrente do state OAuth, isolamento entre
+tenants, armazenamento criptografado e revogação de credenciais.
+
 ## Endpoints iniciais
 ### `POST /v1/meta/connections/start`
 Body:
@@ -40,4 +60,5 @@ Retorna um snapshot explícito do bloqueio atual de configuração.
 - A Fase 1 não possui escrita na Meta.
 
 ## Próxima entrega
-Implementar o onboarding OAuth real, descoberta de ativos, Capability Registry validado e leitura de conta/estado.
+Validar o OAuth com um app Meta real e depois implementar descoberta de ativos,
+Capability Registry validado e leitura de conta/estado.

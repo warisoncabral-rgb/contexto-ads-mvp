@@ -29,6 +29,6 @@ import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attemp
       useFactory: (pool: Pool) => new PostgresMetaOAuthAttemptRepository(pool),
     },
   ],
-  exports: [META_CONNECTION_REPOSITORY, META_OAUTH_ATTEMPT_REPOSITORY],
+  exports: [DATABASE_POOL, META_CONNECTION_REPOSITORY, META_OAUTH_ATTEMPT_REPOSITORY],
 })
 export class DatabaseModule {}
