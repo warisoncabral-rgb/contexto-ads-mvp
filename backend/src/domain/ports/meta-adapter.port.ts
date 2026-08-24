@@ -15,13 +15,24 @@ export type DiscoveredMetaAsset = Pick<
   'assetType' | 'externalId' | 'displayName'
 >;
 
+export interface MetaCapabilityEvidence {
+  capability: MetaCapabilityType;
+  available: boolean;
+  requiredPermissions: string[];
+  grantedPermissions: string[];
+  apiVersion: string;
+  assetScope?: string;
+  reason?: 'permission_missing' | 'asset_missing' | 'unsupported';
+}
+
 export interface MetaAdapterPort {
   validateConnection(tenantId: string, credentialRef: string): Promise<MetaAdapterResult<{ subjectId: string }>>;
   discoverAssets(credentialRef: string, tenantId: string): Promise<MetaAdapterResult<DiscoveredMetaAsset[]>>;
   validateCapabilities(
+    tenantId: string,
     credentialRef: string,
     assetBindings: MetaAssetBinding[],
     requested: MetaCapabilityType[],
-  ): Promise<MetaAdapterResult<Array<{ capability: MetaCapabilityType; available: boolean; reason?: string }>>>;
+  ): Promise<MetaAdapterResult<MetaCapabilityEvidence[]>>;
   readAdAccount(tenantId: string, credentialRef: string, adAccountId: string): Promise<MetaAdapterResult<Record<string, unknown>>>;
 }

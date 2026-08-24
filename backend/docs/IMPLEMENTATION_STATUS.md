@@ -18,13 +18,13 @@
 - Cliente Graph somente leitura para validar identidade, descobrir contas de anúncio e páginas e ler dados básicos de conta.
 - Tokens resolvidos pelo cofre por tenant, enviados apenas no header e protegidos com `appsecret_proof`.
 - Endpoint tenant-scoped que lê somente contas de anúncio presentes no snapshot de descoberta da conexão.
+- Validação de capacidades via `/me/permissions`, cruzada com ativos descobertos e persistida atomicamente.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
 2. Validar permissões e App Review aplicáveis ao caso multi-cliente.
 3. Guardar a chave mestra do cofre nas configurações protegidas da hospedagem.
-4. Ligar evidências reais ao `validateCapabilities` contra a versão vigente.
-5. Rodar o primeiro teste real somente leitura.
+4. Rodar o primeiro teste real somente leitura.
 
 ## Evolução opcional do cofre
 O PostgreSQL criptografado desbloqueia o MVP sem Google Cloud. A porta

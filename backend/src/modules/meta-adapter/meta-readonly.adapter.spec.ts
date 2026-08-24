@@ -164,6 +164,86 @@ describe('MetaReadonlyAdapter', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('validates read capabilities from granted permissions and discovered assets', async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: [
+      { permission: 'ads_read', status: 'granted' },
+      { permission: 'pages_show_list', status: 'granted' },
+      { permission: 'ads_management', status: 'declined' },
+    ] }));
+
+    await expect(adapter.validateCapabilities(
+      tenantId,
+      credentialRef,
+      [{
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'ad_account',
+        externalId: 'act_123',
+        selected: false,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      }],
+      ['DISCOVER_ASSETS', 'READ_AD_ACCOUNT'],
+    )).resolves.toEqual(expect.objectContaining({
+      success: true,
+      data: [expect.objectContaining({
+        capability: 'DISCOVER_ASSETS',
+        available: true,
+        grantedPermissions: ['ads_read', 'pages_show_list'],
+        apiVersion: 'v26.0',
+      }), expect.objectContaining({
+        capability: 'READ_AD_ACCOUNT',
+        available: true,
+        assetScope: 'act_123',
+        grantedPermissions: ['ads_read'],
+      })],
+    }));
+    expect(vault.getSecret).toHaveBeenCalledWith(tenantId, credentialRef);
+    const [input] = fetchMock.mock.calls[0] as [URL];
+    expect(input.pathname).toBe('/v26.0/me/permissions');
+    expect(input.toString()).not.toContain(accessToken);
+  });
+
+  it('reports missing permissions and assets without claiming availability', async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: [
+      { permission: 'ads_read', status: 'granted' },
+      { permission: 'pages_show_list', status: 'declined' },
+    ] }));
+
+    await expect(adapter.validateCapabilities(
+      tenantId,
+      credentialRef,
+      [],
+      ['DISCOVER_ASSETS', 'READ_AD_ACCOUNT'],
+    )).resolves.toEqual(expect.objectContaining({
+      success: true,
+      data: [expect.objectContaining({
+        capability: 'DISCOVER_ASSETS',
+        available: false,
+        reason: 'permission_missing',
+      }), expect.objectContaining({
+        capability: 'READ_AD_ACCOUNT',
+        available: false,
+        reason: 'asset_missing',
+      })],
+    }));
+  });
+
+  it('fails closed on malformed permission evidence', async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: [
+      { permission: 'ads_read' },
+    ] }));
+
+    await expect(adapter.validateCapabilities(
+      tenantId,
+      credentialRef,
+      [],
+      ['DISCOVER_ASSETS'],
+    )).resolves.toEqual(expect.objectContaining({
+      success: false,
+      normalizedError: 'VALIDATION',
+    }));
+  });
+
   it('rejects oversized declared responses', async () => {
     fetchMock.mockResolvedValueOnce(json(
       { id: '123' },

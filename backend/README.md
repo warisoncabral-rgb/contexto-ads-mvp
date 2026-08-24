@@ -78,6 +78,13 @@ Lista o registro persistido de capacidades e suas evidências somente depois de
 validar que a conexão pertence ao tenant informado. A validação contra a Meta
 continua fail-closed enquanto o app real não estiver configurado.
 
+### `POST /v1/meta/connections/:connectionId/capabilities/validate`
+Body: `{"tenantId":"..."}`. Consulta `/me/permissions`, cruza as permissões
+concedidas com os ativos descobertos e substitui atomicamente o snapshot das
+capacidades `DISCOVER_ASSETS` e `READ_AD_ACCOUNT`. Falhas da Meta não apagam a
+última evidência válida; permissões ou ativos ausentes nunca são tratados como
+capacidade disponível.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -86,5 +93,4 @@ continua fail-closed enquanto o app real não estiver configurado.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Validar o fluxo somente leitura já implementado com um app Meta real e então
-ligar as evidências reais ao Capability Registry.
+Validar o fluxo somente leitura já implementado com um app Meta real.
