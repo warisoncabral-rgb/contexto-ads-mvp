@@ -75,6 +75,22 @@ describe('PostgresExecutionPlanRepository', () => {
     );
   });
 
+  it('lists one latest plan per campaign inside the tenant scope', async () => {
+    const olderCampaign = {
+      ...plan,
+      campaignId: '77777777-7777-4777-8777-777777777777',
+      createdAt: '2026-08-23T07:00:00.000Z',
+    };
+    query.mockResolvedValueOnce({ rows: [{ payload: olderCampaign }, { payload: plan }] });
+
+    await expect(repository.listLatestForTenant(plan.tenantId))
+      .resolves.toEqual([plan, olderCampaign]);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('select distinct on (campaign_id) payload'),
+      [plan.tenantId],
+    );
+  });
+
   it('fails closed if the idempotency invariant cannot be resolved', async () => {
     query
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })

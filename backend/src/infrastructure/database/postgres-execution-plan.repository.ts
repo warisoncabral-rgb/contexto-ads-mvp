@@ -63,4 +63,17 @@ export class PostgresExecutionPlanRepository implements ExecutionPlanRepository 
     );
     return result.rows[0]?.payload ?? null;
   }
+
+  async listLatestForTenant(tenantId: string): Promise<ExecutionPlanV1[]> {
+    const result = await this.pool.query<ExecutionPlanRow>(
+      `select distinct on (campaign_id) payload
+      from execution_plans
+      where tenant_id = $1
+      order by campaign_id, created_at desc, execution_plan_id desc`,
+      [tenantId],
+    );
+    return result.rows
+      .map((row) => row.payload)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
 }

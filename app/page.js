@@ -1,4 +1,5 @@
 import { loadOperationalReadiness } from '../lib/operational-readiness.mjs'
+import { loadOperatorWorkspace } from '../lib/operator-workspace.mjs'
 
 const phases = [
   ['campaignPreparation', 'Campanha'],
@@ -50,7 +51,7 @@ function EmptyState({ result }) {
     configuration_required: {
       eyebrow: 'Configuração necessária',
       title: 'Conecte a central ao backend',
-      text: 'Defina CONTEXT_ADS_API_BASE_URL na hospedagem. Nenhuma consulta externa foi realizada.',
+      text: 'Defina a URL do backend e a credencial server-side do operador. Nenhuma consulta externa foi realizada.',
     },
     not_found: {
       eyebrow: 'Sem evidência',
@@ -61,6 +62,26 @@ function EmptyState({ result }) {
       eyebrow: 'Backend indisponível',
       title: 'Não foi possível confirmar o estado',
       text: 'A central manteve o comportamento fail-closed. Tente novamente quando o backend estiver acessível.',
+    },
+    access_denied: {
+      eyebrow: 'Acesso protegido',
+      title: 'Não foi possível autenticar o operador',
+      text: 'A credencial não foi aceita. Nenhum cliente ou plano foi exposto.',
+    },
+    no_tenants: {
+      eyebrow: 'Acesso autenticado',
+      title: 'Nenhum cliente está associado ao operador',
+      text: 'Crie uma associação ativa antes de abrir uma operação. A central não concede acesso automaticamente.',
+    },
+    invalid_selection: {
+      eyebrow: 'Seleção protegida',
+      title: 'Cliente ou plano fora do acesso permitido',
+      text: 'A seleção não pertence ao espaço autorizado deste operador e foi recusada.',
+    },
+    no_plans: {
+      eyebrow: 'Cliente selecionado',
+      title: 'Nenhuma campanha preparada ainda',
+      text: 'Cadastre o contexto da primeira campanha para gerar um plano rastreável e iniciar o fluxo operacional.',
     },
   }[result.kind]
 
@@ -74,6 +95,45 @@ function EmptyState({ result }) {
         Nenhuma publicação, ativação ou entrega foi inferida.
       </div>
     </section>
+  )
+}
+
+function WorkspaceSelector({ workspace }) {
+  const roleLabels = { owner: 'Proprietário', operator: 'Operador', viewer: 'Leitura' }
+  const statusLabels = {
+    draft: 'Rascunho', pending: 'Pendente', blocked: 'Bloqueado',
+    ready_for_approval: 'Pronto para aprovação', approved: 'Aprovado', executing: 'Em execução',
+  }
+  return (
+    <div className="lookup-form">
+      <form className="selector-group" method="get">
+        <label>Cliente autorizado
+          <select name="tenantId" defaultValue={workspace.selectedTenant.tenantId}>
+            {workspace.access.tenants.map((tenant) => (
+              <option value={tenant.tenantId} key={tenant.tenantId}>
+                {tenant.displayName} · {roleLabels[tenant.role]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit">Carregar cliente</button>
+      </form>
+      <form className="selector-group" method="get">
+        <input type="hidden" name="tenantId" value={workspace.selectedTenant.tenantId} />
+        <label>Campanha / plano mais recente
+          <select name="executionPlanId" defaultValue={workspace.selectedPlan?.executionPlanId ?? ''}>
+            {!workspace.plans.length && <option value="">Nenhum plano disponível</option>}
+            {workspace.plans.map((plan) => (
+              <option value={plan.executionPlanId} key={plan.executionPlanId}>
+                Campanha {shortId(plan.campaignId)} · {statusLabels[plan.status]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" disabled={!workspace.plans.length}>Abrir operação</button>
+      </form>
+      <small className="credential-note">Acesso verificado no servidor · credencial nunca enviada ao navegador</small>
+    </div>
   )
 }
 
@@ -192,7 +252,18 @@ export default async function Page({ searchParams }) {
   const tenantId = typeof params?.tenantId === 'string' ? params.tenantId : ''
   const executionPlanId = typeof params?.executionPlanId === 'string'
     ? params.executionPlanId : ''
-  const result = await loadOperationalReadiness({ tenantId, executionPlanId })
+  const workspace = await loadOperatorWorkspace({
+    requestedTenantId: tenantId,
+    requestedExecutionPlanId: executionPlanId,
+  })
+  const result = workspace.kind === 'ready' && workspace.selectedPlan
+    ? await loadOperationalReadiness({
+      tenantId: workspace.selectedTenant.tenantId,
+      executionPlanId: workspace.selectedPlan.executionPlanId,
+    })
+    : workspace.kind === 'ready'
+      ? { kind: 'no_plans' }
+      : workspace
 
   return (
     <main>
@@ -210,15 +281,9 @@ export default async function Page({ searchParams }) {
           <h1>Clareza para decidir.<br />Controle para executar.</h1>
           <p>Acompanhe o estado comprovado de cada campanha, entenda os bloqueios e avance somente quando todos os controles estiverem satisfeitos.</p>
         </div>
-        <form className="lookup-form" method="get">
-          <label>Cliente / tenant
-            <input name="tenantId" defaultValue={tenantId} placeholder="UUID do tenant" autoComplete="off" />
-          </label>
-          <label>Plano de execução
-            <input name="executionPlanId" defaultValue={executionPlanId} placeholder="UUID do plano" autoComplete="off" />
-          </label>
-          <button type="submit">Consultar estado</button>
-        </form>
+        {workspace.kind === 'ready'
+          ? <WorkspaceSelector workspace={workspace} />
+          : <div className="access-summary"><span className="eyebrow">Acesso seguro</span><strong>Seleção indisponível</strong><small>A central preservou os dados dos clientes.</small></div>}
       </section>
 
       <div className="content-shell">
