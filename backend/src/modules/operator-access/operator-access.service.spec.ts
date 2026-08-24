@@ -17,6 +17,7 @@ import { ExecutionPlanV1 } from '../../domain/contracts/execution-plan';
 import { OperatorAccessService } from './operator-access.service';
 import { CampaignContextService } from '../campaign-context/campaign-context.service';
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
+import { ApprovalService } from '../approval/approval.service';
 
 describe('OperatorAccessService', () => {
   const principal = {
@@ -52,6 +53,7 @@ describe('OperatorAccessService', () => {
   let contextSelection: jest.Mocked<OperatorCampaignContextSelectionRepository>;
   let campaignContexts: jest.Mocked<Pick<CampaignContextService, 'create' | 'appendVersion'>>;
   let executionPlans: jest.Mocked<Pick<ExecutionPlanService, 'generate'>>;
+  let approvalService: jest.Mocked<Pick<ApprovalService, 'request' | 'get' | 'approve' | 'reject' | 'revoke'>>;
   let service: OperatorAccessService;
 
   beforeEach(() => {
@@ -77,6 +79,9 @@ describe('OperatorAccessService', () => {
       appendVersion: jest.fn(),
     };
     executionPlans = { generate: jest.fn() };
+    approvalService = {
+      request: jest.fn(), get: jest.fn(), approve: jest.fn(), reject: jest.fn(), revoke: jest.fn(),
+    };
     service = new OperatorAccessService(
       identity,
       memberships,
@@ -86,7 +91,38 @@ describe('OperatorAccessService', () => {
       contextSelection,
       campaignContexts as unknown as CampaignContextService,
       executionPlans as unknown as ExecutionPlanService,
+      approvalService as unknown as ApprovalService,
     );
+  });
+
+  it('lets an operator request approval but reserves decisions for owners', async () => {
+    const tenantId = membershipsFixture[0].tenantId;
+    const campaignId = '55555555-5555-4555-8555-555555555555';
+    const planId = '66666666-6666-4666-8666-666666666666';
+    approvalService.request.mockResolvedValueOnce({ status: 'pending' } as never);
+
+    await service.requestPlanApproval('Bearer token', tenantId, campaignId, planId);
+    expect(approvalService.request).toHaveBeenCalledWith(
+      tenantId, campaignId, planId, principal.subject,
+    );
+
+    memberships.listActiveForSubject.mockResolvedValueOnce([{ ...membershipsFixture[0], role: 'operator' }]);
+    await expect(service.decidePlanApproval(
+      'Bearer token', tenantId, '77777777-7777-4777-8777-777777777777', 'approve',
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(approvalService.approve).not.toHaveBeenCalled();
+  });
+
+  it('binds owner decisions to the authenticated subject and validates the transition name', async () => {
+    const tenantId = membershipsFixture[0].tenantId;
+    const approvalId = '77777777-7777-4777-8777-777777777777';
+    approvalService.approve.mockResolvedValueOnce({ status: 'approved' } as never);
+
+    await service.decidePlanApproval('Bearer token', tenantId, approvalId, 'approve');
+    expect(approvalService.approve).toHaveBeenCalledWith(tenantId, approvalId, principal.subject);
+    await expect(service.decidePlanApproval(
+      'Bearer token', tenantId, approvalId, 'publish',
+    )).rejects.toMatchObject({ response: expect.objectContaining({ code: 'invalid_approval_decision' }) });
   });
 
   it('derives tenant selection and permissions only from active memberships', async () => {

@@ -74,4 +74,29 @@ export class OperatorAccessController {
       body?.contextVersion,
     );
   }
+
+  @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/approvals')
+  requestPlanApproval(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Param('executionPlanId') executionPlanId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.service.requestPlanApproval(authorization, tenantId, campaignId, executionPlanId);
+  }
+
+  @Get('tenants/:tenantId/approvals/:approvalId')
+  getPlanApproval(@Param('tenantId') tenantId: string, @Param('approvalId') approvalId: string,
+    @Headers('authorization') authorization: string | undefined) {
+    return this.service.getPlanApproval(authorization, tenantId, approvalId);
+  }
+
+  @Post('tenants/:tenantId/approvals/:approvalId/:decision')
+  decidePlanApproval(@Param('tenantId') tenantId: string, @Param('approvalId') approvalId: string,
+    @Param('decision') decision: string, @Body() body: { reason?: string },
+    @Headers('authorization') authorization: string | undefined) {
+    return this.service.decidePlanApproval(
+      authorization, tenantId, approvalId, decision, body?.reason,
+    );
+  }
 }
