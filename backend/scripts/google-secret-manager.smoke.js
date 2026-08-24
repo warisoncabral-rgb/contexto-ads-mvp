@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const {
   GoogleSecretManagerCredentialVaultAdapter,
-} = require('./dist/infrastructure/vault/google-secret-manager-credential-vault.adapter');
+} = require('../dist/infrastructure/vault/google-secret-manager-credential-vault.adapter');
 
 const VAULT_ERROR = 'Credential Vault operation failed';
 
