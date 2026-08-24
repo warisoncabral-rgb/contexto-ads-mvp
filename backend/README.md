@@ -147,8 +147,9 @@ Recupera somente o plano mais recente do tenant. O payload inclui hash,
 idempotência, teto financeiro, decisões, riscos, prontidão e a garantia
 `writesAllowed: false` / `writesPerformed: false`.
 
-### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/approvals`
-Body: `{"tenantId":"...","requestedBy":"..."}`. Solicita aprovação somente
+### `POST /v1/operator/tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/approvals`
+Exige autenticação e a permissão `request_approval`; a identidade solicitante é
+derivada do token, nunca do body. Solicita aprovação somente
 para o plano mais recente da campanha. A autorização fica vinculada à versão,
 ao hash, ao teto financeiro, à moeda, aos objetos e às capacidades exatas do
 plano, expira em 24 horas e não autoriza escrita externa.
@@ -157,17 +158,19 @@ Solicitações concorrentes para o mesmo hash retornam uma única aprovação at
 Cada mudança de estado e seu evento de auditoria são gravados na mesma transação:
 se a auditoria falhar, a mudança também é revertida.
 
-### `GET /v1/approvals/:approvalId?tenantId=...`
+### `GET /v1/operator/tenants/:tenantId/approvals/:approvalId`
 Consulta a aprovação dentro do tenant. Durante a consulta, aprovações vencidas
 são marcadas como `expired`; se outro plano tiver se tornado o mais recente,
 aprovações `pending` ou `approved` são marcadas como `invalidated`.
 
 ### Decisões de aprovação
-- `POST /v1/approvals/:approvalId/approve` com `tenantId` e `approvedBy`.
-- `POST /v1/approvals/:approvalId/reject` com `tenantId`, `rejectedBy` e `reason`.
-- `POST /v1/approvals/:approvalId/revoke` com `tenantId`, `revokedBy` e `reason`.
+- `POST /v1/operator/tenants/:tenantId/approvals/:approvalId/approve`.
+- `POST /v1/operator/tenants/:tenantId/approvals/:approvalId/reject` com `reason`.
+- `POST /v1/operator/tenants/:tenantId/approvals/:approvalId/revoke` com `reason`.
 
-A aprovação acontece atomicamente apenas se o hash ainda corresponder ao plano
+Somente `owner` possui `decide_approval`; `operator` pode solicitar e `viewer`
+somente consultar. A identidade decisora vem da autenticação. A aprovação
+acontece atomicamente apenas se o hash ainda corresponder ao plano
 mais recente e o prazo não tiver vencido. Rejeição e revogação exigem motivo.
 
 ### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/target`

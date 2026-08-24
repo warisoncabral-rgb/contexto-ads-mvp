@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuditEvent } from '../../domain/contracts/audit-event';
@@ -37,6 +38,7 @@ import {
 import { OPERATOR_IDENTITY } from '../../infrastructure/operator-access/operator-access.tokens';
 import { CampaignContextService } from '../campaign-context/campaign-context.service';
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
+import { ApprovalService } from '../approval/approval.service';
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
   owner: [
@@ -71,6 +73,7 @@ export class OperatorAccessService {
     private readonly campaignContextSelection: OperatorCampaignContextSelectionRepository,
     private readonly campaignContexts: CampaignContextService,
     private readonly executionPlans: ExecutionPlanService,
+    private readonly approvalService: ApprovalService,
   ) {}
 
   async listTenants(
@@ -266,6 +269,36 @@ export class OperatorAccessService {
     );
   }
 
+  async requestPlanApproval(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string, executionPlanId: string) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'request_approval');
+    return this.approvalService.request(tenantId, campaignId, executionPlanId, operator.subject);
+  }
+
+  async getPlanApproval(authorizationHeader: string | undefined, tenantId: string,
+    approvalId: string) {
+    await this.authorizedMembership(authorizationHeader, tenantId);
+    return this.approvalService.get(tenantId, approvalId);
+  }
+
+  async decidePlanApproval(authorizationHeader: string | undefined, tenantId: string,
+    approvalId: string, decision: string, reason?: string) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'decide_approval');
+    if (decision === 'approve') {
+      return this.approvalService.approve(tenantId, approvalId, operator.subject);
+    }
+    if (decision === 'reject') {
+      return this.approvalService.reject(tenantId, approvalId, operator.subject, reason);
+    }
+    if (decision === 'revoke') {
+      return this.approvalService.revoke(tenantId, approvalId, operator.subject, reason);
+    }
+    throw new BadRequestException({ code: 'invalid_approval_decision',
+      message: 'Decision must be approve, reject or revoke' });
+  }
+
   private async authenticate(authorizationHeader: string | undefined) {
     try {
       return await this.identity.authenticate(authorizationHeader);
@@ -307,6 +340,15 @@ export class OperatorAccessService {
       throw new UnauthorizedException({
         code: 'campaign_preparation_not_permitted',
         message: 'Operator cannot change campaign preparation',
+      });
+    }
+  }
+
+  private assertPermission(role: OperatorRole, permission: OperatorPermission) {
+    if (!PERMISSIONS[role].includes(permission)) {
+      throw new UnauthorizedException({
+        code: `${permission}_not_permitted`,
+        message: 'Operator role does not permit this approval action',
       });
     }
   }

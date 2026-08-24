@@ -5,6 +5,7 @@ import { OperatorAccessController } from './operator-access.controller';
 import { OperatorAccessService } from './operator-access.service';
 import { CampaignContextModule } from '../campaign-context/campaign-context.module';
 import { ExecutionPlanModule } from '../execution-plan/execution-plan.module';
+import { ApprovalModule } from '../approval/approval.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { ExecutionPlanModule } from '../execution-plan/execution-plan.module';
     OperatorAccessInfrastructureModule,
     CampaignContextModule,
     ExecutionPlanModule,
+    ApprovalModule,
   ],
   controllers: [OperatorAccessController],
   providers: [OperatorAccessService],
