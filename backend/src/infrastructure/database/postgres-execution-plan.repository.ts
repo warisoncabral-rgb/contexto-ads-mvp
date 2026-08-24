@@ -50,4 +50,17 @@ export class PostgresExecutionPlanRepository implements ExecutionPlanRepository 
     );
     return result.rows[0]?.payload ?? null;
   }
+
+  async findById(
+    tenantId: string,
+    executionPlanId: string,
+  ): Promise<ExecutionPlanV1 | null> {
+    const result = await this.pool.query<ExecutionPlanRow>(
+      `select payload from execution_plans
+      where tenant_id = $1 and execution_plan_id = $2
+      limit 1`,
+      [tenantId, executionPlanId],
+    );
+    return result.rows[0]?.payload ?? null;
+  }
 }

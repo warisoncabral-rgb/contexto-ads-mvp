@@ -28,11 +28,15 @@
 - Teto financeiro, riscos, regras aplicadas e justificativas persistidos no próprio plano.
 - Idempotência concorrente: a mesma entrada produz e recupera um único plano imutável.
 - Objetos lógicos nascem pausados e nenhum plano permite ou executa escrita externa.
+- Aprovação humana idempotente vinculada a hash, versão, escopo e teto financeiro exatos.
+- Aprovações expiram em 24 horas e são invalidadas quando o plano mais recente muda.
+- Aprovação, rejeição, revogação, expiração e invalidação possuem eventos de auditoria.
+- Transição de aprovação e auditoria são atômicas: nenhuma decisão fica sem evidência.
 
 ## Próximo bloco interno sem dependência externa
-1. Criar aprovação vinculada ao hash exato e ao teto financeiro do plano.
-2. Invalidar automaticamente aprovações quando o plano mudar.
-3. Persistir a trilha de auditoria das decisões e transições, mantendo escrita Meta desligada.
+1. Vincular uma conta de anúncios descoberta ao plano sem aceitar IDs arbitrários.
+2. Comprovar capacidades de escrita exigidas para o objetivo e destino escolhidos.
+3. Preparar o orquestrador fail-closed e a simulação de execução, mantendo escrita Meta desligada.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.

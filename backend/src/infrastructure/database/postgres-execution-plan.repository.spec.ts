@@ -65,6 +65,16 @@ describe('PostgresExecutionPlanRepository', () => {
     );
   });
 
+  it('loads a plan by tenant and execution plan id', async () => {
+    query.mockResolvedValueOnce({ rows: [{ payload: plan }] });
+    await expect(repository.findById(plan.tenantId, plan.executionPlanId))
+      .resolves.toEqual(plan);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('where tenant_id = $1 and execution_plan_id = $2'),
+      [plan.tenantId, plan.executionPlanId],
+    );
+  });
+
   it('fails closed if the idempotency invariant cannot be resolved', async () => {
     query
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })

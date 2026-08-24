@@ -10,6 +10,8 @@ import {
   SMOKE_TEST_REPORT_REPOSITORY,
   CAMPAIGN_CONTEXT_REPOSITORY,
   EXECUTION_PLAN_REPOSITORY,
+  APPROVAL_REPOSITORY,
+  AUDIT_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -18,6 +20,8 @@ import { PostgresReadinessRepository } from './postgres-readiness.repository';
 import { PostgresSmokeTestReportRepository } from './postgres-smoke-test-report.repository';
 import { PostgresCampaignContextRepository } from './postgres-campaign-context.repository';
 import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repository';
+import { PostgresApprovalRepository } from './postgres-approval.repository';
+import { PostgresAuditRepository } from './postgres-audit.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -63,6 +67,16 @@ import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repos
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresExecutionPlanRepository(pool),
     },
+    {
+      provide: APPROVAL_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresApprovalRepository(pool),
+    },
+    {
+      provide: AUDIT_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresAuditRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -73,6 +87,8 @@ import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repos
     SMOKE_TEST_REPORT_REPOSITORY,
     CAMPAIGN_CONTEXT_REPOSITORY,
     EXECUTION_PLAN_REPOSITORY,
+    APPROVAL_REPOSITORY,
+    AUDIT_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

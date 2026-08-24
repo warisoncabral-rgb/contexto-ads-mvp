@@ -53,6 +53,7 @@ describe('ExecutionPlanService', () => {
     plans = {
       saveIdempotent: jest.fn(async (plan: ExecutionPlanV1) => plan),
       latest: jest.fn(),
+      findById: jest.fn(),
     };
     service = new ExecutionPlanService(contexts, plans);
   });

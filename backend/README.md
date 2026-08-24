@@ -137,6 +137,29 @@ Recupera somente o plano mais recente do tenant. O payload inclui hash,
 idempotência, teto financeiro, decisões, riscos, prontidão e a garantia
 `writesAllowed: false` / `writesPerformed: false`.
 
+### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/approvals`
+Body: `{"tenantId":"...","requestedBy":"..."}`. Solicita aprovação somente
+para o plano mais recente da campanha. A autorização fica vinculada à versão,
+ao hash, ao teto financeiro, à moeda, aos objetos e às capacidades exatas do
+plano, expira em 24 horas e não autoriza escrita externa.
+
+Solicitações concorrentes para o mesmo hash retornam uma única aprovação ativa.
+Cada mudança de estado e seu evento de auditoria são gravados na mesma transação:
+se a auditoria falhar, a mudança também é revertida.
+
+### `GET /v1/approvals/:approvalId?tenantId=...`
+Consulta a aprovação dentro do tenant. Durante a consulta, aprovações vencidas
+são marcadas como `expired`; se outro plano tiver se tornado o mais recente,
+aprovações `pending` ou `approved` são marcadas como `invalidated`.
+
+### Decisões de aprovação
+- `POST /v1/approvals/:approvalId/approve` com `tenantId` e `approvedBy`.
+- `POST /v1/approvals/:approvalId/reject` com `tenantId`, `rejectedBy` e `reason`.
+- `POST /v1/approvals/:approvalId/revoke` com `tenantId`, `revokedBy` e `reason`.
+
+A aprovação acontece atomicamente apenas se o hash ainda corresponder ao plano
+mais recente e o prazo não tiver vencido. Rejeição e revogação exigem motivo.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -144,10 +167,12 @@ idempotência, teto financeiro, decisões, riscos, prontidão e a garantia
 - A Fase 1 não possui escrita na Meta.
 - Fatos críticos ausentes bloqueiam geração; a automação não cria inferências silenciosas.
 - Planos lógicos são idempotentes, explicáveis e não autorizam efeitos externos.
+- Aprovações são temporárias, vinculadas ao hash e auditadas atomicamente.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Vincular o plano lógico ao fluxo de aprovação por hash e trilha de auditoria,
-mantendo a publicação externa desligada. Em paralelo, criar/configurar o app Meta, concluir
+Vincular ao plano uma conta Meta previamente descoberta, validar capacidades de
+escrita e preparar o orquestrador fail-closed, mantendo a publicação desligada.
+Em paralelo, criar/configurar o app Meta, concluir
 um OAuth real e acionar o smoke test automatizado continua sendo a única
 validação externa restante para o vertical atual.
