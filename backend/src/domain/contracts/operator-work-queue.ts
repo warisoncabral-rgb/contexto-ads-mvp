@@ -27,21 +27,6 @@ export interface OperatorWorkQueueSourceDecisionV1 {
   reason: string;
 }
 
-export interface OperatorWorkQueueSnapshotV1 {
-  snapshotId: string;
-  tenantId: string;
-  queueDate: string;
-  calendarBasis: 'UTC';
-  snapshotHash: string;
-  itemCount: number;
-  sourceDecisions: OperatorWorkQueueSourceDecisionV1[];
-  generatedAt: string;
-}
-
-export interface OperatorWorkQueueStoredSnapshotV1 extends OperatorWorkQueueSnapshotV1 {
-  items: OperatorWorkItemV1[];
-}
-
 export interface OperatorWorkQueueChangeV1 {
   workItemId: string;
   tenantId: string;
@@ -58,19 +43,31 @@ export interface OperatorWorkQueueChangeV1 {
   currentQueueDate: string;
 }
 
+export interface OperatorWorkQueueSnapshotComparisonV1 {
+  baselineAvailable: boolean;
+  previousQueueDate: string | null;
+  changes: OperatorWorkQueueChangeV1[];
+}
+
+export interface OperatorWorkQueueSnapshotV1 {
+  snapshotId: string;
+  tenantId: string;
+  queueDate: string;
+  calendarBasis: 'UTC';
+  snapshotHash: string;
+  itemCount: number;
+  sourceDecisions: OperatorWorkQueueSourceDecisionV1[];
+  comparison?: OperatorWorkQueueSnapshotComparisonV1;
+  generatedAt: string;
+}
+
+export interface OperatorWorkQueueStoredSnapshotV1 extends OperatorWorkQueueSnapshotV1 {
+  items: OperatorWorkItemV1[];
+}
+
 export interface OperatorWorkQueueV1 {
   items: OperatorWorkItemV1[];
   snapshots: OperatorWorkQueueSnapshotV1[];
-  changes: OperatorWorkQueueChangeV1[];
-  changeSummary: {
-    baselineAvailableTenantCount: number;
-    baselineMissingTenantCount: number;
-    enteredCount: number;
-    worsenedCount: number;
-    improvedCount: number;
-    unchangedCount: number;
-    resolvedCount: number;
-  };
   summary: {
     authorizedTenantCount: number;
     pendingItemCount: number;
@@ -86,8 +83,6 @@ export interface OperatorWorkQueueV1 {
     deadlinesFabricated: false;
     completionInferred: false;
     dailySnapshotsPersisted: true;
-    changesDerivedFromPersistedSnapshots: true;
-    missingBaselineDoesNotInferChanges: true;
     publicationAuthorized: false;
     externalWritesAllowed: false;
     externalWritesPerformed: false;
