@@ -14,4 +14,20 @@ export class MetaConnectionController {
   get(@Param('connectionId') connectionId: string, @Query('tenantId') tenantId: string) {
     return this.service.getConnection(tenantId, connectionId);
   }
+
+  @Post(':connectionId/discover-assets')
+  discoverAssets(
+    @Param('connectionId') connectionId: string,
+    @Body() body: { tenantId: string },
+  ) {
+    return this.service.discoverAssets(body.tenantId, connectionId);
+  }
+
+  @Get(':connectionId/assets')
+  listAssets(
+    @Param('connectionId') connectionId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.listAssets(tenantId, connectionId);
+  }
 }

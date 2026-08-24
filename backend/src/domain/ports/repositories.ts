@@ -7,7 +7,11 @@ import { MetaOAuthAttempt } from '../contracts/meta-oauth-attempt';
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
   findById(tenantId: string, connectionId: string): Promise<MetaConnection | null>;
-  saveBindings(bindings: MetaAssetBinding[]): Promise<void>;
+  replaceBindings(
+    tenantId: string,
+    connectionId: string,
+    bindings: MetaAssetBinding[],
+  ): Promise<void>;
   listBindings(tenantId: string, connectionId: string): Promise<MetaAssetBinding[]>;
 }
 export interface CapabilityRepository {
@@ -37,3 +41,8 @@ export interface MetaConnectionStore
     updatedAt: string,
   ): Promise<boolean>;
 }
+
+export type MetaAssetBindingStore = Pick<
+  MetaConnectionRepository,
+  'replaceBindings' | 'listBindings'
+>;

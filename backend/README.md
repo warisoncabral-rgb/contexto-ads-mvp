@@ -53,6 +53,14 @@ Enquanto o app Meta real não estiver configurado, retorna `authorization_pendin
 ### `GET /v1/readiness/:connectionId?tenantId=...`
 Retorna um snapshot explícito do bloqueio atual de configuração.
 
+### `POST /v1/meta/connections/:connectionId/discover-assets`
+Body: `{"tenantId":"..."}`. Executa descoberta somente leitura para uma conexão
+OAuth já conectada e substitui o snapshot anterior atomicamente apenas em caso de
+sucesso. Enquanto a Graph API real não estiver configurada, permanece fail-closed.
+
+### `GET /v1/meta/connections/:connectionId/assets?tenantId=...`
+Lista somente os ativos persistidos para o tenant e a conexão informados.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
