@@ -10,11 +10,35 @@ export class ReadinessController {
     return this.service.getConnectionReadiness(tenantId, connectionId);
   }
 
+  @Post(':connectionId/snapshots')
+  capture(
+    @Param('connectionId') connectionId: string,
+    @Body() body: { tenantId: string },
+  ) {
+    return this.service.captureConnectionReadiness(body.tenantId, connectionId);
+  }
+
+  @Get(':connectionId/snapshots/latest')
+  latestSnapshot(
+    @Param('connectionId') connectionId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.latestConnectionReadiness(tenantId, connectionId);
+  }
+
   @Post(':connectionId/smoke-test')
   smokeTest(
     @Param('connectionId') connectionId: string,
     @Body() body: { tenantId: string },
   ) {
     return this.service.runReadOnlySmokeTest(body.tenantId, connectionId);
+  }
+
+  @Get(':connectionId/smoke-test/latest')
+  latestSmokeTest(
+    @Param('connectionId') connectionId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.latestReadOnlySmokeTest(tenantId, connectionId);
   }
 }

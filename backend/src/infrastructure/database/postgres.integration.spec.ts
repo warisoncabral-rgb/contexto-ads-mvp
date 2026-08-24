@@ -6,6 +6,8 @@ import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attemp
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresCredentialVaultAdapter } from '../vault/postgres-credential-vault.adapter';
 import { PostgresCapabilityRepository } from './postgres-capability.repository';
+import { PostgresReadinessRepository } from './postgres-readiness.repository';
+import { PostgresSmokeTestReportRepository } from './postgres-smoke-test-report.repository';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -24,6 +26,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '004_postgres_credential_vault.sql',
       '005_tenant_scoped_asset_bindings.sql',
       '006_tenant_scoped_capability_registry.sql',
+      '007_validation_evidence.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -38,6 +41,8 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from meta_smoke_test_reports where tenant_id = $1', [tenantId]);
+    await pool.query('delete from readiness_snapshots where tenant_id = $1', [tenantId]);
     await pool.query('delete from credential_vault_secrets where tenant_id = any($1::uuid[])', [
       [tenantId, otherTenantId],
     ]);
@@ -155,5 +160,58 @@ describeWithPostgres('PostgreSQL integration', () => {
         'system_rule', now())`,
       [randomUUID(), otherTenantId, connectionId],
     )).rejects.toThrow();
+  });
+
+  it('persists validation evidence and enforces tenant-scoped associations', async () => {
+    const readiness = new PostgresReadinessRepository(pool);
+    const smokeReports = new PostgresSmokeTestReportRepository(pool);
+    const snapshot = {
+      snapshotId: randomUUID(),
+      tenantId,
+      connectionId,
+      correlationId: randomUUID(),
+      checks: [{
+        key: 'meta_oauth',
+        status: 'passed' as const,
+        meaning: 'OAuth ready',
+        evidenceRefs: [`meta_connection:${connectionId}`],
+        source: 'system' as const,
+      }],
+      blockers: [],
+      generatedAt: '2026-08-24T04:00:00.000Z',
+    };
+    const report = {
+      smokeTestId: randomUUID(),
+      tenantId,
+      connectionId,
+      passed: true,
+      steps: [{
+        key: 'identity' as const,
+        status: 'passed' as const,
+        meaning: 'Identity valid',
+        evidenceRefs: ['meta_user:123'],
+        observedAt: '2026-08-24T04:01:00.000Z',
+      }],
+      blockers: [],
+      generatedAt: '2026-08-24T04:02:00.000Z',
+    };
+
+    await readiness.save(snapshot);
+    await smokeReports.save(report);
+    await expect(readiness.latestForConnection(tenantId, connectionId)).resolves
+      .toEqual(snapshot);
+    await expect(smokeReports.latestForConnection(tenantId, connectionId)).resolves
+      .toEqual(report);
+
+    await expect(readiness.save({
+      ...snapshot,
+      snapshotId: randomUUID(),
+      tenantId: otherTenantId,
+    })).rejects.toThrow();
+    await expect(smokeReports.save({
+      ...report,
+      smokeTestId: randomUUID(),
+      tenantId: otherTenantId,
+    })).rejects.toThrow();
   });
 });
