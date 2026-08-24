@@ -759,6 +759,10 @@ describeWithPostgres('PostgreSQL integration', () => {
     ]);
     expect(simulation.operations.every((operation) => !operation.willExecute)).toBe(true);
     expect(simulation.externalEffects).toEqual({ writesAllowed: false, writesPerformed: false });
+    await expect(simulationRepository.latestForPlan(
+      tenantId,
+      targeted.executionPlanId,
+    )).resolves.toEqual(simulation);
     const readinessDecision = await operationalReadinessService.generate(
       tenantId,
       campaignId,
@@ -795,10 +799,6 @@ describeWithPostgres('PostgreSQL integration', () => {
       .toBe(1);
     expect(new Set(concurrentDecisions.map((item) => item.decisionHash)))
       .toEqual(new Set([readinessDecision.decisionHash]));
-    await expect(simulationRepository.latestForPlan(
-      tenantId,
-      targeted.executionPlanId,
-    )).resolves.toEqual(simulation);
     await expect(simulationRepository.save({
       ...simulation,
       simulationId: randomUUID(),
