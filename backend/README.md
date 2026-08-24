@@ -61,6 +61,11 @@ sucesso. Enquanto a Graph API real não estiver configurada, permanece fail-clos
 ### `GET /v1/meta/connections/:connectionId/assets?tenantId=...`
 Lista somente os ativos persistidos para o tenant e a conexão informados.
 
+### `GET /v1/meta/connections/:connectionId/capabilities?tenantId=...`
+Lista o registro persistido de capacidades e suas evidências somente depois de
+validar que a conexão pertence ao tenant informado. A validação contra a Meta
+continua fail-closed enquanto o app real não estiver configurado.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.

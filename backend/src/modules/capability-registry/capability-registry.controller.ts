@@ -1,0 +1,15 @@
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { CapabilityRegistryService } from './capability-registry.service';
+
+@Controller('meta/connections')
+export class CapabilityRegistryController {
+  constructor(private readonly service: CapabilityRegistryService) {}
+
+  @Get(':connectionId/capabilities')
+  list(
+    @Param('connectionId') connectionId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
+    return this.service.list(tenantId, connectionId);
+  }
+}
