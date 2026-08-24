@@ -1,12 +1,18 @@
 import { Pool } from 'pg';
-import { OperatorWorkItemV1, OperatorWorkQueueSnapshotV1 } from '../../domain/contracts/operator-work-queue';
+import {
+  OperatorWorkItemV1,
+  OperatorWorkQueueSnapshotV1,
+  OperatorWorkQueueStoredSnapshotV1,
+} from '../../domain/contracts/operator-work-queue';
 import { OperatorWorkQueueSnapshotRepository } from '../../domain/ports/repositories';
+import { compareWorkQueueSnapshots } from '../../modules/operator-access/operator-work-queue-changes';
 
 interface SnapshotRow {
   snapshot_id: string;
   tenant_id: string;
   queue_date: string | Date;
   snapshot_hash: string;
+  items?: OperatorWorkItemV1[];
   source_decisions: OperatorWorkQueueSnapshotV1['sourceDecisions'];
   generated_at: string | Date;
   item_count: string;
@@ -18,6 +24,7 @@ implements OperatorWorkQueueSnapshotRepository {
 
   async saveDaily(snapshot: OperatorWorkQueueSnapshotV1,
     items: OperatorWorkItemV1[]): Promise<OperatorWorkQueueSnapshotV1> {
+    const previous = await this.latestBefore(snapshot.tenantId, snapshot.queueDate);
     const result = await this.pool.query<SnapshotRow>(
       `insert into operator_work_queue_snapshots (
         snapshot_id, tenant_id, queue_date, snapshot_hash, items, source_decisions, generated_at
@@ -40,6 +47,29 @@ implements OperatorWorkQueueSnapshotRepository {
       [snapshot.tenantId, snapshot.queueDate],
     )).rows[0];
     if (!row) throw new Error('Daily work queue snapshot idempotency invariant failed');
+    const comparison = compareWorkQueueSnapshots(snapshot.queueDate, items, previous);
+    return { ...this.toSnapshot(row), comparison: {
+      baselineAvailable: comparison.baselineAvailable,
+      previousQueueDate: previous?.queueDate ?? null,
+      changes: comparison.changes,
+    } };
+  }
+
+  async latestBefore(tenantId: string, queueDate: string): Promise<OperatorWorkQueueStoredSnapshotV1 | null> {
+    const row = (await this.pool.query<SnapshotRow>(
+      `select snapshot_id, tenant_id, queue_date, snapshot_hash, items, source_decisions,
+        generated_at, jsonb_array_length(items)::text as item_count
+      from operator_work_queue_snapshots
+      where tenant_id = $1 and queue_date < $2
+      order by queue_date desc
+      limit 1`,
+      [tenantId, queueDate],
+    )).rows[0];
+    if (!row) return null;
+    return { ...this.toSnapshot(row), items: row.items ?? [] };
+  }
+
+  private toSnapshot(row: SnapshotRow): OperatorWorkQueueSnapshotV1 {
     return { snapshotId: row.snapshot_id, tenantId: row.tenant_id,
       queueDate: row.queue_date instanceof Date
         ? row.queue_date.toISOString().slice(0, 10) : String(row.queue_date).slice(0, 10),
