@@ -20,6 +20,7 @@ import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 import { ApprovalService } from '../approval/approval.service';
 import { OperationalReadinessService } from '../operational-readiness/operational-readiness.service';
 import { ExecutionSimulationService } from '../execution-simulation/execution-simulation.service';
+import { CreativePackageService } from '../creative-package/creative-package.service';
 
 describe('OperatorAccessService', () => {
   const principal = {
@@ -58,6 +59,7 @@ describe('OperatorAccessService', () => {
   let approvalService: jest.Mocked<Pick<ApprovalService, 'request' | 'get' | 'approve' | 'reject' | 'revoke'>>;
   let operationalReadiness: jest.Mocked<Pick<OperationalReadinessService, 'generate'>>;
   let executionSimulations: jest.Mocked<Pick<ExecutionSimulationService, 'bindTarget'>>;
+  let creativePackages: jest.Mocked<Pick<CreativePackageService, 'appendVersion' | 'approve' | 'latest'>>;
   let service: OperatorAccessService;
 
   beforeEach(() => {
@@ -91,6 +93,7 @@ describe('OperatorAccessService', () => {
       boundaries: { externalWritesAllowed: false },
     } as never) };
     executionSimulations = { bindTarget: jest.fn() };
+    creativePackages = { appendVersion: jest.fn(), approve: jest.fn(), latest: jest.fn() };
     service = new OperatorAccessService(
       identity,
       memberships,
@@ -103,7 +106,30 @@ describe('OperatorAccessService', () => {
       approvalService as unknown as ApprovalService,
       operationalReadiness as unknown as OperationalReadinessService,
       executionSimulations as unknown as ExecutionSimulationService,
+      creativePackages as unknown as CreativePackageService,
     );
+  });
+
+  it('derives creative authorship from authentication and reserves approval for owners', async () => {
+    const tenantId = membershipsFixture[0].tenantId;
+    const campaignId = '55555555-5555-4555-8555-555555555555';
+    const planId = '66666666-6666-4666-8666-666666666666';
+    const executionPlan = { tenantId, campaignId, executionPlanId: planId };
+    creativePackages.appendVersion.mockResolvedValueOnce({
+      creativePackage: { contentHash: 'a'.repeat(64) }, executionPlan,
+    } as never);
+    const creative = { copies: [] };
+    await service.appendCreativePackage('Bearer token', tenantId, campaignId, planId, creative);
+    expect(creativePackages.appendVersion).toHaveBeenCalledWith(
+      tenantId, campaignId, planId, creative, principal.subject,
+    );
+    expect(operationalReadiness.generate).toHaveBeenCalledWith(tenantId, campaignId, planId);
+
+    memberships.listActiveForSubject.mockResolvedValueOnce([{ ...membershipsFixture[0], role: 'operator' }]);
+    await expect(service.approveCreativePackage(
+      'Bearer token', tenantId, campaignId, 1, 'a'.repeat(64),
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(creativePackages.approve).not.toHaveBeenCalled();
   });
 
   it('binds a discovered execution target only behind preparation permission', async () => {
