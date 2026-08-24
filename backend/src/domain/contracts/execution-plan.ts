@@ -6,7 +6,7 @@ export interface ExecutionPlanV1 {
   executionPlanId: string;
   tenantId: string;
   campaignId: string;
-  campaignPackageVersion: string;
+  campaignPackageVersion: number;
   planVersion: string;
   correlationId: string;
   planHash: string;

@@ -8,12 +8,14 @@ import {
   META_OAUTH_ATTEMPT_REPOSITORY,
   READINESS_REPOSITORY,
   SMOKE_TEST_REPORT_REPOSITORY,
+  CAMPAIGN_CONTEXT_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
 import { PostgresCapabilityRepository } from './postgres-capability.repository';
 import { PostgresReadinessRepository } from './postgres-readiness.repository';
 import { PostgresSmokeTestReportRepository } from './postgres-smoke-test-report.repository';
+import { PostgresCampaignContextRepository } from './postgres-campaign-context.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -49,6 +51,11 @@ import { PostgresSmokeTestReportRepository } from './postgres-smoke-test-report.
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresSmokeTestReportRepository(pool),
     },
+    {
+      provide: CAMPAIGN_CONTEXT_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresCampaignContextRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -57,6 +64,7 @@ import { PostgresSmokeTestReportRepository } from './postgres-smoke-test-report.
     CAPABILITY_REPOSITORY,
     READINESS_REPOSITORY,
     SMOKE_TEST_REPORT_REPOSITORY,
+    CAMPAIGN_CONTEXT_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

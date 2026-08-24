@@ -2,9 +2,11 @@
 
 Fundação técnica do ecossistema para o primeiro vertical de integração Meta:
 
-**Connect → Discover → Validate → Read**
+**Connect → Discover → Validate → Read → Contextualize**
 
 A fase atual é **somente leitura**. Não há métodos de publicação, criação de campanha ou alteração de objetos Meta.
+O contexto interno de campanha já pode ser estruturado e validado sem qualquer
+operação externa.
 
 ## Stack
 - Node.js 24 LTS
@@ -101,13 +103,33 @@ capacidades `DISCOVER_ASSETS` e `READ_AD_ACCOUNT`. Falhas da Meta não apagam a
 última evidência válida; permissões ou ativos ausentes nunca são tratados como
 capacidade disponível.
 
+### `POST /v1/campaign-contexts`
+Cria a primeira versão imutável do contexto de uma campanha. O body contém
+`tenantId` e `facts` com nome do negócio, oferta, objetivo, público, destino,
+geografia, orçamento em unidade monetária mínima e duração. Cada fato persistido
+registra a origem `user_input`; campos ausentes nunca são inferidos e retornam
+pendências bloqueantes com próxima ação.
+
+### `POST /v1/campaign-contexts/:campaignId/versions`
+Registra uma nova versão completa do contexto. A numeração é alocada sob lock no
+PostgreSQL para evitar colisões concorrentes e versões anteriores não são
+alteradas.
+
+### `GET /v1/campaign-contexts/:campaignId/latest?tenantId=...`
+Retorna somente a versão mais recente dentro do tenant. Um pacote só recebe
+`ready_for_generation` quando todos os fatos críticos estão válidos; isso ainda
+não publica ou modifica nada na Meta.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
 - Capacidade desconhecida não é tratada como disponível.
 - A Fase 1 não possui escrita na Meta.
+- Fatos críticos ausentes bloqueiam geração; a automação não cria inferências silenciosas.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Criar/configurar o app Meta, concluir um OAuth real e acionar o smoke test
-automatizado. Essa é a única validação externa restante para o vertical atual.
+Consumir o Campaign Context aprovado no gerador de plano interno, mantendo a
+publicação externa desligada. Em paralelo, criar/configurar o app Meta, concluir
+um OAuth real e acionar o smoke test automatizado continua sendo a única
+validação externa restante para o vertical atual.

@@ -3,6 +3,10 @@ import { CapabilityRecord } from '../contracts/capability';
 import { AuditEvent } from '../contracts/audit-event';
 import { ReadinessSnapshot, ReadOnlySmokeTestReport } from '../contracts/readiness';
 import { MetaOAuthAttempt } from '../contracts/meta-oauth-attempt';
+import {
+  CampaignContextPackageV1,
+  UnversionedCampaignContextPackageV1,
+} from '../contracts/campaign-context';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -29,6 +33,17 @@ export interface SmokeTestReportRepository {
     tenantId: string,
     connectionId: string,
   ): Promise<ReadOnlySmokeTestReport | null>;
+}
+
+export interface CampaignContextRepository {
+  create(context: CampaignContextPackageV1): Promise<void>;
+  appendNext(
+    context: UnversionedCampaignContextPackageV1,
+  ): Promise<CampaignContextPackageV1 | null>;
+  latest(
+    tenantId: string,
+    campaignId: string,
+  ): Promise<CampaignContextPackageV1 | null>;
 }
 
 export interface MetaOAuthAttemptStore {

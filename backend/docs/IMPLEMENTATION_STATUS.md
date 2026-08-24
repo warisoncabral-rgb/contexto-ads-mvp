@@ -2,7 +2,7 @@
 
 ## Concluído nesta fundação
 - Stack e estrutura modular inicial.
-- Contratos TypeScript: ExecutionPlan, ExecutionRecord, Approval, AuditEvent, Capability Registry, MetaConnection e ReadinessSnapshot.
+- Contratos TypeScript: CampaignContext, ExecutionPlan, ExecutionRecord, Approval, AuditEvent, Capability Registry, MetaConnection e ReadinessSnapshot.
 - Porta `MetaAdapterPort` somente leitura.
 - Adapter Meta em modo fail-closed: não executa nada sem configuração real.
 - Endpoint inicial `POST /v1/meta/connections/start`.
@@ -21,6 +21,14 @@
 - Validação de capacidades via `/me/permissions`, cruzada com ativos descobertos e persistida atomicamente.
 - Smoke test orquestrado e fail-closed: identidade → descoberta → capacidades → leitura de conta.
 - Evidências tenant-scoped persistidas para snapshots de prontidão e relatórios de smoke test aprovados ou bloqueados.
+- Contexto de campanha versionado e imutável, com fatos rastreáveis, hash semântico e isolamento por tenant.
+- Validação fail-closed do contexto: dados críticos ausentes viram bloqueios acionáveis e nunca são inferidos silenciosamente.
+- Numeração concorrente de versões serializada no PostgreSQL.
+
+## Próximo bloco interno sem dependência externa
+1. Transformar apenas um CampaignContext `ready_for_generation` em plano lógico interno.
+2. Manter publicação e qualquer escrita na Meta desligadas.
+3. Ligar o plano ao fluxo de aprovação e trilha de auditoria antes de habilitar execução.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
