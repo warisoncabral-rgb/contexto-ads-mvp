@@ -5,6 +5,10 @@ import { parseCampaignForm } from '../lib/campaign-preparation.mjs'
 import { parsePlanGenerationForm, validGeneratedPlan } from '../lib/execution-plan-view.mjs'
 import { parseApprovalAction, validApproval } from '../lib/plan-approval.mjs'
 import { validOperationalDecision } from '../lib/operational-readiness.mjs'
+import { parseCreativeForm, validCreativePackage } from '../lib/creative-media-center.mjs'
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const SHA = /^[0-9a-f]{64}$/
 
 export async function saveCampaignContext(_previousState, formData) {
   const parsed = parseCampaignForm(formData)
@@ -150,4 +154,57 @@ export async function changePlanApproval(_previousState, formData) {
     return { error: 'A confirmação operacional não corresponde ao plano revisado.' }
   }
   redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}&executionPlanId=${encodeURIComponent(parsed.executionPlanId)}&approvalId=${encodeURIComponent(approval.approvalId)}`)
+}
+
+export async function changeCreativePackage(_previousState, formData) {
+  const parsed = parseCreativeForm(formData)
+  if (!parsed.ok) return { error: parsed.error }
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) {
+    return { error: 'A central não está conectada ao backend seguro. Nada foi publicado.' }
+  }
+  const scope = `/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+    + `/campaigns/${encodeURIComponent(parsed.campaignId)}`
+  const path = parsed.action === 'create'
+    ? `${scope}/plans/${encodeURIComponent(parsed.executionPlanId)}/creative-packages`
+    : `${scope}/creative-packages/${parsed.version}/approve`
+  const body = parsed.action === 'create'
+    ? { creative: parsed.creative }
+    : { contentHash: parsed.contentHash }
+  let response
+  try {
+    response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}${path}`, {
+      method: 'POST',
+      headers: { accept: 'application/json', authorization: `Bearer ${operatorToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body), cache: 'no-store', signal: globalThis.AbortSignal.timeout(8000),
+    })
+  } catch {
+    return { error: 'Não foi possível registrar o criativo. Nada foi publicado ou ativado.' }
+  }
+  if (response.status === 401 || response.status === 403) {
+    return { error: 'Seu papel não permite esta ação criativa.' }
+  }
+  if (response.status === 409) {
+    return { error: 'A versão ou o hash mudou. Recarregue antes de aprovar; nada foi liberado.' }
+  }
+  if (!response.ok) return { error: 'O backend recusou o criativo com segurança.' }
+  let result
+  try { result = await response.json() } catch {
+    return { error: 'O backend não confirmou o criativo de forma válida.' }
+  }
+  const plan = result?.executionPlan
+  if (!validCreativePackage(result?.creativePackage, parsed)
+    || plan?.tenantId !== parsed.tenantId || plan?.campaignId !== parsed.campaignId
+    || !UUID.test(plan?.executionPlanId) || !SHA.test(plan?.planHash)
+    || plan?.approvalRequired !== true || plan?.externalWritesAllowed !== false
+    || !validOperationalDecision(result?.readiness, parsed.tenantId, plan?.executionPlanId)
+    || result.boundaries?.creativeApprovalIsPlanApproval !== false
+    || result.boundaries?.publicationAuthorized !== false
+    || result.boundaries?.externalWritesAllowed !== false
+    || result.boundaries?.externalWritesPerformed !== false) {
+    return { error: 'A confirmação criativa ficou inconsistente e foi recusada. Nada foi publicado.' }
+  }
+  redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}`
+    + `&executionPlanId=${encodeURIComponent(plan.executionPlanId)}`)
 }
