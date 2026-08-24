@@ -7,6 +7,7 @@ import { CapabilityRegistryModule } from './modules/capability-registry/capabili
 import { CampaignContextModule } from './modules/campaign-context/campaign-context.module';
 import { ExecutionPlanModule } from './modules/execution-plan/execution-plan.module';
 import { ApprovalModule } from './modules/approval/approval.module';
+import { ExecutionSimulationModule } from './modules/execution-simulation/execution-simulation.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ApprovalModule } from './modules/approval/approval.module';
     CampaignContextModule,
     ExecutionPlanModule,
     ApprovalModule,
+    ExecutionSimulationModule,
   ],
 })
 export class AppModule {}

@@ -32,11 +32,15 @@
 - Aprovações expiram em 24 horas e são invalidadas quando o plano mais recente muda.
 - Aprovação, rejeição, revogação, expiração e invalidação possuem eventos de auditoria.
 - Transição de aprovação e auditoria são atômicas: nenhuma decisão fica sem evidência.
+- Vínculo do plano aceita somente conta Meta descoberta para a conexão e tenant corretos.
+- Mudança do alvo gera novo hash e invalida imediatamente aprovações anteriores.
+- Dry-run persistido valida grafo, alvo, capacidades, aprovação, criativo e trava externa.
+- Sequência de operações é calculada por dependências e sempre registrada com `willExecute: false`.
 
 ## Próximo bloco interno sem dependência externa
-1. Vincular uma conta de anúncios descoberta ao plano sem aceitar IDs arbitrários.
-2. Comprovar capacidades de escrita exigidas para o objetivo e destino escolhidos.
-3. Preparar o orquestrador fail-closed e a simulação de execução, mantendo escrita Meta desligada.
+1. Criar um pacote criativo versionado vinculado ao plano e às fontes do contexto.
+2. Validar alegações, destinos, formatos e aprovação humana das peças.
+3. Substituir o briefing pendente por conteúdo aprovado sem habilitar escrita Meta.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.

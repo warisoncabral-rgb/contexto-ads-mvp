@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
 import { ApprovalV1 } from '../../domain/contracts/approval';
 import { AuditEvent } from '../../domain/contracts/audit-event';
 import { ApprovalRepository } from '../../domain/ports/repositories';
@@ -189,6 +190,54 @@ export class PostgresApprovalRepository implements ApprovalRepository {
       ), '')`,
       event,
     );
+  }
+
+  async invalidateForCampaignExceptHash(
+    tenantId: string,
+    campaignId: string,
+    currentPlanHash: string,
+    now: string,
+  ): Promise<number> {
+    return this.inTransaction(async (client) => {
+      const stale = await client.query<ApprovalRow>(
+        `select ${COLUMNS} from plan_approvals
+        where tenant_id = $1 and campaign_id = $2
+          and status in ('pending', 'approved') and approved_plan_hash <> $3
+        for update`,
+        [tenantId, campaignId, currentPlanHash],
+      );
+      if (stale.rows.length === 0) return 0;
+      await client.query(
+        `update plan_approvals
+        set status = 'invalidated', decision_reason = 'plan_hash_changed', updated_at = $4
+        where tenant_id = $1 and campaign_id = $2
+          and approved_plan_hash <> $3 and status in ('pending', 'approved')`,
+        [tenantId, campaignId, currentPlanHash, now],
+      );
+      for (const row of stale.rows) {
+        await insertAuditEvent(client, {
+          auditEventId: randomUUID(),
+          tenantId,
+          correlationId: row.correlation_id,
+          actorType: 'system',
+          eventType: 'campaign_plan_approval_invalidated',
+          objectType: 'plan_approval',
+          objectId: row.approval_id,
+          previousState: {
+            status: row.status,
+            approvedPlanHash: row.approved_plan_hash,
+          },
+          newState: {
+            status: 'invalidated',
+            reason: 'plan_hash_changed',
+            currentPlanHash,
+          },
+          result: 'blocked',
+          createdAt: now,
+        });
+      }
+      return stale.rows.length;
+    });
   }
 
   private async conditionalSystemTransition(

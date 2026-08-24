@@ -12,6 +12,7 @@ import {
   EXECUTION_PLAN_REPOSITORY,
   APPROVAL_REPOSITORY,
   AUDIT_REPOSITORY,
+  EXECUTION_SIMULATION_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -22,6 +23,7 @@ import { PostgresCampaignContextRepository } from './postgres-campaign-context.r
 import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repository';
 import { PostgresApprovalRepository } from './postgres-approval.repository';
 import { PostgresAuditRepository } from './postgres-audit.repository';
+import { PostgresExecutionSimulationRepository } from './postgres-execution-simulation.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -77,6 +79,11 @@ import { PostgresAuditRepository } from './postgres-audit.repository';
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresAuditRepository(pool),
     },
+    {
+      provide: EXECUTION_SIMULATION_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresExecutionSimulationRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -89,6 +96,7 @@ import { PostgresAuditRepository } from './postgres-audit.repository';
     EXECUTION_PLAN_REPOSITORY,
     APPROVAL_REPOSITORY,
     AUDIT_REPOSITORY,
+    EXECUTION_SIMULATION_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

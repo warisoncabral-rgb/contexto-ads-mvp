@@ -85,6 +85,7 @@ describe('ApprovalService', () => {
       transition: jest.fn(),
       expire: jest.fn().mockResolvedValue(null),
       invalidateIfStale: jest.fn().mockResolvedValue(null),
+      invalidateForCampaignExceptHash: jest.fn().mockResolvedValue(0),
     };
     service = new ApprovalService(plans, approvals);
   });
