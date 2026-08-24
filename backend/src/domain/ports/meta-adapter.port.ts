@@ -10,13 +10,18 @@ export interface MetaAdapterResult<T> {
   requestReference?: string;
 }
 
+export type DiscoveredMetaAsset = Pick<
+  MetaAssetBinding,
+  'assetType' | 'externalId' | 'displayName'
+>;
+
 export interface MetaAdapterPort {
-  validateConnection(credentialRef: string): Promise<MetaAdapterResult<{ subjectId: string }>>;
-  discoverAssets(credentialRef: string, tenantId: string): Promise<MetaAdapterResult<MetaAssetBinding[]>>;
+  validateConnection(tenantId: string, credentialRef: string): Promise<MetaAdapterResult<{ subjectId: string }>>;
+  discoverAssets(credentialRef: string, tenantId: string): Promise<MetaAdapterResult<DiscoveredMetaAsset[]>>;
   validateCapabilities(
     credentialRef: string,
     assetBindings: MetaAssetBinding[],
     requested: MetaCapabilityType[],
   ): Promise<MetaAdapterResult<Array<{ capability: MetaCapabilityType; available: boolean; reason?: string }>>>;
-  readAdAccount(credentialRef: string, adAccountId: string): Promise<MetaAdapterResult<Record<string, unknown>>>;
+  readAdAccount(tenantId: string, credentialRef: string, adAccountId: string): Promise<MetaAdapterResult<Record<string, unknown>>>;
 }

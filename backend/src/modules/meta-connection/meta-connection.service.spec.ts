@@ -95,13 +95,9 @@ describe('MetaConnectionService', () => {
     meta.discoverAssets.mockResolvedValueOnce({
       success: true,
       data: [{
-        tenantId: otherTenantId,
-        connectionId: '55555555-5555-4555-8555-555555555555',
         assetType: 'ad_account',
         externalId: 'act_123',
         displayName: 'Main account',
-        selected: true,
-        observedAt: '2000-01-01T00:00:00.000Z',
       }],
       observedAt: '2026-08-24T01:00:00.000Z',
       retryable: false,

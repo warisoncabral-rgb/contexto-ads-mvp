@@ -15,9 +15,11 @@
 - Endpoints preparados para descobrir e listar ativos sem expor `credentialRef`.
 - Capability Registry persistente, transacional e protegido por tenant no banco.
 - Endpoint tenant-scoped para consultar evidências de capacidade.
+- Cliente Graph somente leitura para validar identidade, descobrir contas de anúncio e páginas e ler dados básicos de conta.
+- Tokens resolvidos pelo cofre por tenant, enviados apenas no header e protegidos com `appsecret_proof`.
 
 ## Próximos itens que dependem de ambiente real
-1. Criar o app Meta real e definir o fluxo oficial de OAuth/onboarding.
+1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
 2. Validar permissões e App Review aplicáveis ao caso multi-cliente.
 3. Guardar a chave mestra do cofre nas configurações protegidas da hospedagem.
 4. Ligar `discoverAssets` à Graph API e implementar `validateCapabilities` e `readAdAccount` contra a versão vigente.

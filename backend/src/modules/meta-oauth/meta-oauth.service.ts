@@ -21,10 +21,11 @@ import {
 } from '../../infrastructure/database/database.tokens';
 import { MetaConnectionStore } from '../../domain/ports/repositories';
 import { MetaConnectionService } from '../meta-connection/meta-connection.service';
-import { CREDENTIAL_VAULT, META_OAUTH_TOKEN_EXCHANGE } from './meta-oauth.tokens';
+import { CREDENTIAL_VAULT } from '../../infrastructure/vault/credential-vault.tokens';
+import { META_OAUTH_TOKEN_EXCHANGE } from './meta-oauth.tokens';
 
 const OAUTH_ATTEMPT_TTL_MS = 10 * 60 * 1000;
-const META_OAUTH_SCOPES = ['public_profile'] as const;
+const META_OAUTH_SCOPES = ['public_profile', 'ads_read', 'pages_show_list'] as const;
 const META_AUTHORIZATION_ORIGIN = 'https://www.facebook.com';
 
 export interface MetaOAuthCallbackInput {
