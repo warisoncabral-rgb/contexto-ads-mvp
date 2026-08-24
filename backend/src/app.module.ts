@@ -15,10 +15,12 @@ import { ExecutionAuthorizationModule } from './modules/execution-authorization/
 import { KillSwitchModule } from './modules/kill-switch/kill-switch.module';
 import { MetaWriteValidationModule } from './modules/meta-write-validation/meta-write-validation.module';
 import { OperatorAccessModule } from './modules/operator-access/operator-access.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    HealthModule,
     MetaConnectionModule,
     ReadinessModule,
     MetaOAuthModule,
