@@ -11,6 +11,7 @@ import { ExecutionSimulationModule } from './modules/execution-simulation/execut
 import { CreativePackageModule } from './modules/creative-package/creative-package.module';
 import { OperationalReadinessModule } from './modules/operational-readiness/operational-readiness.module';
 import { ExecutionManifestModule } from './modules/execution-manifest/execution-manifest.module';
+import { ExecutionAuthorizationModule } from './modules/execution-authorization/execution-authorization.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ExecutionManifestModule } from './modules/execution-manifest/execution-
     CreativePackageModule,
     OperationalReadinessModule,
     ExecutionManifestModule,
+    ExecutionAuthorizationModule,
   ],
 })
 export class AppModule {}

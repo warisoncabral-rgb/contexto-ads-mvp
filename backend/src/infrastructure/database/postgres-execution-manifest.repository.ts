@@ -54,6 +54,18 @@ implements ExecutionManifestRepository {
     return result.rows[0]?.payload ?? null;
   }
 
+  async findById(
+    tenantId: string,
+    executionManifestId: string,
+  ): Promise<ExecutionManifestV1 | null> {
+    const result = await this.pool.query<ManifestRow>(
+      `select payload from execution_manifests
+      where tenant_id = $1 and execution_manifest_id = $2 limit 1`,
+      [tenantId, executionManifestId],
+    );
+    return result.rows[0]?.payload ?? null;
+  }
+
   private async inTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {

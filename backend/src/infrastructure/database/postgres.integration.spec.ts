@@ -22,6 +22,8 @@ import { PostgresOperationalReadinessRepository } from './postgres-operational-r
 import { OperationalReadinessService } from '../../modules/operational-readiness/operational-readiness.service';
 import { PostgresExecutionManifestRepository } from './postgres-execution-manifest.repository';
 import { ExecutionManifestService } from '../../modules/execution-manifest/execution-manifest.service';
+import { PostgresExecutionAuthorizationRepository } from './postgres-execution-authorization.repository';
+import { ExecutionAuthorizationService } from '../../modules/execution-authorization/execution-authorization.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -48,6 +50,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '012_creative_packages.sql',
       '013_operational_readiness_decisions.sql',
       '014_execution_manifests.sql',
+      '015_execution_authorizations.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -62,6 +65,8 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from execution_preflights where tenant_id = $1', [tenantId]);
+    await pool.query('delete from execution_authorizations where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_manifests where tenant_id = $1', [tenantId]);
     await pool.query('delete from operational_readiness_decisions where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_simulation_reports where tenant_id = $1', [tenantId]);
@@ -508,6 +513,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     const creativePackageRepository = new PostgresCreativePackageRepository(pool);
     const readinessDecisionRepository = new PostgresOperationalReadinessRepository(pool);
     const executionManifestRepository = new PostgresExecutionManifestRepository(pool);
+    const executionAuthorizationRepository = new PostgresExecutionAuthorizationRepository(pool);
     const connectionRepository = new PostgresMetaConnectionRepository(pool);
     const capabilityRepository = new PostgresCapabilityRepository(pool);
     const meta = {} as MetaReadonlyAdapter;
@@ -537,6 +543,10 @@ describeWithPostgres('PostgreSQL integration', () => {
       plans,
       simulationRepository,
       executionManifestRepository,
+    );
+    const executionAuthorizationService = new ExecutionAuthorizationService(
+      executionManifestRepository,
+      executionAuthorizationRepository,
     );
     const campaignId = randomUUID();
     const executionConnectionId = randomUUID();
@@ -833,6 +843,29 @@ describeWithPostgres('PostgreSQL integration', () => {
     await expect(executionManifestService.latest(
       tenantId, targeted.executionPlanId,
     )).resolves.toEqual(manifests[0]);
+    const authorizations = await Promise.all(Array.from({ length: 5 }, () =>
+      executionAuthorizationService.request(
+        tenantId, manifests[0].executionManifestId, 'warison',
+      )));
+    expect(new Set(authorizations.map((item) => item.executionAuthorizationId)).size)
+      .toBe(1);
+    const executionAuthorization = await executionAuthorizationService.approve(
+      tenantId, authorizations[0].executionAuthorizationId, 'warison',
+    );
+    expect(executionAuthorization.status).toBe('approved');
+    expect(executionAuthorization.boundaries.effectiveExecutionPermission).toBe(false);
+    const preflights = await Promise.all(Array.from({ length: 5 }, () =>
+      executionAuthorizationService.preflight(
+        tenantId, executionAuthorization.executionAuthorizationId,
+      )));
+    expect(new Set(preflights.map((item) => item.executionPreflightId)).size).toBe(1);
+    expect(preflights[0].status).toBe('blocked_before_attempt');
+    expect(preflights[0].boundaries.executionRecordCreated).toBe(false);
+    expect(preflights[0].boundaries.externalAttemptStarted).toBe(false);
+    expect(preflights[0].blockers).toEqual(expect.arrayContaining([
+      'tenant_kill_switch', 'campaign_kill_switch',
+      'real_meta_write_validation', 'write_adapter_enabled',
+    ]));
     await expect(simulationRepository.save({
       ...simulation,
       simulationId: randomUUID(),

@@ -52,11 +52,15 @@
 - Resultado externo incerto bloqueia retries até reconciliação; falha parcial interrompe dependentes e preserva evidências.
 - Compensações nunca são automáticas sem política e autorização específicas, e o estado observado na Meta será a fonte de verdade.
 - O manifesto permanece `prepared_gate_closed`: aprovação específica de execução, validação real de escrita, adapter e Kill Switch ainda são requisitos ausentes.
+- Autorização humana de execução separada da aprovação do plano, vinculada ao ID/hash exatos do manifesto e com validade de apenas 15 minutos.
+- Aprovar a autorização não abre o gate: o contrato mantém `effectiveExecutionPermission: false` até todos os demais controles passarem.
+- Preflight persistido e idempotente registra controles aprovados e bloqueadores sem criar `ExecutionRecord` ou iniciar tentativa externa.
+- Autorização expirada ou referente a manifesto substituído é invalidada fail-closed, com auditoria atômica.
 
 ## Próximo bloco interno sem dependência externa
-1. Preparar o registro interno do ciclo de vida de cada tentativa futura, sem iniciar efeitos.
-2. Definir o gate humano específico de execução, vinculado ao manifesto e com validade curta.
-3. Manter o adapter de escrita ausente até a validação Meta real, Kill Switch comprovado e autorização explícita.
+1. Implementar Kill Switch persistente e auditado por tenant e campanha, com ausência tratada como bloqueio.
+2. Integrar seu estado ao preflight sem criar uma tentativa externa.
+3. Manter o adapter de escrita ausente até validação Meta real e liberação explícita de todos os gates.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
