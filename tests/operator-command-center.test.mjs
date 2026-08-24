@@ -10,5 +10,8 @@ test('summarizes only validated queue facts and known routes',()=>{
   assert.equal(result.enteredOrWorsenedCount,1)
   assert.equal(result.resolvedCount,1)
   assert.equal(result.baselineMissingCount,1)
+  assert.equal(result.navigation.some(([href])=>href==='/work-queue/campaigns'),true)
+  assert.equal(result.navigation.some(([href])=>href==='/work-queue/evidence'),true)
+  assert.equal(new Set(result.navigation.map(([href])=>href)).size,result.navigation.length)
   assert.equal(result.boundaries.syntheticMetricInvented,false)
 })
