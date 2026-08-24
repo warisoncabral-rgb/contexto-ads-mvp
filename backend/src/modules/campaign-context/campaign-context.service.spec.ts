@@ -62,7 +62,22 @@ describe('CampaignContextService', () => {
       field: 'budget',
       severity: 'blocker',
       code: 'required_fact_missing',
-      nextAction: expect.stringContaining('budget'),
+      nextAction: expect.stringContaining('orçamento'),
+    }));
+  });
+
+  it('attaches operator audit evidence to the same context transaction', async () => {
+    const result = await service.create(tenantId, completeFacts, 'operator:warison');
+
+    expect(repository.create).toHaveBeenCalledWith(result, expect.objectContaining({
+      tenantId,
+      actorId: 'operator:warison',
+      eventType: 'operator_campaign_context_created',
+      objectId: result.packageId,
+      newState: expect.objectContaining({
+        contentHash: result.contentHash,
+        externalWritesAllowed: false,
+      }),
     }));
   });
 

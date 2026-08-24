@@ -56,9 +56,10 @@ export interface SmokeTestReportRepository {
 }
 
 export interface CampaignContextRepository {
-  create(context: CampaignContextPackageV1): Promise<void>;
+  create(context: CampaignContextPackageV1, event?: AuditEvent): Promise<void>;
   appendNext(
     context: UnversionedCampaignContextPackageV1,
+    event?: AuditEvent,
   ): Promise<CampaignContextPackageV1 | null>;
   latest(
     tenantId: string,
@@ -69,6 +70,10 @@ export interface CampaignContextRepository {
     campaignId: string,
     version: number,
   ): Promise<CampaignContextPackageV1 | null>;
+}
+
+export interface OperatorCampaignContextSelectionRepository {
+  listLatestForTenant(tenantId: string): Promise<CampaignContextPackageV1[]>;
 }
 
 export interface ExecutionPlanRepository {

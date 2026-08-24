@@ -7,9 +7,11 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuditEvent } from '../../domain/contracts/audit-event';
+import { CampaignContextInput } from '../../domain/contracts/campaign-context';
 import {
   OperatorPermission,
   OperatorRole,
+  OperatorCampaignContextAccessV1,
   OperatorTenantPlansV1,
   OperatorWorkspaceAccessV1,
 } from '../../domain/contracts/operator-access';
@@ -21,16 +23,19 @@ import {
 import {
   AuditRepository,
   OperatorPlanSelectionRepository,
+  OperatorCampaignContextSelectionRepository,
   OperationalReadinessRepository,
   OperatorTenantMembershipRepository,
 } from '../../domain/ports/repositories';
 import {
   AUDIT_REPOSITORY,
+  CAMPAIGN_CONTEXT_REPOSITORY,
   EXECUTION_PLAN_REPOSITORY,
   OPERATIONAL_READINESS_REPOSITORY,
   OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
 } from '../../infrastructure/database/database.tokens';
 import { OPERATOR_IDENTITY } from '../../infrastructure/operator-access/operator-access.tokens';
+import { CampaignContextService } from '../campaign-context/campaign-context.service';
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
   owner: [
@@ -61,6 +66,9 @@ export class OperatorAccessService {
     private readonly plans: OperatorPlanSelectionRepository,
     @Inject(OPERATIONAL_READINESS_REPOSITORY)
     private readonly readiness: OperationalReadinessRepository,
+    @Inject(CAMPAIGN_CONTEXT_REPOSITORY)
+    private readonly campaignContextSelection: OperatorCampaignContextSelectionRepository,
+    private readonly campaignContexts: CampaignContextService,
   ) {}
 
   async listTenants(
@@ -175,6 +183,68 @@ export class OperatorAccessService {
     return decision;
   }
 
+  async listCampaignContexts(
+    authorizationHeader: string | undefined,
+    tenantId: string,
+  ): Promise<OperatorCampaignContextAccessV1> {
+    const { operator, membership } = await this.authorizedMembership(
+      authorizationHeader,
+      tenantId,
+    );
+    const contexts = await this.campaignContextSelection.listLatestForTenant(tenantId);
+    const generatedAt = new Date().toISOString();
+    await this.audit.append(this.contextListEvent(
+      tenantId,
+      membership.membershipId,
+      operator.subject,
+      generatedAt,
+    ));
+    return {
+      tenantId,
+      contexts,
+      boundaries: {
+        tenantAccessVerified: true,
+        latestContextPerCampaign: true,
+        publicationAuthorized: false,
+        externalWritesAllowed: false,
+        externalWritesPerformed: false,
+      },
+      generatedAt,
+    };
+  }
+
+  async createCampaignContext(
+    authorizationHeader: string | undefined,
+    tenantId: string,
+    facts?: CampaignContextInput,
+  ) {
+    const { operator, membership } = await this.authorizedMembership(
+      authorizationHeader,
+      tenantId,
+    );
+    this.assertCanPrepareCampaign(membership.role);
+    return this.campaignContexts.create(tenantId, facts, operator.subject);
+  }
+
+  async updateCampaignContext(
+    authorizationHeader: string | undefined,
+    tenantId: string,
+    campaignId: string,
+    facts?: CampaignContextInput,
+  ) {
+    const { operator, membership } = await this.authorizedMembership(
+      authorizationHeader,
+      tenantId,
+    );
+    this.assertCanPrepareCampaign(membership.role);
+    return this.campaignContexts.appendVersion(
+      tenantId,
+      campaignId,
+      facts,
+      operator.subject,
+    );
+  }
+
   private async authenticate(authorizationHeader: string | undefined) {
     try {
       return await this.identity.authenticate(authorizationHeader);
@@ -192,6 +262,31 @@ export class OperatorAccessService {
         });
       }
       throw error;
+    }
+  }
+
+  private async authorizedMembership(
+    authorizationHeader: string | undefined,
+    tenantId: string,
+  ) {
+    const operator = await this.authenticate(authorizationHeader);
+    const memberships = await this.memberships.listActiveForSubject(operator.subject);
+    const membership = memberships.find((candidate) => candidate.tenantId === tenantId);
+    if (!membership) {
+      throw new UnauthorizedException({
+        code: 'tenant_access_denied',
+        message: 'Operator is not authorized for this tenant',
+      });
+    }
+    return { operator, membership };
+  }
+
+  private assertCanPrepareCampaign(role: OperatorRole) {
+    if (!PERMISSIONS[role].includes('manage_campaign_preparation')) {
+      throw new UnauthorizedException({
+        code: 'campaign_preparation_not_permitted',
+        message: 'Operator cannot change campaign preparation',
+      });
     }
   }
 
@@ -265,6 +360,31 @@ export class OperatorAccessService {
       newState: {
         accessType: 'read_only_operational_decision',
         executionPlanId,
+        publicationAuthorized: false,
+        externalWritesAllowed: false,
+      },
+      result: 'info',
+      createdAt,
+    };
+  }
+
+  private contextListEvent(
+    tenantId: string,
+    membershipId: string,
+    operatorSubject: string,
+    createdAt: string,
+  ): AuditEvent {
+    return {
+      auditEventId: randomUUID(),
+      tenantId,
+      correlationId: randomUUID(),
+      actorType: 'user',
+      actorId: operatorSubject,
+      eventType: 'operator_campaign_contexts_listed',
+      objectType: 'operator_tenant_membership',
+      objectId: membershipId,
+      newState: {
+        accessType: 'read_only_campaign_context_selection',
         publicationAuthorized: false,
         externalWritesAllowed: false,
       },

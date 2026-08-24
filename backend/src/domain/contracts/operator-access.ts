@@ -67,3 +67,16 @@ export interface OperatorTenantPlansV1 {
   };
   generatedAt: string;
 }
+
+export interface OperatorCampaignContextAccessV1 {
+  tenantId: string;
+  contexts: import('./campaign-context').CampaignContextPackageV1[];
+  boundaries: {
+    tenantAccessVerified: true;
+    latestContextPerCampaign: true;
+    publicationAuthorized: false;
+    externalWritesAllowed: false;
+    externalWritesPerformed: false;
+  };
+  generatedAt: string;
+}

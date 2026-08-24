@@ -3,7 +3,9 @@ import {
   CampaignContextPackageV1,
   UnversionedCampaignContextPackageV1,
 } from '../../domain/contracts/campaign-context';
+import { AuditEvent } from '../../domain/contracts/audit-event';
 import { CampaignContextRepository } from '../../domain/ports/repositories';
+import { insertAuditEvent } from './postgres-audit.repository';
 
 interface CampaignContextRow {
   package_id: string;
@@ -22,7 +24,7 @@ interface CampaignContextRow {
 export class PostgresCampaignContextRepository implements CampaignContextRepository {
   constructor(private readonly pool: Pool) {}
 
-  async create(context: CampaignContextPackageV1): Promise<void> {
+  async create(context: CampaignContextPackageV1, event?: AuditEvent): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
@@ -32,6 +34,7 @@ export class PostgresCampaignContextRepository implements CampaignContextReposit
         [context.campaignId, context.tenantId, context.createdAt],
       );
       await this.insertVersion(client, context);
+      if (event) await insertAuditEvent(client, event);
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');
@@ -43,6 +46,7 @@ export class PostgresCampaignContextRepository implements CampaignContextReposit
 
   async appendNext(
     context: UnversionedCampaignContextPackageV1,
+    event?: AuditEvent,
   ): Promise<CampaignContextPackageV1 | null> {
     const client = await this.pool.connect();
     try {
@@ -65,6 +69,12 @@ export class PostgresCampaignContextRepository implements CampaignContextReposit
       );
       const versioned = { ...context, version: result.rows[0].next_version };
       await this.insertVersion(client, versioned);
+      if (event) {
+        await insertAuditEvent(client, {
+          ...event,
+          newState: { ...(event.newState as object), version: versioned.version },
+        });
+      }
       await client.query('commit');
       return versioned;
     } catch (error) {
@@ -105,6 +115,25 @@ export class PostgresCampaignContextRepository implements CampaignContextReposit
       [tenantId, campaignId, version],
     );
     return result.rows[0] ? this.toDomain(result.rows[0]) : null;
+  }
+
+  async listLatestForTenant(tenantId: string): Promise<CampaignContextPackageV1[]> {
+    const result = await this.pool.query<CampaignContextRow>(
+      `select package_id, tenant_id, campaign_id, version, schema_version,
+        status, facts, inferences, validation_issues, content_hash, created_at
+      from (
+        select distinct on (campaign_id)
+          package_id, tenant_id, campaign_id, version, schema_version,
+          status, facts, inferences, validation_issues, content_hash, created_at
+        from campaign_context_versions
+        where tenant_id = $1
+        order by campaign_id, version desc
+      ) latest
+      order by created_at desc, campaign_id
+      limit 100`,
+      [tenantId],
+    );
+    return result.rows.map((row) => this.toDomain(row));
   }
 
   private async insertVersion(

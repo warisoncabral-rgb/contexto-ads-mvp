@@ -33,6 +33,7 @@ import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-
 import { PostgresAuditRepository } from './postgres-audit.repository';
 import { OperatorAccessService } from '../../modules/operator-access/operator-access.service';
 import { OperatorIdentityPort } from '../../domain/ports/operator-identity.port';
+import { CampaignContextService } from '../../modules/campaign-context/campaign-context.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -186,6 +187,8 @@ describeWithPostgres('PostgreSQL integration', () => {
       new PostgresAuditRepository(pool),
       planRepository,
       new PostgresOperationalReadinessRepository(pool),
+      new PostgresCampaignContextRepository(pool),
+      new CampaignContextService(new PostgresCampaignContextRepository(pool)),
     );
     const result = await service.listTenants(
       'Bearer integration-token-with-at-least-32-characters',
@@ -207,20 +210,37 @@ describeWithPostgres('PostgreSQL integration', () => {
     );
     expect(accessAudit.rows[0].count).toBe('1');
 
-    const campaignId = randomUUID();
-    await new PostgresCampaignContextRepository(pool).create({
-      packageId: randomUUID(),
+    const preparedContext = await service.createCampaignContext(
+      'Bearer integration-token-with-at-least-32-characters',
       tenantId,
+      {
+        businessName: 'Rosa VIP Calçados',
+        offer: 'Calçados femininos no atacado',
+        objective: 'leads',
+        audience: 'Lojistas e revendedores',
+        destination: 'whatsapp',
+        geography: 'Recife e Natal',
+        budget: { mode: 'daily', amountMinor: 1200, currency: 'BRL' },
+        durationDays: 7,
+      },
+    );
+    const campaignId = preparedContext.campaignId;
+    const contextResult = await service.listCampaignContexts(
+      'Bearer integration-token-with-at-least-32-characters',
+      tenantId,
+    );
+    expect(contextResult.contexts).toEqual([expect.objectContaining({
       campaignId,
-      version: 1,
-      schemaVersion: '1.0',
       status: 'ready_for_generation',
-      facts: {},
-      inferences: [],
-      validationIssues: [],
-      contentHash: '9'.repeat(64),
-      createdAt: '2026-08-24T15:30:00.000Z',
-    });
+      version: 1,
+    })]);
+    const contextAudit = await pool.query<{ count: string }>(
+      `select count(*)::text as count from audit_events
+      where tenant_id = $1 and actor_id = $2
+        and event_type = 'operator_campaign_context_created'`,
+      [tenantId, subject],
+    );
+    expect(contextAudit.rows[0].count).toBe('1');
     const executionPlanId = randomUUID();
     await planRepository.saveIdempotent({
       executionPlanId,

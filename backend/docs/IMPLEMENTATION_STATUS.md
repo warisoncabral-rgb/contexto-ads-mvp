@@ -73,6 +73,11 @@
 - Endpoint tenant-scoped retorna o plano mais recente de cada campanha somente após revalidar a membership e audita a leitura.
 - A interface valida o contrato e recusa respostas cruzadas entre tenants, credenciais rejeitadas ou fronteiras externas inconsistentes.
 - A decisão operacional exibida usa rota autenticada de ponta a ponta; conhecer UUIDs não permite contornar a membership.
+- Fluxo guiado permite criar rascunhos de campanha, salvar progresso parcial e retomar pela versão mais recente.
+- Lacunas do contexto viram tarefas em linguagem operacional; fatos ausentes continuam sem inferência automática.
+- Criação e atualização de contexto exigem `manage_campaign_preparation`; papel `viewer` permanece estritamente leitura.
+- Versão do contexto e auditoria do operador são persistidas atomicamente na mesma transação PostgreSQL.
+- Endpoints públicos de contexto foram retirados; seleção, leitura e gravação passam pelo limite autenticado do operador.
 
 ## Bloco interno de validação controlada concluído
 1. O contrato do primeiro teste de criação pausada está persistido e auditável.
@@ -80,9 +85,9 @@
 3. O adapter permanece ausente até ambiente real, autorização curta e todos os gates comprovados.
 
 ## Próximo bloco interno de produto
-1. Criar o fluxo guiado para cadastrar o contexto da campanha e transformar bloqueios em tarefas operacionais.
-2. Respeitar as permissões do papel na apresentação de ações sem conceder autorização de publicação.
-3. Manter publicação e escrita fora da interface até autorização específica e validação Meta real.
+1. Exibir a revisão final do contexto completo e gerar o plano lógico somente por ação explícita do operador.
+2. Apresentar orçamento, regras, riscos e justificativas antes de solicitar aprovação humana.
+3. Proteger também a geração do plano pelo limite autenticado, mantendo toda escrita Meta desligada.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
