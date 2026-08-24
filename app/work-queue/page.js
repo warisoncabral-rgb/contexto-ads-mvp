@@ -1,6 +1,7 @@
 import { loadOperatorWorkQueue } from '../../lib/operator-work-queue.mjs'
 import { deriveOperatorDailyBrief } from '../../lib/operator-daily-brief.mjs'
 import { deriveOperatorDecisionAgenda } from '../../lib/operator-decision-agenda.mjs'
+import { deriveOperatorHumanActionEvidence } from '../../lib/operator-human-action-evidence.mjs'
 
 const ownerLabels = { operator: 'Operador', system: 'Sistema', meta_environment: 'Ambiente Meta' }
 const priorityLabels = { critical: 'Crítica', high: 'Alta', normal: 'Normal' }
@@ -30,6 +31,7 @@ export default async function WorkQueuePage({ searchParams }) {
   const { queue } = result
   const brief = deriveOperatorDailyBrief(queue)
   const agenda = deriveOperatorDecisionAgenda(queue)
+  const evidenceView = deriveOperatorHumanActionEvidence(queue)
   const items = filter === 'all' ? queue.items : queue.items.filter((item) => item.owner === filter)
   const tabs = [['all', 'Todas'], ['operator', 'Operador'], ['system', 'Sistema'], ['meta_environment', 'Ambiente Meta']]
   const comparisons = queue.snapshots.map((snapshot) => snapshot.comparison)
@@ -52,6 +54,11 @@ export default async function WorkQueuePage({ searchParams }) {
         <div className="work-metrics"><AgendaLane label="Operador" items={agenda.lanes.operator} /><AgendaLane label="Sistema" items={agenda.lanes.system} /><AgendaLane label="Ambiente Meta" items={agenda.lanes.metaEnvironment} /><article><span>Humanas críticas</span><strong>{agenda.summary.criticalOperatorCount}</strong><small>Somente owner=operator</small></article><article><span>Humanas altas</span><strong>{agenda.summary.highOperatorCount}</strong><small>Somente owner=operator</small></article></div>
         {agenda.lanes.operator.length > 0 && <div className="daily-brief-focus"><span>Ações humanas comprovadas</span>{agenda.lanes.operator.map((item) => <a href={`/?tenantId=${item.tenantId}&executionPlanId=${item.executionPlanId}`} key={item.workItemId}><strong>{item.tenantDisplayName}</strong><small>{priorityLabels[item.priority]} · {item.blockerCode}</small><p>{item.nextAction}</p></a>)}</div>}
       </section>
+      <section className="daily-brief">
+        <div className="section-heading"><div><span className="eyebrow">Evidência para revisão humana</span><h2>{evidenceView.headline}</h2></div><small>Presença de referência ≠ suficiência</small></div>
+        <div className="work-metrics"><article><span>Com referência</span><strong>{evidenceView.operator.withEvidenceCount}</strong><small>Não implica prontidão</small></article><article><span>Sem referência</span><strong>{evidenceView.operator.withoutEvidenceCount}</strong><small>Contrato atual</small></article><article><span>Fora do operador</span><strong>{evidenceView.outsideHumanControlCount}</strong><small>Sistema ou Meta</small></article><article><span>Prontidão inferida</span><strong>Não</strong><small>Fail-closed</small></article><article><span>Autorização inferida</span><strong>Não</strong><small>Fail-closed</small></article></div>
+        {evidenceView.operator.withoutEvidence.length > 0 && <div className="daily-brief-focus"><span>Ações do operador sem referência vinculada</span>{evidenceView.operator.withoutEvidence.map((item) => <a href={`/?tenantId=${item.tenantId}&executionPlanId=${item.executionPlanId}`} key={item.workItemId}><strong>{item.tenantDisplayName}</strong><small>{priorityLabels[item.priority]} · {item.blockerCode}</small><p>{item.nextAction}</p></a>)}</div>}
+      </section>
       <section className="work-metrics"><article><span>Pendências</span><strong>{queue.summary.pendingItemCount}</strong></article><article><span>Críticas</span><strong>{queue.summary.criticalCount}</strong></article><article><span>Do operador</span><strong>{queue.summary.operatorCount}</strong></article><article><span>Do sistema</span><strong>{queue.summary.systemCount}</strong></article><article><span>Ambiente Meta</span><strong>{queue.summary.metaEnvironmentCount}</strong></article></section>
       <nav className="work-tabs" aria-label="Filtrar responsável">{tabs.map(([key, label]) => <a className={filter === key ? 'active' : ''} href={key === 'all' ? '/work-queue' : `/work-queue?owner=${key}`} key={key}>{label}</a>)}</nav>
       <section className="change-panel">
@@ -70,7 +77,7 @@ export default async function WorkQueuePage({ searchParams }) {
           <details><summary>{item.evidenceRefs.length} evidência(s) vinculada(s)</summary>{item.evidenceRefs.map((ref) => <code key={ref}>{ref}</code>)}</details>
         </article>)}
       </section>
-      <div className="portfolio-boundary">Fila, mudanças, resumo e agenda derivados de evidências persistidas. Nenhum tipo de decisão humana foi inferido, nenhuma tarefa foi marcada como concluída por inferência, nenhuma notificação foi enviada e nenhuma ação externa foi executada.</div>
+      <div className="portfolio-boundary">Fila, mudanças, resumo, agenda e visibilidade de evidências derivados do contrato validado. Presença de referência não foi tratada como suficiência, prontidão ou autorização; nenhuma notificação foi enviada e nenhuma ação externa foi executada.</div>
     </main>
   </>
 }
