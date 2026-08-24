@@ -13,6 +13,7 @@ import {
   OperatorCampaignContextSelectionRepository,
   OperationalReadinessRepository,
   OperatorTenantMembershipRepository,
+  OperatorWorkQueueSnapshotRepository,
 } from '../../domain/ports/repositories';
 import { ExecutionPlanV1 } from '../../domain/contracts/execution-plan';
 import { OperatorAccessService } from './operator-access.service';
@@ -59,6 +60,7 @@ describe('OperatorAccessService', () => {
   let auditTimeline: jest.Mocked<AuditTimelineRepository>;
   let plans: jest.Mocked<OperatorPlanSelectionRepository>;
   let readiness: jest.Mocked<OperationalReadinessRepository>;
+  let workQueueSnapshots: jest.Mocked<OperatorWorkQueueSnapshotRepository>;
   let contextSelection: jest.Mocked<OperatorCampaignContextSelectionRepository>;
   let campaignContexts: jest.Mocked<Pick<CampaignContextService, 'create' | 'appendVersion'>>;
   let executionPlans: jest.Mocked<Pick<ExecutionPlanService, 'generate'>>;
@@ -90,6 +92,7 @@ describe('OperatorAccessService', () => {
       saveIdempotent: jest.fn(),
       latestForPlan: jest.fn(),
     };
+    workQueueSnapshots = { saveDaily: jest.fn().mockImplementation(async (snapshot) => snapshot) };
     contextSelection = { listLatestForTenant: jest.fn().mockResolvedValue([]) };
     campaignContexts = {
       create: jest.fn(),
@@ -117,6 +120,7 @@ describe('OperatorAccessService', () => {
       auditTimeline,
       plans,
       readiness,
+      workQueueSnapshots,
       contextSelection,
       campaignContexts as unknown as CampaignContextService,
       executionPlans as unknown as ExecutionPlanService,
@@ -208,8 +212,14 @@ describe('OperatorAccessService', () => {
       criticalCount: 1, operatorCount: 0, systemCount: 0, metaEnvironmentCount: 1 });
     expect(result.boundaries).toEqual(expect.objectContaining({
       derivedFromCurrentReadiness: true, deadlinesFabricated: false,
-      completionInferred: false, externalWritesAllowed: false,
+      completionInferred: false, dailySnapshotsPersisted: true, externalWritesAllowed: false,
     }));
+    expect(result.snapshots).toHaveLength(2);
+    expect(workQueueSnapshots.saveDaily).toHaveBeenCalledTimes(2);
+    expect(result.snapshots[0].sourceDecisions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'delivery_metrics', status: 'ignored' }),
+      expect.objectContaining({ source: 'execution_lifecycle', status: 'deferred' }),
+    ]));
   });
 
   it('creates a deterministic system task when readiness has not been evaluated', async () => {
