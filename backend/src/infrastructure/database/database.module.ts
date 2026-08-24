@@ -14,6 +14,7 @@ import {
   AUDIT_REPOSITORY,
   EXECUTION_SIMULATION_REPOSITORY,
   CREATIVE_PACKAGE_REPOSITORY,
+  OPERATIONAL_READINESS_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -26,6 +27,7 @@ import { PostgresApprovalRepository } from './postgres-approval.repository';
 import { PostgresAuditRepository } from './postgres-audit.repository';
 import { PostgresExecutionSimulationRepository } from './postgres-execution-simulation.repository';
 import { PostgresCreativePackageRepository } from './postgres-creative-package.repository';
+import { PostgresOperationalReadinessRepository } from './postgres-operational-readiness.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -91,6 +93,11 @@ import { PostgresCreativePackageRepository } from './postgres-creative-package.r
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresCreativePackageRepository(pool),
     },
+    {
+      provide: OPERATIONAL_READINESS_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresOperationalReadinessRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -105,6 +112,7 @@ import { PostgresCreativePackageRepository } from './postgres-creative-package.r
     AUDIT_REPOSITORY,
     EXECUTION_SIMULATION_REPOSITORY,
     CREATIVE_PACKAGE_REPOSITORY,
+    OPERATIONAL_READINESS_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

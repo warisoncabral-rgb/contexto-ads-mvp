@@ -208,6 +208,35 @@ Retorna somente a versão criativa mais recente do tenant. O dry-run exige que o
 plano referencie exatamente o ID, a versão e o hash desse pacote em estado
 `approved`; marcar apenas `copyStatus` no plano não é suficiente.
 
+### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/readiness-decisions`
+Body: `{"tenantId":"...","approvalId":"..."}`. Gera uma decisão operacional
+em linguagem simples. Quando `approvalId` é omitido, o serviço reaproveita a
+referência da última simulação e sempre executa um novo dry-run seguro para
+detectar aprovação expirada, plano alterado ou evidência que deixou de ser válida.
+
+A resposta organiza cada ponto como decisão, motivo e base, apresenta o teto
+financeiro, classifica bloqueadores por responsável (`system`, `operator` ou
+`meta_environment`) e escolhe uma única próxima ação pela ordem técnica correta.
+Os marcos são separados para impedir falsa continuidade:
+
+- preparação da campanha;
+- validação do ambiente Meta;
+- aprovação criativa;
+- aprovação humana do plano;
+- validação do executor;
+- publicação;
+- ativação;
+- entrega.
+
+O estado máximo nesta fase é `ready_for_executor_validation`. Mesmo nele,
+`campaignPublished`, `campaignActive`, `campaignDelivering`,
+`externalWritesAllowed` e `externalWritesPerformed` permanecem `false`.
+
+### `GET /v1/plans/:executionPlanId/readiness-decisions/latest?tenantId=...`
+Retorna a última decisão persistida somente depois de comprovar que o plano
+pertence ao tenant. Decisões semanticamente iguais retornam o mesmo snapshot e
+somente a primeira inserção gera o evento de auditoria.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -218,11 +247,12 @@ plano referencie exatamente o ID, a versão e o hash desse pacote em estado
 - Aprovações são temporárias, vinculadas ao hash e auditadas atomicamente.
 - Simulações validam o plano inteiro e jamais executam as operações apresentadas.
 - Mudanças criativas invalidam o plano anterior; mídias e conteúdo são ligados por hash.
+- A linguagem operacional nunca confunde preparação com publicação, ativação ou entrega.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Criar um resumo operacional final e uma decisão consolidada de prontidão,
-explicando bloqueadores, evidências e a próxima ação antes de qualquer executor.
-A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
+Preparar o contrato interno do executor real, incluindo idempotência,
+compensação e reconciliação, sem adicionar um adapter de escrita ou liberar
+efeitos externos. A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
 um OAuth real e acionar o smoke test automatizado continua sendo a única
 validação externa restante para o vertical atual.

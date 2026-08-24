@@ -14,6 +14,7 @@ import {
   CreativePackageV1,
   UnversionedCreativePackageV1,
 } from '../contracts/creative-package';
+import { OperationalReadinessDecisionV1 } from '../contracts/operational-readiness';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -131,6 +132,17 @@ export interface CreativePackageRepository {
     approvedAt: string,
     event: AuditEvent,
   ): Promise<CreativePackageV1 | null>;
+}
+
+export interface OperationalReadinessRepository {
+  saveIdempotent(
+    decision: OperationalReadinessDecisionV1,
+    event: AuditEvent,
+  ): Promise<OperationalReadinessDecisionV1>;
+  latestForPlan(
+    tenantId: string,
+    executionPlanId: string,
+  ): Promise<OperationalReadinessDecisionV1 | null>;
 }
 
 export interface MetaOAuthAttemptStore {

@@ -15,7 +15,7 @@ export class PostgresExecutionPlanRepository implements ExecutionPlanRepository 
         execution_plan_id, tenant_id, campaign_id, campaign_package_version,
         plan_version, plan_hash, idempotency_key, status, payload, created_at
       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
-      on conflict (idempotency_key) do nothing`,
+      on conflict do nothing`,
       [
         plan.executionPlanId,
         plan.tenantId,

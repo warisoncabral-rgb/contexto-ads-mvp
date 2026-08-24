@@ -9,6 +9,7 @@ import { ExecutionPlanModule } from './modules/execution-plan/execution-plan.mod
 import { ApprovalModule } from './modules/approval/approval.module';
 import { ExecutionSimulationModule } from './modules/execution-simulation/execution-simulation.module';
 import { CreativePackageModule } from './modules/creative-package/creative-package.module';
+import { OperationalReadinessModule } from './modules/operational-readiness/operational-readiness.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { CreativePackageModule } from './modules/creative-package/creative-packa
     ApprovalModule,
     ExecutionSimulationModule,
     CreativePackageModule,
+    OperationalReadinessModule,
   ],
 })
 export class AppModule {}

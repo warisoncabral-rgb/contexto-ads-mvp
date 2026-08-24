@@ -40,7 +40,7 @@ describe('PostgresExecutionPlanRepository', () => {
       .mockResolvedValueOnce({ rows: [{ payload: plan }] });
 
     await expect(repository.saveIdempotent(plan)).resolves.toEqual(plan);
-    expect(query.mock.calls[0][0]).toContain('on conflict (idempotency_key) do nothing');
+    expect(query.mock.calls[0][0]).toContain('on conflict do nothing');
     expect(query.mock.calls[1]).toEqual([
       expect.stringContaining('where idempotency_key = $1 and tenant_id = $2'),
       [plan.idempotencyKey, plan.tenantId, plan.campaignId],
