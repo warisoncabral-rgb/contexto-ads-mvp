@@ -1,6 +1,6 @@
 import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
 import { MetaTenantOwnerGuard } from '../meta-connection/meta-tenant-owner.guard';
-import { MetaOAuthService } from './meta-oauth.service';
+import { MetaOAuthScopeProfile, MetaOAuthService } from './meta-oauth.service';
 
 @Controller('meta/connections')
 @UseGuards(MetaTenantOwnerGuard)
@@ -10,8 +10,8 @@ export class MetaOAuthController {
   @Post(':connectionId/oauth/start')
   start(
     @Param('connectionId') connectionId: string,
-    @Body() body: { tenantId: string },
+    @Body() body: { tenantId: string; scopeProfile?: MetaOAuthScopeProfile },
   ) {
-    return this.service.start(body.tenantId, connectionId);
+    return this.service.start(body.tenantId, connectionId, body.scopeProfile ?? 'read_only');
   }
 }
