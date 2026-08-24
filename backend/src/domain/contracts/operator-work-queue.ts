@@ -57,11 +57,12 @@ export interface OperatorWorkQueueSnapshotV1 {
   snapshotHash: string;
   itemCount: number;
   sourceDecisions: OperatorWorkQueueSourceDecisionV1[];
-  comparison?: OperatorWorkQueueSnapshotComparisonV1;
+  comparison: OperatorWorkQueueSnapshotComparisonV1;
   generatedAt: string;
 }
 
-export interface OperatorWorkQueueStoredSnapshotV1 extends OperatorWorkQueueSnapshotV1 {
+export interface OperatorWorkQueueStoredSnapshotV1 extends Omit<OperatorWorkQueueSnapshotV1, 'comparison'> {
+  comparison?: OperatorWorkQueueSnapshotComparisonV1;
   items: OperatorWorkItemV1[];
 }
 
