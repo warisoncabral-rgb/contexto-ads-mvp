@@ -26,6 +26,7 @@ import {
   UnversionedKillSwitchStateV1,
 } from '../contracts/kill-switch';
 import { MetaWriteValidationProtocolV1 } from '../contracts/meta-write-validation';
+import { OperatorTenantMembershipV1 } from '../contracts/operator-access';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -201,6 +202,10 @@ export interface MetaWriteValidationProtocolRepository {
     tenantId: string,
     executionManifestId: string,
   ): Promise<MetaWriteValidationProtocolV1 | null>;
+}
+
+export interface OperatorTenantMembershipRepository {
+  listActiveForSubject(operatorSubject: string): Promise<OperatorTenantMembershipV1[]>;
 }
 
 export interface CreativePackageRepository {

@@ -19,6 +19,7 @@ import {
   EXECUTION_AUTHORIZATION_REPOSITORY,
   KILL_SWITCH_REPOSITORY,
   META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
+  OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -36,6 +37,7 @@ import { PostgresExecutionManifestRepository } from './postgres-execution-manife
 import { PostgresExecutionAuthorizationRepository } from './postgres-execution-authorization.repository';
 import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository';
 import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-write-validation-protocol.repository';
+import { PostgresOperatorTenantMembershipRepository } from './postgres-operator-tenant-membership.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -126,6 +128,11 @@ import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-w
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresMetaWriteValidationProtocolRepository(pool),
     },
+    {
+      provide: OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresOperatorTenantMembershipRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -145,6 +152,7 @@ import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-w
     EXECUTION_AUTHORIZATION_REPOSITORY,
     KILL_SWITCH_REPOSITORY,
     META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
+    OPERATOR_TENANT_MEMBERSHIP_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

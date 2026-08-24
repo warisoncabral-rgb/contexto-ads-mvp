@@ -64,11 +64,20 @@
 - O protocolo limita o primeiro teste ao conjunto exato de operações pausadas, proíbe ativação, entrega, aumento de orçamento, concorrência e retry automático.
 - Onze evidências reais são obrigatórias, incluindo permissão, fingerprints, respostas sanitizadas, IDs externos, estado pausado observado, reconciliação e entrega zero.
 - Preparar o protocolo gera auditoria atômica e evidencia o preflight, mas não valida escrita, não cria `ExecutionRecord` e não habilita o adapter.
+- Contrato de identidade do operador independente de provedor e adapter bootstrap sem dependência cloud, configurado somente por sujeito e digest SHA-256.
+- Perfis de tenant e memberships persistentes com papéis `owner`, `operator` e `viewer`; somente dois estados ativos produzem acesso.
+- Endpoint de seleção retorna apenas tenants associados ao sujeito autenticado, deriva permissões do papel e audita cada leitura antes de responder.
+- Autenticação ausente, credencial inválida, tenant suspenso, membership revogada ou falha de auditoria bloqueiam fail-closed.
 
 ## Bloco interno de validação controlada concluído
 1. O contrato do primeiro teste de criação pausada está persistido e auditável.
 2. Evidências mínimas, limites e políticas de falha estão definidos em código.
 3. O adapter permanece ausente até ambiente real, autorização curta e todos os gates comprovados.
+
+## Próximo bloco interno de produto
+1. Integrar a Central Operacional ao endpoint autenticado de tenants sem expor o token ao navegador.
+2. Adicionar seleção tenant-scoped de campanhas e planos recentes.
+3. Manter publicação e escrita fora desta navegação até autorização específica e validação Meta real.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
