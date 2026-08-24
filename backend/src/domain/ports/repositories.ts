@@ -9,6 +9,7 @@ import {
 } from '../contracts/campaign-context';
 import { ExecutionPlanV1 } from '../contracts/execution-plan';
 import { ApprovalV1 } from '../contracts/approval';
+import { ExecutionSimulationReportV1 } from '../contracts/execution-simulation';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -90,6 +91,20 @@ export interface ApprovalRepository {
     now: string,
     event: AuditEvent,
   ): Promise<ApprovalV1 | null>;
+  invalidateForCampaignExceptHash(
+    tenantId: string,
+    campaignId: string,
+    currentPlanHash: string,
+    now: string,
+  ): Promise<number>;
+}
+
+export interface ExecutionSimulationRepository {
+  save(report: ExecutionSimulationReportV1): Promise<void>;
+  latestForPlan(
+    tenantId: string,
+    executionPlanId: string,
+  ): Promise<ExecutionSimulationReportV1 | null>;
 }
 
 export interface MetaOAuthAttemptStore {

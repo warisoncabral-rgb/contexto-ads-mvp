@@ -46,7 +46,8 @@ export interface ExecutionPlanV1 {
       | 'schedule'
       | 'audience'
       | 'destination'
-      | 'creative_safety';
+      | 'creative_safety'
+      | 'execution_target';
     ruleId: string;
     inputRefs: string[];
     outcome: Record<string, unknown>;

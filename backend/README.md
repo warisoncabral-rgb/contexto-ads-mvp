@@ -160,6 +160,32 @@ aprovações `pending` ou `approved` são marcadas como `invalidated`.
 A aprovação acontece atomicamente apenas se o hash ainda corresponder ao plano
 mais recente e o prazo não tiver vencido. Rejeição e revogação exigem motivo.
 
+### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/target`
+Body: `{"tenantId":"...","connectionId":"...","adAccountId":"act_..."}`.
+Vincula ao plano somente uma conta de anúncios presente no snapshot de descoberta
+da mesma conexão e tenant. IDs arbitrários, conexões não prontas e planos antigos
+são recusados antes da persistência.
+
+O vínculo produz um novo plano, hash e idempotency key, mantém os objetos pausados
+e os efeitos externos desabilitados. Aprovações do hash anterior são invalidadas
+imediatamente, com auditoria na mesma transação da invalidação.
+
+### `POST /v1/campaigns/:campaignId/plans/:executionPlanId/simulations`
+Body: `{"tenantId":"...","approvalId":"..."}`. Executa um dry-run local e
+persistente, sem chamar endpoints de escrita. A simulação comprova:
+
+- plano mais recente e grafo de dependências sem ciclos;
+- conexão Meta pronta e conta ainda presente nos ativos descobertos;
+- todas as capacidades de escrita exigidas com evidência `available`;
+- aprovação vigente para o hash, moeda e teto financeiro atuais;
+- conteúdo criativo aprovado;
+- trava de escrita externa ativa.
+
+O relatório ordena campanha, criativo, conjunto e anúncio pelas dependências,
+mas todas as operações registram `willExecute: false`. Mesmo um relatório
+`ready_for_execution` não publica nada. O último relatório fica disponível em
+`GET /v1/plans/:executionPlanId/simulations/latest?tenantId=...`.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -168,11 +194,12 @@ mais recente e o prazo não tiver vencido. Rejeição e revogação exigem motiv
 - Fatos críticos ausentes bloqueiam geração; a automação não cria inferências silenciosas.
 - Planos lógicos são idempotentes, explicáveis e não autorizam efeitos externos.
 - Aprovações são temporárias, vinculadas ao hash e auditadas atomicamente.
+- Simulações validam o plano inteiro e jamais executam as operações apresentadas.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Vincular ao plano uma conta Meta previamente descoberta, validar capacidades de
-escrita e preparar o orquestrador fail-closed, mantendo a publicação desligada.
-Em paralelo, criar/configurar o app Meta, concluir
+Criar e aprovar o pacote criativo versionado, substituindo o briefing pendente
+por textos e peças rastreáveis. A escrita Meta continuará desligada. Em paralelo,
+criar/configurar o app Meta, concluir
 um OAuth real e acionar o smoke test automatizado continua sendo a única
 validação externa restante para o vertical atual.

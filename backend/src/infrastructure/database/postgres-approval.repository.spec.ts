@@ -176,4 +176,23 @@ describe('PostgresApprovalRepository', () => {
     expect(clientQuery).toHaveBeenLastCalledWith('rollback');
     expect(release).toHaveBeenCalledTimes(1);
   });
+
+  it('invalidates every active approval superseded by a new campaign hash', async () => {
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(repository.invalidateForCampaignExceptHash(
+      approval.tenantId,
+      approval.campaignId,
+      'b'.repeat(64),
+      '2026-08-24T12:00:00.000Z',
+    )).resolves.toBe(1);
+    expect(clientQuery.mock.calls[1][0]).toContain('for update');
+    expect(clientQuery.mock.calls[2][0]).toContain("set status = 'invalidated'");
+    expect(clientQuery.mock.calls[3][0]).toContain('insert into audit_events');
+  });
 });

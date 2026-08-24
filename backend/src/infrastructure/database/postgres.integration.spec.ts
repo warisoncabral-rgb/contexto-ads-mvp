@@ -12,6 +12,11 @@ import { PostgresCampaignContextRepository } from './postgres-campaign-context.r
 import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repository';
 import { PostgresApprovalRepository } from './postgres-approval.repository';
 import { ApprovalService } from '../../modules/approval/approval.service';
+import { PostgresExecutionSimulationRepository } from './postgres-execution-simulation.repository';
+import { ExecutionSimulationService } from '../../modules/execution-simulation/execution-simulation.service';
+import { MetaConnectionService } from '../../modules/meta-connection/meta-connection.service';
+import { CapabilityRegistryService } from '../../modules/capability-registry/capability-registry.service';
+import { MetaReadonlyAdapter } from '../../modules/meta-adapter/meta-readonly.adapter';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -34,6 +39,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '008_campaign_context.sql',
       '009_execution_plans.sql',
       '010_plan_approvals.sql',
+      '011_execution_simulations.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -48,6 +54,7 @@ describeWithPostgres('PostgreSQL integration', () => {
   });
 
   afterAll(async () => {
+    await pool.query('delete from execution_simulation_reports where tenant_id = $1', [tenantId]);
     await pool.query('delete from plan_approvals where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_plans where tenant_id = $1', [tenantId]);
     await pool.query('delete from campaign_context_versions where tenant_id = $1', [tenantId]);
@@ -480,5 +487,210 @@ describeWithPostgres('PostgreSQL integration', () => {
       'campaign_plan_approval_expired',
     ]));
     expect(audit.rows).toHaveLength(5);
+  });
+
+  it('binds only a discovered target and dry-runs the approved dependency graph', async () => {
+    const contexts = new PostgresCampaignContextRepository(pool);
+    const plans = new PostgresExecutionPlanRepository(pool);
+    const approvalRepository = new PostgresApprovalRepository(pool);
+    const simulationRepository = new PostgresExecutionSimulationRepository(pool);
+    const connectionRepository = new PostgresMetaConnectionRepository(pool);
+    const capabilityRepository = new PostgresCapabilityRepository(pool);
+    const meta = {} as MetaReadonlyAdapter;
+    const connectionService = new MetaConnectionService(meta, connectionRepository);
+    const capabilityService = new CapabilityRegistryService(
+      connectionService,
+      meta,
+      capabilityRepository,
+    );
+    const approvalService = new ApprovalService(plans, approvalRepository);
+    const simulationService = new ExecutionSimulationService(
+      connectionService,
+      capabilityService,
+      approvalService,
+      plans,
+      approvalRepository,
+      simulationRepository,
+    );
+    const campaignId = randomUUID();
+    const executionConnectionId = randomUUID();
+    const adAccountId = 'act_987654';
+    await contexts.create({
+      packageId: randomUUID(),
+      tenantId,
+      campaignId,
+      version: 1,
+      schemaVersion: '1.0',
+      status: 'ready_for_generation',
+      facts: {},
+      inferences: [],
+      validationIssues: [],
+      contentHash: '6'.repeat(64),
+      createdAt: '2026-08-24T12:00:00.000Z',
+    });
+    await connectionRepository.save({
+      connectionId: executionConnectionId,
+      tenantId,
+      provider: 'meta',
+      status: 'connected',
+      credentialRef: `postgres-vault://${randomUUID()}`,
+      createdAt: '2026-08-24T12:00:00.000Z',
+      updatedAt: '2026-08-24T12:00:00.000Z',
+    });
+    await connectionRepository.replaceBindings(tenantId, executionConnectionId, [{
+      tenantId,
+      connectionId: executionConnectionId,
+      assetType: 'ad_account',
+      externalId: adAccountId,
+      displayName: 'Integration account',
+      selected: false,
+      observedAt: '2026-08-24T12:01:00.000Z',
+    }]);
+    const requiredCapabilities = [
+      'CREATE_CAMPAIGN', 'CREATE_ADSET', 'CREATE_CREATIVE', 'CREATE_AD',
+    ] as const;
+    await capabilityRepository.replaceForConnection(
+      tenantId,
+      executionConnectionId,
+      requiredCapabilities.map((capabilityType) => ({
+        capabilityId: randomUUID(),
+        tenantId,
+        connectionId: executionConnectionId,
+        capabilityType,
+        assetScope: adAccountId,
+        requiredPermissions: ['ads_management'],
+        grantedPermissions: ['ads_management'],
+        status: 'available',
+        restrictions: [],
+        validationSource: 'manual_evidence',
+        validatedAt: '2026-08-24T12:02:00.000Z',
+      })),
+    );
+    const campaignObjectId = `${campaignId}:campaign`;
+    const adSetObjectId = `${campaignId}:ad_set`;
+    const creativeObjectId = `${campaignId}:creative`;
+    const sourcePlan = {
+      executionPlanId: randomUUID(),
+      tenantId,
+      campaignId,
+      campaignPackageVersion: 1,
+      planVersion: '1.0',
+      correlationId: randomUUID(),
+      planHash: '7'.repeat(64),
+      idempotencyKey: '8'.repeat(64),
+      status: 'draft' as const,
+      meta: { assetBindings: [], requiredCapabilities: [...requiredCapabilities] },
+      objectsToCreate: [
+        {
+          internalObjectId: campaignObjectId,
+          type: 'campaign' as const,
+          dependsOn: [],
+          logicalConfig: { lifecycleStatus: 'PAUSED' },
+        },
+        {
+          internalObjectId: adSetObjectId,
+          type: 'ad_set' as const,
+          dependsOn: [campaignObjectId],
+          logicalConfig: { lifecycleStatus: 'PAUSED' },
+        },
+        {
+          internalObjectId: creativeObjectId,
+          type: 'creative' as const,
+          dependsOn: [],
+          logicalConfig: { copyStatus: 'approved' },
+        },
+        {
+          internalObjectId: `${campaignId}:ad`,
+          type: 'ad' as const,
+          dependsOn: [adSetObjectId, creativeObjectId],
+          logicalConfig: { lifecycleStatus: 'PAUSED' },
+        },
+      ],
+      readiness: [{
+        key: 'meta_execution_target',
+        status: 'pending' as const,
+        meaning: 'Target missing',
+        evidenceRefs: [],
+        source: 'system' as const,
+      }],
+      autonomy: { level: 'A0' as const, approvalRequired: true },
+      financials: {
+        currency: 'BRL',
+        budgetMode: 'daily' as const,
+        configuredAmountMinor: 1000,
+        maximumPlannedSpendMinor: 7000,
+        calculation: '1000 x 7 days',
+      },
+      decisions: [],
+      risks: [{
+        code: 'meta_target_not_selected',
+        severity: 'high' as const,
+        meaning: 'Target missing',
+        mitigation: 'Bind target',
+        blocksExecution: true,
+      }],
+      externalEffects: { writesAllowed: false as const, writesPerformed: false as const },
+      createdAt: '2026-08-24T01:03:00.000Z',
+    };
+    await plans.saveIdempotent(sourcePlan);
+    const sourceApproval = await approvalService.request(
+      tenantId,
+      campaignId,
+      sourcePlan.executionPlanId,
+      'warison',
+    );
+    await approvalService.approve(tenantId, sourceApproval.approvalId, 'warison');
+
+    const targeted = await simulationService.bindTarget(
+      tenantId,
+      campaignId,
+      sourcePlan.executionPlanId,
+      executionConnectionId,
+      adAccountId,
+    );
+    expect(targeted.externalEffects).toEqual({ writesAllowed: false, writesPerformed: false });
+    expect(targeted.meta).toEqual(expect.objectContaining({
+      connectionId: executionConnectionId,
+      adAccountId,
+    }));
+    await expect(approvalService.get(tenantId, sourceApproval.approvalId)).resolves
+      .toEqual(expect.objectContaining({
+        status: 'invalidated',
+        decisionReason: 'plan_hash_changed',
+      }));
+
+    const targetApproval = await approvalService.request(
+      tenantId,
+      campaignId,
+      targeted.executionPlanId,
+      'warison',
+    );
+    const approvedTarget = await approvalService.approve(
+      tenantId,
+      targetApproval.approvalId,
+      'warison',
+    );
+    const simulation = await simulationService.simulate(
+      tenantId,
+      campaignId,
+      targeted.executionPlanId,
+      approvedTarget.approvalId,
+    );
+    expect(simulation.status).toBe('ready_for_execution');
+    expect(simulation.blockers).toEqual([]);
+    expect(simulation.operations.map((operation) => operation.objectType)).toEqual([
+      'campaign', 'creative', 'ad_set', 'ad',
+    ]);
+    expect(simulation.operations.every((operation) => !operation.willExecute)).toBe(true);
+    expect(simulation.externalEffects).toEqual({ writesAllowed: false, writesPerformed: false });
+    await expect(simulationRepository.latestForPlan(
+      tenantId,
+      targeted.executionPlanId,
+    )).resolves.toEqual(simulation);
+    await expect(simulationRepository.save({
+      ...simulation,
+      simulationId: randomUUID(),
+      tenantId: otherTenantId,
+    })).rejects.toThrow();
   });
 });
