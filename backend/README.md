@@ -67,6 +67,12 @@ envia o token somente no header `Authorization` e assina chamadas com
 ### `GET /v1/meta/connections/:connectionId/assets?tenantId=...`
 Lista somente os ativos persistidos para o tenant e a conexão informados.
 
+### `GET /v1/meta/connections/:connectionId/ad-accounts/:adAccountId?tenantId=...`
+Lê dados básicos (`id`, nome, estado, moeda e fuso horário) somente de uma conta
+de anúncios presente no snapshot de descoberta da mesma conexão e tenant. IDs
+malformados, conexões não prontas e contas não descobertas são recusados antes
+de qualquer chamada à Graph API.
+
 ### `GET /v1/meta/connections/:connectionId/capabilities?tenantId=...`
 Lista o registro persistido de capacidades e suas evidências somente depois de
 validar que a conexão pertence ao tenant informado. A validação contra a Meta
@@ -80,5 +86,5 @@ continua fail-closed enquanto o app real não estiver configurado.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Validar o OAuth com um app Meta real e depois implementar descoberta de ativos,
-Capability Registry validado e leitura de conta/estado.
+Validar o fluxo somente leitura já implementado com um app Meta real e então
+ligar as evidências reais ao Capability Registry.

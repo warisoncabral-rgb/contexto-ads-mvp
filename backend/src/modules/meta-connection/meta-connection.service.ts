@@ -81,6 +81,29 @@ export class MetaConnectionService {
     return this.connections.listBindings(tenantId, connectionId);
   }
 
+  async readDiscoveredAdAccount(
+    tenantId: string,
+    connectionId: string,
+    adAccountId: string,
+  ) {
+    this.assertTenantId(tenantId);
+    this.assertConnectionId(connectionId);
+    this.assertAdAccountId(adAccountId);
+
+    const connection = await this.getConnection(tenantId, connectionId);
+    if (!['connected', 'ready'].includes(connection.status) || !connection.credentialRef) {
+      throw new ConflictException('Meta connection is not ready for account reads');
+    }
+
+    const bindings = await this.connections.listBindings(tenantId, connectionId);
+    const isDiscovered = bindings.some(
+      (binding) => binding.assetType === 'ad_account' && binding.externalId === adAccountId,
+    );
+    if (!isDiscovered) throw new NotFoundException('Meta ad account not found');
+
+    return this.meta.readAdAccount(tenantId, connection.credentialRef, adAccountId);
+  }
+
   private assertTenantId(tenantId: string): void {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
       throw new BadRequestException('tenantId must be a valid UUID');
@@ -90,6 +113,12 @@ export class MetaConnectionService {
   private assertConnectionId(connectionId: string): void {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connectionId)) {
       throw new BadRequestException('connectionId must be a valid UUID');
+    }
+  }
+
+  private assertAdAccountId(adAccountId: string): void {
+    if (!/^act_\d+$/.test(adAccountId)) {
+      throw new BadRequestException('adAccountId must use the act_<digits> format');
     }
   }
 }

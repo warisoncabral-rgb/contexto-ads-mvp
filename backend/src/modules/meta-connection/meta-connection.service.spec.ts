@@ -14,6 +14,7 @@ describe('MetaConnectionService', () => {
   const meta = {
     validateConnection: jest.fn(),
     discoverAssets: jest.fn(),
+    readAdAccount: jest.fn(),
   } as unknown as jest.Mocked<MetaReadonlyAdapter>;
   let saved: MetaConnection | undefined;
   let repository: jest.Mocked<MetaConnectionStore & MetaAssetBindingStore>;
@@ -153,5 +154,103 @@ describe('MetaConnectionService', () => {
     await service.listAssets(tenantId, saved!.connectionId);
     expect(repository.findById).toHaveBeenCalledWith(tenantId, saved!.connectionId);
     expect(repository.listBindings).toHaveBeenCalledWith(tenantId, saved!.connectionId);
+  });
+
+  it('reads only an ad account discovered for the tenant-scoped connection', async () => {
+    saved = {
+      connectionId: missingConnectionId,
+      tenantId,
+      provider: 'meta',
+      status: 'connected',
+      credentialRef: 'postgres-vault://44444444-4444-4444-8444-444444444444',
+      createdAt: '2026-08-24T00:00:00.000Z',
+      updatedAt: '2026-08-24T00:00:00.000Z',
+    };
+    repository.listBindings.mockResolvedValueOnce([{
+      tenantId,
+      connectionId: missingConnectionId,
+      assetType: 'ad_account',
+      externalId: 'act_123',
+      displayName: 'Main account',
+      selected: false,
+      observedAt: '2026-08-24T01:00:00.000Z',
+    }]);
+    meta.readAdAccount.mockResolvedValueOnce({
+      success: true,
+      data: { id: 'act_123', name: 'Main account', currency: 'BRL' },
+      observedAt: '2026-08-24T02:00:00.000Z',
+      retryable: false,
+    });
+
+    const result = await service.readDiscoveredAdAccount(
+      tenantId,
+      missingConnectionId,
+      'act_123',
+    );
+
+    expect(repository.listBindings).toHaveBeenCalledWith(tenantId, missingConnectionId);
+    expect(meta.readAdAccount).toHaveBeenCalledWith(
+      tenantId,
+      saved.credentialRef,
+      'act_123',
+    );
+    expect(result).toEqual(expect.objectContaining({ success: true }));
+    expect(JSON.stringify(result)).not.toContain(saved.credentialRef!);
+  });
+
+  it('rejects a malformed ad account id before storage or network access', async () => {
+    await expect(service.readDiscoveredAdAccount(
+      tenantId,
+      missingConnectionId,
+      '../me',
+    )).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(repository.findById).not.toHaveBeenCalled();
+    expect(repository.listBindings).not.toHaveBeenCalled();
+    expect(meta.readAdAccount).not.toHaveBeenCalled();
+  });
+
+  it('does not read an ad account absent from the connection discovery snapshot', async () => {
+    saved = {
+      connectionId: missingConnectionId,
+      tenantId,
+      provider: 'meta',
+      status: 'connected',
+      credentialRef: 'postgres-vault://44444444-4444-4444-8444-444444444444',
+      createdAt: '2026-08-24T00:00:00.000Z',
+      updatedAt: '2026-08-24T00:00:00.000Z',
+    };
+    repository.listBindings.mockResolvedValueOnce([]);
+
+    await expect(service.readDiscoveredAdAccount(
+      tenantId,
+      missingConnectionId,
+      'act_999',
+    )).rejects.toBeInstanceOf(NotFoundException);
+    expect(meta.readAdAccount).not.toHaveBeenCalled();
+  });
+
+  it('blocks account reads before OAuth has connected the account', async () => {
+    await service.beginConnection(tenantId);
+
+    await expect(service.readDiscoveredAdAccount(
+      tenantId,
+      saved!.connectionId,
+      'act_123',
+    )).rejects.toBeInstanceOf(ConflictException);
+    expect(repository.listBindings).not.toHaveBeenCalled();
+    expect(meta.readAdAccount).not.toHaveBeenCalled();
+  });
+
+  it('does not read through a connection belonging to another tenant', async () => {
+    repository.findById.mockResolvedValueOnce(null);
+
+    await expect(service.readDiscoveredAdAccount(
+      otherTenantId,
+      missingConnectionId,
+      'act_123',
+    )).rejects.toBeInstanceOf(NotFoundException);
+    expect(repository.listBindings).not.toHaveBeenCalled();
+    expect(meta.readAdAccount).not.toHaveBeenCalled();
   });
 });
