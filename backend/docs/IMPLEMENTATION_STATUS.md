@@ -13,6 +13,8 @@
 - CI com PostgreSQL 18 real para migrações, concorrência OAuth e cofre criptografado.
 - Persistência transacional de snapshots de ativos com isolamento por tenant no serviço e no banco.
 - Endpoints preparados para descobrir e listar ativos sem expor `credentialRef`.
+- Capability Registry persistente, transacional e protegido por tenant no banco.
+- Endpoint tenant-scoped para consultar evidências de capacidade.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real e definir o fluxo oficial de OAuth/onboarding.
