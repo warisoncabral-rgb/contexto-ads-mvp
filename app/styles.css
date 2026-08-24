@@ -369,6 +369,35 @@ footer p { margin: 0; }
 .creative-checklist legend { padding: 0 7px; color: var(--ink); font-size: 11px; font-weight: 800; }
 .creative-checklist label { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; }
 .creative-checklist input { width: auto; }
+.executor-panel { margin-top: 20px; }
+.executor-boundary { margin: 14px 0 0; padding: 14px 16px; border: 1px solid #eed2a7; border-radius: 11px; color: #75501e; background: var(--amber-soft); font-size: 12px; line-height: 1.55; }
+.executor-empty { margin-top: 18px; }
+.executor-empty > p { color: var(--muted); font-size: 12px; }
+.executor-facts, .safety-controls { margin-top: 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.executor-facts div, .safety-controls div { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f8faf8; display: grid; gap: 6px; }
+.executor-facts span, .safety-controls span { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.executor-facts strong, .safety-controls strong { font-size: 12px; overflow-wrap: anywhere; }
+.operation-list { margin-top: 14px; display: grid; gap: 7px; }
+.operation-list > div { padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; }
+.operation-list span { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: var(--green); background: var(--green-soft); font-size: 9px; font-weight: 800; }
+.operation-list strong { font-size: 11px; }
+.operation-list small { color: var(--muted); font-size: 9px; }
+.executor-action-form { margin-top: 13px; display: grid; gap: 9px; }
+.executor-action-form input { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; }
+.executor-action-form button { padding: 12px; border: 0; border-radius: 9px; color: white; background: var(--green); font-weight: 800; cursor: pointer; }
+.executor-action-form button:disabled { opacity: .55; cursor: wait; }
+.authorization-box { margin-top: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 13px; }
+.authorization-box > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.authorization-box span, .authorization-box small { color: var(--muted); font-size: 10px; }
+.executor-decisions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.preflight-result { margin-top: 12px; padding: 16px; border: 1px solid #eed2a7; border-radius: 12px; background: var(--amber-soft); }
+.preflight-result > p { margin-bottom: 0; color: #75501e; font-size: 11px; }
+.preflight-checks { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.preflight-checks > div { padding: 11px; border-radius: 9px; background: white; }
+.preflight-checks span { font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.preflight-checks p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.check-passed span { color: var(--green); }
+.check-blocked span { color: var(--red); }
 
 .back-link { color: var(--green); font-size: 12px; font-weight: 800; }
 .preparation-hero {
@@ -457,6 +486,7 @@ footer p { margin: 0; }
   .review-facts { grid-template-columns: repeat(2, 1fr); }
   .approval-facts { grid-template-columns: repeat(2, 1fr); }
   .creative-summary { grid-template-columns: repeat(2, 1fr); }
+  .executor-facts, .safety-controls { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 640px) {
@@ -479,6 +509,9 @@ footer p { margin: 0; }
   .approval-facts, .approval-actions { grid-template-columns: 1fr; }
   .creative-summary, .creative-form { grid-template-columns: 1fr; }
   .creative-form .wide { grid-column: auto; }
+  .executor-facts, .safety-controls, .executor-decisions, .preflight-checks { grid-template-columns: 1fr; }
+  .operation-list > div { grid-template-columns: 28px 1fr; }
+  .operation-list small { grid-column: 2; }
   .preparation-hero, .preparation-shell { padding-left: 18px; padding-right: 18px; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid label.wide { grid-column: auto; }

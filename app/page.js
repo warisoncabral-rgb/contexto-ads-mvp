@@ -4,6 +4,8 @@ import { loadPlanApproval } from '../lib/plan-approval.mjs'
 import { loadLatestCreative } from '../lib/creative-media-center.mjs'
 import PlanApprovalPanel from './plan-approval-panel'
 import CreativeMediaCenter from './creative-media-center'
+import { loadExecutorWorkspace } from '../lib/executor-preflight.mjs'
+import ExecutorPreflightPanel from './executor-preflight-panel'
 
 const phases = [
   ['campaignPreparation', 'Campanha'],
@@ -144,7 +146,7 @@ function WorkspaceSelector({ workspace }) {
   )
 }
 
-function DecisionDashboard({ decision, workspace, approvalResult, creativeResult }) {
+function DecisionDashboard({ decision, workspace, approvalResult, creativeResult, executorResult }) {
   const statusLabel = {
     blocked: 'Bloqueado',
     action_required: 'Ação necessária',
@@ -252,6 +254,7 @@ function DecisionDashboard({ decision, workspace, approvalResult, creativeResult
       </section>
       <PlanApprovalPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} />
       <CreativeMediaCenter plan={workspace.selectedPlan} role={workspace.selectedTenant.role} result={creativeResult} />
+      <ExecutorPreflightPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} result={executorResult} />
     </>
   )
 }
@@ -262,6 +265,8 @@ export default async function Page({ searchParams }) {
   const executionPlanId = typeof params?.executionPlanId === 'string'
     ? params.executionPlanId : ''
   const approvalId = typeof params?.approvalId === 'string' ? params.approvalId : ''
+  const executionAuthorizationId = typeof params?.executionAuthorizationId === 'string'
+    ? params.executionAuthorizationId : ''
   const workspace = await loadOperatorWorkspace({
     requestedTenantId: tenantId,
     requestedExecutionPlanId: executionPlanId,
@@ -281,6 +286,11 @@ export default async function Page({ searchParams }) {
     : { kind: 'none' }
   const creativeResult = workspace.kind === 'ready' && workspace.selectedPlan
     ? await loadLatestCreative({ plan: workspace.selectedPlan,
+      apiBaseUrl: process.env.CONTEXT_ADS_API_BASE_URL,
+      operatorToken: process.env.CONTEXT_ADS_OPERATOR_TOKEN })
+    : { kind: 'none' }
+  const executorResult = workspace.kind === 'ready' && workspace.selectedPlan
+    ? await loadExecutorWorkspace({ plan: workspace.selectedPlan, executionAuthorizationId,
       apiBaseUrl: process.env.CONTEXT_ADS_API_BASE_URL,
       operatorToken: process.env.CONTEXT_ADS_OPERATOR_TOKEN })
     : { kind: 'none' }
@@ -308,7 +318,7 @@ export default async function Page({ searchParams }) {
 
       <div className="content-shell">
         {result.kind === 'ready'
-          ? <DecisionDashboard decision={result.decision} workspace={workspace} approvalResult={approvalResult} creativeResult={creativeResult} />
+          ? <DecisionDashboard decision={result.decision} workspace={workspace} approvalResult={approvalResult} creativeResult={creativeResult} executorResult={executorResult} />
           : <EmptyState result={result} />}
       </div>
 
