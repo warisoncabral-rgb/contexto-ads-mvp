@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import {
   OperatorWorkItemV1,
+  OperatorWorkQueueSnapshotInputV1,
   OperatorWorkQueueSnapshotV1,
   OperatorWorkQueueStoredSnapshotV1,
 } from '../../domain/contracts/operator-work-queue';
@@ -22,7 +23,7 @@ export class PostgresOperatorWorkQueueSnapshotRepository
 implements OperatorWorkQueueSnapshotRepository {
   constructor(private readonly pool: Pool) {}
 
-  async saveDaily(snapshot: OperatorWorkQueueSnapshotV1,
+  async saveDaily(snapshot: OperatorWorkQueueSnapshotInputV1,
     items: OperatorWorkItemV1[]): Promise<OperatorWorkQueueSnapshotV1> {
     const previous = await this.latestBefore(snapshot.tenantId, snapshot.queueDate);
     const result = await this.pool.query<SnapshotRow>(
@@ -69,7 +70,7 @@ implements OperatorWorkQueueSnapshotRepository {
     return { ...this.toSnapshot(row), items: row.items ?? [] };
   }
 
-  private toSnapshot(row: SnapshotRow): OperatorWorkQueueSnapshotV1 {
+  private toSnapshot(row: SnapshotRow): OperatorWorkQueueSnapshotInputV1 {
     return { snapshotId: row.snapshot_id, tenantId: row.tenant_id,
       queueDate: row.queue_date instanceof Date
         ? row.queue_date.toISOString().slice(0, 10) : String(row.queue_date).slice(0, 10),
