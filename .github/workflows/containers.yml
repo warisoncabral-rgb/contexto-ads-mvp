@@ -1,0 +1,42 @@
+name: Container validation
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - '.dockerignore'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'app/**'
+      - 'lib/**'
+      - 'backend/**'
+      - '.github/workflows/containers.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/**'
+      - '.dockerignore'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'app/**'
+      - 'lib/**'
+      - 'backend/**'
+      - '.github/workflows/containers.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --file deploy/Dockerfile.backend --tag contexto-ads-backend:ci .
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --file deploy/Dockerfile.frontend --tag contexto-ads-frontend:ci .
