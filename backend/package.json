@@ -9,6 +9,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "test": "jest --runInBand",
+    "test:gcp-secret-manager-smoke": "npm run build && node scripts/google-secret-manager.smoke.js",
     "lint": "eslint . --max-warnings=0"
   },
   "dependencies": {
