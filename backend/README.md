@@ -51,7 +51,16 @@ Body:
 Enquanto o app Meta real não estiver configurado, retorna `authorization_pending` e não chama nenhuma operação externa de escrita.
 
 ### `GET /v1/readiness/:connectionId?tenantId=...`
-Retorna um snapshot explícito do bloqueio atual de configuração.
+Retorna um diagnóstico dinâmico, sem chamadas externas, para configuração do app,
+cofre, OAuth, descoberta de ativos e capacidades de leitura. Cada pendência traz
+significado, evidência e a próxima ação recomendada; nenhum segredo é retornado.
+
+### `POST /v1/readiness/:connectionId/smoke-test`
+Body: `{"tenantId":"..."}`. Depois que o app Meta e o OAuth estiverem prontos,
+executa automaticamente e em ordem: validação de identidade, descoberta de
+ativos, comprovação de capacidades e leitura de uma conta descoberta. Para no
+primeiro bloqueio, retorna somente códigos normalizados e jamais executa escrita
+na Meta.
 
 ### `POST /v1/meta/connections/:connectionId/discover-assets`
 Body: `{"tenantId":"..."}`. Executa descoberta somente leitura para uma conexão
@@ -93,4 +102,5 @@ capacidade disponível.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Validar o fluxo somente leitura já implementado com um app Meta real.
+Criar/configurar o app Meta, concluir um OAuth real e acionar o smoke test
+automatizado. Essa é a única validação externa restante para o vertical atual.

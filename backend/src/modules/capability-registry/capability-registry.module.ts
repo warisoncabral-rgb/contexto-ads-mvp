@@ -9,5 +9,6 @@ import { CapabilityRegistryService } from './capability-registry.service';
   imports: [DatabaseModule, MetaAdapterModule, MetaConnectionModule],
   controllers: [CapabilityRegistryController],
   providers: [CapabilityRegistryService],
+  exports: [CapabilityRegistryService],
 })
 export class CapabilityRegistryModule {}
