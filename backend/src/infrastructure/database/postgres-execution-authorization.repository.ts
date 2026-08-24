@@ -102,20 +102,20 @@ implements ExecutionAuthorizationRepository {
   ): Promise<ExecutionAuthorizationV1 | null> {
     return this.inTransaction(async (client) => {
       const result = await client.query<AuthorizationRow>(
-        `update execution_authorizations authorization
+        `update execution_authorizations as auth
         set status = 'approved', approved_by = $3, approved_at = $4, updated_at = $4
         where tenant_id = $1 and execution_authorization_id = $2
           and status = 'pending' and expires_at > $4
           and execution_manifest_id = (
             select manifest.execution_manifest_id from execution_manifests manifest
-            where manifest.tenant_id = authorization.tenant_id
-              and manifest.execution_plan_id = authorization.execution_plan_id
+            where manifest.tenant_id = auth.tenant_id
+              and manifest.execution_plan_id = auth.execution_plan_id
             order by manifest.generated_at desc, manifest.execution_manifest_id desc limit 1
           )
           and manifest_hash = (
             select manifest.manifest_hash from execution_manifests manifest
-            where manifest.tenant_id = authorization.tenant_id
-              and manifest.execution_manifest_id = authorization.execution_manifest_id
+            where manifest.tenant_id = auth.tenant_id
+              and manifest.execution_manifest_id = auth.execution_manifest_id
           )
         returning ${COLUMNS}`,
         [tenantId, executionAuthorizationId, approvedBy, approvedAt],
@@ -155,7 +155,7 @@ implements ExecutionAuthorizationRepository {
   ): Promise<ExecutionAuthorizationV1 | null> {
     return this.inTransaction(async (client) => {
       const result = await client.query<AuthorizationRow>(
-        `update execution_authorizations authorization set
+        `update execution_authorizations as auth set
           status = case when expires_at <= $3 then 'expired' else 'invalidated' end,
           decision_reason = case when expires_at <= $3
             then 'execution_authorization_expired' else 'manifest_changed' end,
@@ -164,8 +164,8 @@ implements ExecutionAuthorizationRepository {
           and status in ('pending','approved')
           and (expires_at <= $3 or execution_manifest_id <> coalesce((
             select manifest.execution_manifest_id from execution_manifests manifest
-            where manifest.tenant_id = authorization.tenant_id
-              and manifest.execution_plan_id = authorization.execution_plan_id
+            where manifest.tenant_id = auth.tenant_id
+              and manifest.execution_plan_id = auth.execution_plan_id
             order by manifest.generated_at desc, manifest.execution_manifest_id desc limit 1
           ), '00000000-0000-0000-0000-000000000000'::uuid))
         returning ${COLUMNS}`,

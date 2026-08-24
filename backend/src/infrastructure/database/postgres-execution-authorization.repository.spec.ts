@@ -93,6 +93,7 @@ describe('PostgresExecutionAuthorizationRepository', () => {
       'warison', authorization.updatedAt, event,
     );
     expect(query.mock.calls[1][0]).toContain('expires_at > $4');
+    expect(query.mock.calls[1][0]).toContain('update execution_authorizations as auth');
     expect(query.mock.calls[1][0]).toContain('order by manifest.generated_at desc');
     expect(query.mock.calls[2][0]).toContain('insert into audit_events');
   });
