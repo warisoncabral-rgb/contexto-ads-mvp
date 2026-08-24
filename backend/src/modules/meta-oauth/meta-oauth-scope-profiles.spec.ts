@@ -15,7 +15,7 @@ function serviceWith(saved: any[]) {
     tenantId, connectionId, provider: 'meta', status: 'authorization_pending',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   }) } as unknown as MetaConnectionService;
-  const attempts = { replaceActive: jest.fn(async (attempt) => saved.push(attempt)),
+  const attempts = { replaceActive: jest.fn(async (attempt: any) => saved.push(attempt)),
     consumeActive: jest.fn(), recordCredentialRevocationPending: jest.fn() } as any;
   const tokenExchange = { exchangeCode: jest.fn() } as any;
   const vault = { isAvailable: jest.fn(), putSecret: jest.fn(), getSecret: jest.fn(), revokeSecret: jest.fn() } as any;
