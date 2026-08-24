@@ -1,7 +1,16 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { MetaConnection } from '../../domain/contracts/meta-connection';
-import { MetaConnectionStore } from '../../domain/ports/repositories';
+import { MetaAssetBinding, MetaConnection } from '../../domain/contracts/meta-connection';
+import {
+  MetaAssetBindingStore,
+  MetaConnectionStore,
+} from '../../domain/ports/repositories';
 import { META_CONNECTION_REPOSITORY } from '../../infrastructure/database/database.tokens';
 import { MetaReadonlyAdapter } from '../meta-adapter/meta-readonly.adapter';
 
@@ -10,7 +19,7 @@ export class MetaConnectionService {
   constructor(
     private readonly meta: MetaReadonlyAdapter,
     @Inject(META_CONNECTION_REPOSITORY)
-    private readonly connections: MetaConnectionStore,
+    private readonly connections: MetaConnectionStore & MetaAssetBindingStore,
   ) {}
 
   async beginConnection(tenantId: string) {
@@ -44,6 +53,32 @@ export class MetaConnectionService {
 
   async validateReadOnly(credentialRef: string) {
     return this.meta.validateConnection(credentialRef);
+  }
+
+  async discoverAssets(tenantId: string, connectionId: string) {
+    const connection = await this.getConnection(tenantId, connectionId);
+    if (!['connected', 'ready'].includes(connection.status) || !connection.credentialRef) {
+      throw new ConflictException('Meta connection is not ready for asset discovery');
+    }
+
+    const result = await this.meta.discoverAssets(connection.credentialRef, tenantId);
+    if (!result.success || !result.data) return result;
+
+    const bindings = result.data.map((binding): MetaAssetBinding => ({
+      ...binding,
+      tenantId,
+      connectionId,
+      selected: false,
+      observedAt: result.observedAt,
+    }));
+    await this.connections.replaceBindings(tenantId, connectionId, bindings);
+
+    return { ...result, data: bindings };
+  }
+
+  async listAssets(tenantId: string, connectionId: string) {
+    await this.getConnection(tenantId, connectionId);
+    return this.connections.listBindings(tenantId, connectionId);
   }
 
   private assertTenantId(tenantId: string): void {

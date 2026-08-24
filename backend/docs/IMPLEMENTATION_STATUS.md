@@ -11,12 +11,14 @@
 - Separação explícita de credenciais via `CredentialVaultPort`.
 - Cofre PostgreSQL com AES-256-GCM, isolamento por tenant e revogação lógica.
 - CI com PostgreSQL 18 real para migrações, concorrência OAuth e cofre criptografado.
+- Persistência transacional de snapshots de ativos com isolamento por tenant no serviço e no banco.
+- Endpoints preparados para descobrir e listar ativos sem expor `credentialRef`.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real e definir o fluxo oficial de OAuth/onboarding.
 2. Validar permissões e App Review aplicáveis ao caso multi-cliente.
 3. Guardar a chave mestra do cofre nas configurações protegidas da hospedagem.
-4. Implementar `discoverAssets`, `validateCapabilities` e `readAdAccount` contra a Graph/Marketing API vigente.
+4. Ligar `discoverAssets` à Graph API e implementar `validateCapabilities` e `readAdAccount` contra a versão vigente.
 5. Rodar o primeiro teste real somente leitura.
 
 ## Evolução opcional do cofre

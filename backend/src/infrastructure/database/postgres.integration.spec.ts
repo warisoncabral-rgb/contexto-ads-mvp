@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
+import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresCredentialVaultAdapter } from '../vault/postgres-credential-vault.adapter';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -20,6 +21,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '002_meta_oauth_attempts.sql',
       '003_meta_oauth_credential_compensations.sql',
       '004_postgres_credential_vault.sql',
+      '005_tenant_scoped_asset_bindings.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -37,6 +39,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     await pool.query('delete from credential_vault_secrets where tenant_id = any($1::uuid[])', [
       [tenantId, otherTenantId],
     ]);
+    await pool.query('delete from meta_asset_bindings where tenant_id = $1', [tenantId]);
     await pool.query('delete from meta_oauth_attempts where tenant_id = $1', [tenantId]);
     await pool.query('delete from meta_connections where tenant_id = $1', [tenantId]);
     await pool.end();
@@ -85,5 +88,36 @@ describeWithPostgres('PostgreSQL integration', () => {
     await expect(vault.getSecret(tenantId, credentialRef)).rejects.toThrow(
       'Credential Vault operation failed',
     );
+  });
+
+  it('replaces asset snapshots and enforces tenant scope in PostgreSQL', async () => {
+    const repository = new PostgresMetaConnectionRepository(pool);
+    const observedAt = '2026-08-24T01:00:00.000Z';
+    await repository.replaceBindings(tenantId, connectionId, [{
+      tenantId,
+      connectionId,
+      assetType: 'ad_account',
+      externalId: 'act_123',
+      displayName: 'Main account',
+      selected: false,
+      observedAt,
+    }]);
+
+    await expect(repository.listBindings(tenantId, connectionId)).resolves.toEqual([{
+      tenantId,
+      connectionId,
+      assetType: 'ad_account',
+      externalId: 'act_123',
+      displayName: 'Main account',
+      selected: false,
+      observedAt,
+    }]);
+
+    await expect(pool.query(
+      `insert into meta_asset_bindings (
+        tenant_id, connection_id, asset_type, external_id, selected, observed_at
+      ) values ($1, $2, 'business', 'cross-tenant', false, now())`,
+      [otherTenantId, connectionId],
+    )).rejects.toThrow();
   });
 });

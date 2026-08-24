@@ -1,6 +1,9 @@
-import { Pool } from 'pg';
-import { MetaConnection } from '../../domain/contracts/meta-connection';
-import { MetaConnectionStore } from '../../domain/ports/repositories';
+import { Pool, PoolClient } from 'pg';
+import { MetaAssetBinding, MetaConnection } from '../../domain/contracts/meta-connection';
+import {
+  MetaAssetBindingStore,
+  MetaConnectionStore,
+} from '../../domain/ports/repositories';
 
 interface MetaConnectionRow {
   connection_id: string;
@@ -13,7 +16,18 @@ interface MetaConnectionRow {
   updated_at: Date;
 }
 
-export class PostgresMetaConnectionRepository implements MetaConnectionStore {
+interface MetaAssetBindingRow {
+  tenant_id: string;
+  connection_id: string;
+  asset_type: MetaAssetBinding['assetType'];
+  external_id: string;
+  display_name: string | null;
+  selected: boolean;
+  observed_at: Date;
+}
+
+export class PostgresMetaConnectionRepository
+implements MetaConnectionStore, MetaAssetBindingStore {
   constructor(private readonly pool: Pool) {}
 
   async save(connection: MetaConnection): Promise<void> {
@@ -73,5 +87,89 @@ export class PostgresMetaConnectionRepository implements MetaConnectionStore {
     );
 
     return result.rowCount === 1;
+  }
+
+  async replaceBindings(
+    tenantId: string,
+    connectionId: string,
+    bindings: MetaAssetBinding[],
+  ): Promise<void> {
+    if (bindings.some(
+      (binding) => binding.tenantId !== tenantId || binding.connectionId !== connectionId,
+    )) {
+      throw new Error('Asset binding scope mismatch');
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await this.lockConnection(client, tenantId, connectionId);
+      await client.query(
+        'delete from meta_asset_bindings where tenant_id = $1 and connection_id = $2',
+        [tenantId, connectionId],
+      );
+      for (const binding of bindings) {
+        await client.query(
+          `insert into meta_asset_bindings (
+            tenant_id, connection_id, asset_type, external_id,
+            display_name, selected, observed_at
+          ) values ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            tenantId,
+            connectionId,
+            binding.assetType,
+            binding.externalId,
+            binding.displayName ?? null,
+            binding.selected,
+            binding.observedAt,
+          ],
+        );
+      }
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listBindings(
+    tenantId: string,
+    connectionId: string,
+  ): Promise<MetaAssetBinding[]> {
+    const result = await this.pool.query<MetaAssetBindingRow>(
+      `select tenant_id, connection_id, asset_type, external_id,
+        display_name, selected, observed_at
+      from meta_asset_bindings
+      where tenant_id = $1 and connection_id = $2
+      order by asset_type, external_id`,
+      [tenantId, connectionId],
+    );
+    return result.rows.map((row) => ({
+      tenantId: row.tenant_id,
+      connectionId: row.connection_id,
+      assetType: row.asset_type,
+      externalId: row.external_id,
+      ...(row.display_name ? { displayName: row.display_name } : {}),
+      selected: row.selected,
+      observedAt: row.observed_at.toISOString(),
+    }));
+  }
+
+  private async lockConnection(
+    client: PoolClient,
+    tenantId: string,
+    connectionId: string,
+  ): Promise<void> {
+    const result = await client.query(
+      `select connection_id from meta_connections
+      where tenant_id = $1 and connection_id = $2
+      for update`,
+      [tenantId, connectionId],
+    );
+    if (result.rowCount !== 1) {
+      throw new Error('Tenant-scoped Meta connection not found');
+    }
   }
 }
