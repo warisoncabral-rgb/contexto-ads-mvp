@@ -6,6 +6,7 @@ import {
   DiscoveredMetaAsset,
   MetaAdapterPort,
   MetaAdapterResult,
+  MetaCapabilityEvidence,
 } from '../../domain/ports/meta-adapter.port';
 import { CredentialVaultPort } from '../../domain/ports/credential-vault.port';
 
@@ -69,15 +70,26 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
   }
 
   async validateCapabilities(
-    _credentialRef: string,
-    _assetBindings: MetaAssetBinding[],
-    _requested: MetaCapabilityType[],
+    tenantId: string,
+    credentialRef: string,
+    assetBindings: MetaAssetBinding[],
+    requested: MetaCapabilityType[],
   ) {
-    return this.notConfigured<Array<{
-      capability: MetaCapabilityType;
-      available: boolean;
-      reason?: string;
-    }>>();
+    const observedAt = new Date().toISOString();
+    try {
+      const credential = await this.getCredential(tenantId, credentialRef);
+      const { apiVersion } = this.getConfiguration();
+      const granted = await this.collectGrantedPermissions(credential.accessToken);
+      const evidence = requested.flatMap((capability) => this.capabilityEvidence(
+        capability,
+        assetBindings,
+        granted,
+        apiVersion,
+      ));
+      return this.success(evidence, observedAt);
+    } catch (error) {
+      return this.failure<MetaCapabilityEvidence[]>(error, observedAt);
+    }
   }
 
   async readAdAccount(tenantId: string, credentialRef: string, adAccountId: string) {
@@ -125,6 +137,88 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
       after = nextCursor;
     }
     throw new MetaGraphRequestError('TRANSIENT_API', true);
+  }
+
+  private async collectGrantedPermissions(accessToken: string): Promise<Set<string>> {
+    const payload = await this.graphGet('/me/permissions', { limit: '100' }, accessToken);
+    if (!this.isGraphPage(payload)) throw new MetaGraphRequestError('VALIDATION', false);
+    const granted = new Set<string>();
+    for (const item of payload.data) {
+      if (
+        !this.isObject(item) || typeof item.permission !== 'string' ||
+        typeof item.status !== 'string'
+      ) {
+        throw new MetaGraphRequestError('VALIDATION', false);
+      }
+      if (item.status === 'granted') granted.add(item.permission);
+    }
+    return granted;
+  }
+
+  private capabilityEvidence(
+    capability: MetaCapabilityType,
+    assetBindings: MetaAssetBinding[],
+    granted: Set<string>,
+    apiVersion: string,
+  ): MetaCapabilityEvidence[] {
+    const requiredPermissions = capability === 'DISCOVER_ASSETS'
+      ? ['ads_read', 'pages_show_list']
+      : capability === 'READ_AD_ACCOUNT'
+        ? ['ads_read']
+        : [];
+    const grantedPermissions = requiredPermissions.filter((permission) => granted.has(permission));
+
+    if (!['DISCOVER_ASSETS', 'READ_AD_ACCOUNT'].includes(capability)) {
+      return [{
+        capability,
+        available: false,
+        requiredPermissions,
+        grantedPermissions,
+        apiVersion,
+        reason: 'unsupported',
+      }];
+    }
+
+    if (grantedPermissions.length !== requiredPermissions.length) {
+      return [{
+        capability,
+        available: false,
+        requiredPermissions,
+        grantedPermissions,
+        apiVersion,
+        reason: 'permission_missing',
+      }];
+    }
+
+    if (capability === 'DISCOVER_ASSETS') {
+      return [{
+        capability,
+        available: true,
+        requiredPermissions,
+        grantedPermissions,
+        apiVersion,
+      }];
+    }
+
+    const adAccounts = assetBindings.filter((binding) => binding.assetType === 'ad_account');
+    if (adAccounts.length === 0) {
+      return [{
+        capability,
+        available: false,
+        requiredPermissions,
+        grantedPermissions,
+        apiVersion,
+        reason: 'asset_missing',
+      }];
+    }
+    return adAccounts.map((binding) => ({
+      capability,
+      available: true,
+      requiredPermissions,
+      grantedPermissions,
+      apiVersion,
+      assetScope: binding.externalId,
+    }));
   }
 
   private async graphGet(
@@ -286,12 +380,4 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
     };
   }
 
-  private notConfigured<T>(): MetaAdapterResult<T> {
-    return {
-      success: false,
-      observedAt: new Date().toISOString(),
-      retryable: false,
-      normalizedError: 'AUTH_PERMISSION',
-    };
-  }
 }
