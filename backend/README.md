@@ -299,6 +299,23 @@ dois estados conhecidos e liberados produzem `released` para este controle.
 Mesmo nesse último caso, `externalWritesAllowed` continua `false`, pois os demais
 gates permanecem independentes.
 
+### Protocolo de validação controlada da escrita Meta
+`POST /v1/execution-manifests/:executionManifestId/meta-write-validation-protocols`
+recebe `tenantId` e `preparedBy`. Somente o manifesto mais recente pode gerar o
+protocolo imutável do primeiro teste externo. Requisições semanticamente iguais
+recuperam o mesmo protocolo e não duplicam auditoria.
+
+O protocolo fixa o número e os fingerprints das operações, exige `PAUSED` e
+proíbe ativação, entrega, aumento de orçamento, tentativa concorrente e retry
+automático. Ele também exige evidências do app e versão Graph, identidade OAuth,
+conta vinculada, `ads_management`, requisições, respostas sanitizadas, IDs
+externos, estado pausado observado, reconciliação e entrega zero.
+
+`GET /v1/execution-manifests/:executionManifestId/meta-write-validation-protocols/latest?tenantId=...`
+retorna o protocolo somente dentro do tenant. Sua existência passa a aparecer
+como referência no preflight, mas o check `real_meta_write_validation` permanece
+`blocked`: preparar o teste não significa executá-lo nem aprová-lo.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -313,11 +330,13 @@ gates permanecem independentes.
 - Manifestos descrevem efeitos futuros, mas não são executáveis e não contêm IDs externos inventados.
 - Autorizações curtas não substituem os demais gates; preflight bloqueado não é registrado como execução.
 - Kill Switch ausente ou acionado bloqueia; liberá-lo não substitui autorização, validação Meta ou adapter.
+- Protocolo de validação é somente instrução/evidência esperada; não é comando de execução nem prova de escrita real.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Preparar o contrato de validação controlada do futuro adapter e as evidências do
-primeiro teste de criação pausada, ainda sem adicionar escrita real ou liberar
-efeitos externos. A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
-um OAuth real e acionar o smoke test automatizado continua sendo a única
-validação externa restante para o vertical atual.
+Usar o protocolo já preparado para validar o ambiente Meta real e, somente
+depois, implementar o menor adapter capaz de executar a criação controlada com
+todos os objetos em `PAUSED`. Até essas evidências existirem, a escrita Meta
+continua desligada e o preflight permanece bloqueado. Em paralelo,
+criar/configurar o app Meta, concluir um OAuth real e acionar o smoke test
+automatizado continua sendo a validação externa necessária para o vertical atual.

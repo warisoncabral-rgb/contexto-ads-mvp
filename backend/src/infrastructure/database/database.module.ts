@@ -18,6 +18,7 @@ import {
   EXECUTION_MANIFEST_REPOSITORY,
   EXECUTION_AUTHORIZATION_REPOSITORY,
   KILL_SWITCH_REPOSITORY,
+  META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -34,6 +35,7 @@ import { PostgresOperationalReadinessRepository } from './postgres-operational-r
 import { PostgresExecutionManifestRepository } from './postgres-execution-manifest.repository';
 import { PostgresExecutionAuthorizationRepository } from './postgres-execution-authorization.repository';
 import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository';
+import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-write-validation-protocol.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -119,6 +121,11 @@ import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository'
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresKillSwitchRepository(pool),
     },
+    {
+      provide: META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresMetaWriteValidationProtocolRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -137,6 +144,7 @@ import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository'
     EXECUTION_MANIFEST_REPOSITORY,
     EXECUTION_AUTHORIZATION_REPOSITORY,
     KILL_SWITCH_REPOSITORY,
+    META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

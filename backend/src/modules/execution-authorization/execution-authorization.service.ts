@@ -16,10 +16,12 @@ import { ExecutionManifestV1 } from '../../domain/contracts/execution-manifest';
 import {
   ExecutionAuthorizationRepository,
   ExecutionManifestRepository,
+  MetaWriteValidationProtocolRepository,
 } from '../../domain/ports/repositories';
 import {
   EXECUTION_AUTHORIZATION_REPOSITORY,
   EXECUTION_MANIFEST_REPOSITORY,
+  META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
 } from '../../infrastructure/database/database.tokens';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
 
@@ -33,6 +35,8 @@ export class ExecutionAuthorizationService {
     @Inject(EXECUTION_AUTHORIZATION_REPOSITORY)
     private readonly authorizations: ExecutionAuthorizationRepository,
     private readonly killSwitch: KillSwitchService,
+    @Inject(META_WRITE_VALIDATION_PROTOCOL_REPOSITORY)
+    private readonly validationProtocols: MetaWriteValidationProtocolRepository,
   ) {}
 
   async request(
@@ -179,6 +183,9 @@ export class ExecutionAuthorizationService {
     const effectiveKillSwitch = await this.killSwitch.effective(
       tenantId, manifest.campaignId,
     );
+    const validationProtocol = await this.validationProtocols.latestForManifest(
+      tenantId, manifest.executionManifestId,
+    );
     const tenantKillSwitchPassed = effectiveKillSwitch.tenant.known
       && effectiveKillSwitch.tenant.status === 'released';
     const campaignKillSwitchPassed = effectiveKillSwitch.campaign.known
@@ -228,8 +235,13 @@ export class ExecutionAuthorizationService {
             : 'O Kill Switch da campanha não possui estado; o padrão é bloquear.',
       },
       {
-        key: 'real_meta_write_validation', status: 'blocked', evidenceRefs: [],
-        meaning: 'A escrita controlada ainda não foi validada em ambiente Meta real.',
+        key: 'real_meta_write_validation', status: 'blocked',
+        evidenceRefs: validationProtocol
+          ? [`meta_write_validation_protocol:${validationProtocol.metaWriteValidationProtocolId}`]
+          : [],
+        meaning: validationProtocol
+          ? 'O protocolo está preparado, mas as evidências do ambiente Meta real ainda não foram coletadas.'
+          : 'O protocolo e a validação da escrita controlada em ambiente Meta real ainda estão ausentes.',
       },
       {
         key: 'write_adapter_enabled', status: 'blocked', evidenceRefs: [],

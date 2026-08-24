@@ -60,17 +60,22 @@
 - Ausência de estado em qualquer escopo bloqueia fail-closed; switch do tenant acionado prevalece sobre toda campanha.
 - Solicitações concorrentes para o mesmo estado retornam uma única versão e não duplicam auditoria.
 - O preflight usa evidências exatas dos dois switches; mesmo ambos liberados, validação Meta e adapter continuam bloqueando a tentativa.
+- Protocolo de validação controlada imutável e tenant-scoped, vinculado ao manifesto e hashes exatos.
+- O protocolo limita o primeiro teste ao conjunto exato de operações pausadas, proíbe ativação, entrega, aumento de orçamento, concorrência e retry automático.
+- Onze evidências reais são obrigatórias, incluindo permissão, fingerprints, respostas sanitizadas, IDs externos, estado pausado observado, reconciliação e entrega zero.
+- Preparar o protocolo gera auditoria atômica e evidencia o preflight, mas não valida escrita, não cria `ExecutionRecord` e não habilita o adapter.
 
-## Próximo bloco interno sem dependência externa
-1. Preparar o contrato de validação controlada do adapter, ainda sem implementar escrita real.
-2. Definir evidências mínimas e limites para um primeiro teste de criação pausada na Meta.
-3. Manter o adapter ausente até ambiente real, autorização curta e todos os gates comprovados.
+## Bloco interno de validação controlada concluído
+1. O contrato do primeiro teste de criação pausada está persistido e auditável.
+2. Evidências mínimas, limites e políticas de falha estão definidos em código.
+3. O adapter permanece ausente até ambiente real, autorização curta e todos os gates comprovados.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
 2. Validar permissões e App Review aplicáveis ao caso multi-cliente.
 3. Guardar a chave mestra do cofre nas configurações protegidas da hospedagem.
 4. Acionar o smoke test automatizado e guardar o relatório de aprovação.
+5. Executar o protocolo de criação controlada com todos os objetos em `PAUSED`, coletar as onze evidências e reconciliar o estado observado antes de qualquer retry.
 
 ## Evolução opcional do cofre
 O PostgreSQL criptografado desbloqueia o MVP sem Google Cloud. A porta

@@ -25,6 +25,7 @@ import {
   KillSwitchStateV1,
   UnversionedKillSwitchStateV1,
 } from '../contracts/kill-switch';
+import { MetaWriteValidationProtocolV1 } from '../contracts/meta-write-validation';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -189,6 +190,17 @@ export interface KillSwitchRepository {
     scope: KillSwitchScope,
     campaignId?: string,
   ): Promise<KillSwitchStateV1 | null>;
+}
+
+export interface MetaWriteValidationProtocolRepository {
+  saveIdempotent(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1>;
+  latestForManifest(
+    tenantId: string,
+    executionManifestId: string,
+  ): Promise<MetaWriteValidationProtocolV1 | null>;
 }
 
 export interface CreativePackageRepository {

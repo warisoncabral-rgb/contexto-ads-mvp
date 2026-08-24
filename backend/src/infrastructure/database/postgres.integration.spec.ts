@@ -26,6 +26,8 @@ import { PostgresExecutionAuthorizationRepository } from './postgres-execution-a
 import { ExecutionAuthorizationService } from '../../modules/execution-authorization/execution-authorization.service';
 import { PostgresKillSwitchRepository } from './postgres-kill-switch.repository';
 import { KillSwitchService } from '../../modules/kill-switch/kill-switch.service';
+import { PostgresMetaWriteValidationProtocolRepository } from './postgres-meta-write-validation-protocol.repository';
+import { MetaWriteValidationService } from '../../modules/meta-write-validation/meta-write-validation.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -54,6 +56,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '014_execution_manifests.sql',
       '015_execution_authorizations.sql',
       '016_kill_switch_states.sql',
+      '017_meta_write_validation_protocols.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -71,6 +74,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     await pool.query('delete from execution_preflights where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_authorizations where tenant_id = $1', [tenantId]);
     await pool.query('delete from kill_switch_states where tenant_id = $1', [tenantId]);
+    await pool.query('delete from meta_write_validation_protocols where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_manifests where tenant_id = $1', [tenantId]);
     await pool.query('delete from operational_readiness_decisions where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_simulation_reports where tenant_id = $1', [tenantId]);
@@ -519,6 +523,8 @@ describeWithPostgres('PostgreSQL integration', () => {
     const executionManifestRepository = new PostgresExecutionManifestRepository(pool);
     const executionAuthorizationRepository = new PostgresExecutionAuthorizationRepository(pool);
     const killSwitchRepository = new PostgresKillSwitchRepository(pool);
+    const validationProtocolRepository =
+      new PostgresMetaWriteValidationProtocolRepository(pool);
     const connectionRepository = new PostgresMetaConnectionRepository(pool);
     const capabilityRepository = new PostgresCapabilityRepository(pool);
     const meta = {} as MetaReadonlyAdapter;
@@ -553,10 +559,15 @@ describeWithPostgres('PostgreSQL integration', () => {
       killSwitchRepository,
       contexts,
     );
+    const validationProtocolService = new MetaWriteValidationService(
+      executionManifestRepository,
+      validationProtocolRepository,
+    );
     const executionAuthorizationService = new ExecutionAuthorizationService(
       executionManifestRepository,
       executionAuthorizationRepository,
       killSwitchService,
+      validationProtocolRepository,
     );
     const campaignId = randomUUID();
     const executionConnectionId = randomUUID();
@@ -853,6 +864,21 @@ describeWithPostgres('PostgreSQL integration', () => {
     await expect(executionManifestService.latest(
       tenantId, targeted.executionPlanId,
     )).resolves.toEqual(manifests[0]);
+    const protocols = await Promise.all(Array.from({ length: 5 }, () =>
+      validationProtocolService.prepare(
+        tenantId, manifests[0].executionManifestId, 'warison',
+      )));
+    expect(new Set(protocols.map((item) => item.metaWriteValidationProtocolId)).size)
+      .toBe(1);
+    expect(protocols[0].limits.exactOperationCount).toBe(4);
+    expect(protocols[0].operations.every((operation) =>
+      operation.intendedLifecycleStatus === 'PAUSED')).toBe(true);
+    expect(protocols[0].requiredEvidence.every((evidence) =>
+      evidence.status === 'required_not_collected')).toBe(true);
+    expect(protocols[0].boundaries.externalWritesAllowed).toBe(false);
+    await expect(validationProtocolService.latest(
+      otherTenantId, manifests[0].executionManifestId,
+    )).rejects.toThrow('Execution manifest not found');
     const authorizations = await Promise.all(Array.from({ length: 5 }, () =>
       executionAuthorizationService.request(
         tenantId, manifests[0].executionManifestId, 'warison',
@@ -875,6 +901,15 @@ describeWithPostgres('PostgreSQL integration', () => {
     expect(preflights[0].blockers).toEqual(expect.arrayContaining([
       'tenant_kill_switch', 'campaign_kill_switch',
       'real_meta_write_validation', 'write_adapter_enabled',
+    ]));
+    expect(preflights[0].checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: 'real_meta_write_validation',
+        status: 'blocked',
+        evidenceRefs: [
+          `meta_write_validation_protocol:${protocols[0].metaWriteValidationProtocolId}`,
+        ],
+      }),
     ]));
     const tenantReleases = await Promise.all(Array.from({ length: 5 }, () =>
       killSwitchService.changeTenant(
