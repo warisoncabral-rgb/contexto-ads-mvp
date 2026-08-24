@@ -206,9 +206,10 @@ O relatório ordena campanha, criativo, conjunto e anúncio pelas dependências,
 mas todas as operações registram `willExecute: false`. Mesmo um relatório
 `ready_for_execution` não publica nada e não é exposto como autorização pública.
 
-### `POST /v1/creative-packages/:campaignId/versions`
-Registra uma nova versão completa do pacote criativo com `tenantId`,
-`executionPlanId`, `createdBy` e `creative`. O conteúdo inclui uma ou mais
+### `POST /v1/operator/tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/creative-packages`
+Registra uma nova versão completa do pacote criativo com `creative`. Exige
+membership ativa e `manage_campaign_preparation`; `createdBy` é sempre derivado
+da identidade autenticada. O conteúdo inclui uma ou mais
 variações de texto e CTA, alegações com referências de origem, mídias com
 referência opaca e SHA-256 e o checklist explícito de revisão.
 
@@ -216,15 +217,18 @@ Somente formatos JPEG, PNG e MP4 são aceitos nesta versão. Cada alteração cr
 um novo hash, deriva um plano bloqueado e invalida imediatamente aprovações do
 plano anterior. A operação não envia nem transforma mídia e não chama a Meta.
 
-### `POST /v1/creative-packages/:campaignId/versions/:version/approve`
-Body: `{"tenantId":"...","contentHash":"...","approvedBy":"..."}`.
+### `POST /v1/operator/tenants/:tenantId/campaigns/:campaignId/creative-packages/:version/approve`
+Body: `{"contentHash":"..."}`. Exige `decide_approval`; `approvedBy` é derivado
+da identidade autenticada.
 Aprova somente a versão mais recente, quando o hash corresponde exatamente ao
 conteúdo persistido, todas as alegações possuem fontes e todo o checklist foi
 confirmado. A aprovação deriva um novo plano em autonomia A0; portanto ainda é
 necessária a aprovação final do plano e nenhuma escrita externa é liberada.
 
-### `GET /v1/creative-packages/:campaignId/latest?tenantId=...`
-Retorna somente a versão criativa mais recente do tenant. O dry-run exige que o
+### `GET /v1/operator/tenants/:tenantId/campaigns/:campaignId/creative-packages/latest`
+Retorna somente a versão criativa mais recente após autenticação e membership.
+As rotas públicas anteriores foram removidas. Criação e aprovação recalculam a
+prontidão, mas `creativeApprovalIsPlanApproval` permanece `false`. O dry-run exige que o
 plano referencie exatamente o ID, a versão e o hash desse pacote em estado
 `approved`; marcar apenas `copyStatus` no plano não é suficiente.
 

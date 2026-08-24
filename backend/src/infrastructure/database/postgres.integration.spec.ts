@@ -35,6 +35,7 @@ import { OperatorAccessService } from '../../modules/operator-access/operator-ac
 import { OperatorIdentityPort } from '../../domain/ports/operator-identity.port';
 import { CampaignContextService } from '../../modules/campaign-context/campaign-context.service';
 import { ExecutionPlanService } from '../../modules/execution-plan/execution-plan.service';
+import { CreativePackageService } from '../../modules/creative-package/creative-package.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -197,6 +198,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       new ApprovalService(planRepository, new PostgresApprovalRepository(pool)),
       {} as OperationalReadinessService,
       {} as ExecutionSimulationService,
+      {} as CreativePackageService,
     );
     const result = await service.listTenants(
       'Bearer integration-token-with-at-least-32-characters',

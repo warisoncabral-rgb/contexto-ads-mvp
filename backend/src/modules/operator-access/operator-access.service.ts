@@ -41,6 +41,8 @@ import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 import { ApprovalService } from '../approval/approval.service';
 import { OperationalReadinessService } from '../operational-readiness/operational-readiness.service';
 import { ExecutionSimulationService } from '../execution-simulation/execution-simulation.service';
+import { CreativePackageService } from '../creative-package/creative-package.service';
+import { CreativePackageInputV1 } from '../../domain/contracts/creative-package';
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
   owner: [
@@ -78,6 +80,7 @@ export class OperatorAccessService {
     private readonly approvalService: ApprovalService,
     private readonly operationalReadiness: OperationalReadinessService,
     private readonly executionSimulations: ExecutionSimulationService,
+    private readonly creativePackages: CreativePackageService,
   ) {}
 
   async listTenants(
@@ -295,6 +298,49 @@ export class OperatorAccessService {
     return this.executionSimulations.bindTarget(
       tenantId, campaignId, executionPlanId, connectionId, adAccountId,
     );
+  }
+
+  async appendCreativePackage(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string, executionPlanId: string, creative?: CreativePackageInputV1) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertCanPrepareCampaign(membership.role);
+    const result = await this.creativePackages.appendVersion(
+      tenantId, campaignId, executionPlanId, creative, operator.subject,
+    );
+    return this.creativeReadiness(result);
+  }
+
+  async approveCreativePackage(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string, version: number, contentHash?: string) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'decide_approval');
+    const result = await this.creativePackages.approve(
+      tenantId, campaignId, version, contentHash, operator.subject,
+    );
+    return this.creativeReadiness(result);
+  }
+
+  async latestCreativePackage(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string) {
+    await this.authorizedMembership(authorizationHeader, tenantId);
+    return this.creativePackages.latest(tenantId, campaignId);
+  }
+
+  private async creativeReadiness(result: Awaited<ReturnType<CreativePackageService['appendVersion']>>) {
+    const readiness = await this.operationalReadiness.generate(
+      result.executionPlan.tenantId, result.executionPlan.campaignId,
+      result.executionPlan.executionPlanId,
+    );
+    return {
+      ...result,
+      readiness,
+      boundaries: {
+        creativeApprovalIsPlanApproval: false as const,
+        publicationAuthorized: false as const,
+        externalWritesAllowed: false as const,
+        externalWritesPerformed: false as const,
+      },
+    };
   }
 
   async getPlanApproval(authorizationHeader: string | undefined, tenantId: string,

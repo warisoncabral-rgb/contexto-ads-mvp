@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
 import { CampaignContextInput } from '../../domain/contracts/campaign-context';
+import { CreativePackageInputV1 } from '../../domain/contracts/creative-package';
 import { OperatorAccessService } from './operator-access.service';
 
 @Controller('operator')
@@ -87,6 +88,41 @@ export class OperatorAccessController {
       authorization, tenantId, campaignId, executionPlanId,
       body?.connectionId, body?.adAccountId,
     );
+  }
+
+  @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/creative-packages')
+  appendCreativePackage(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Param('executionPlanId') executionPlanId: string,
+    @Body() body: { creative?: CreativePackageInputV1 },
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.service.appendCreativePackage(
+      authorization, tenantId, campaignId, executionPlanId, body?.creative,
+    );
+  }
+
+  @Post('tenants/:tenantId/campaigns/:campaignId/creative-packages/:version/approve')
+  approveCreativePackage(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Param('version') version: string,
+    @Body() body: { contentHash?: string },
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.service.approveCreativePackage(
+      authorization, tenantId, campaignId, Number(version), body?.contentHash,
+    );
+  }
+
+  @Get('tenants/:tenantId/campaigns/:campaignId/creative-packages/latest')
+  latestCreativePackage(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.service.latestCreativePackage(authorization, tenantId, campaignId);
   }
 
   @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/approvals')
