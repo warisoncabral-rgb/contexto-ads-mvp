@@ -186,6 +186,28 @@ mas todas as operações registram `willExecute: false`. Mesmo um relatório
 `ready_for_execution` não publica nada. O último relatório fica disponível em
 `GET /v1/plans/:executionPlanId/simulations/latest?tenantId=...`.
 
+### `POST /v1/creative-packages/:campaignId/versions`
+Registra uma nova versão completa do pacote criativo com `tenantId`,
+`executionPlanId`, `createdBy` e `creative`. O conteúdo inclui uma ou mais
+variações de texto e CTA, alegações com referências de origem, mídias com
+referência opaca e SHA-256 e o checklist explícito de revisão.
+
+Somente formatos JPEG, PNG e MP4 são aceitos nesta versão. Cada alteração cria
+um novo hash, deriva um plano bloqueado e invalida imediatamente aprovações do
+plano anterior. A operação não envia nem transforma mídia e não chama a Meta.
+
+### `POST /v1/creative-packages/:campaignId/versions/:version/approve`
+Body: `{"tenantId":"...","contentHash":"...","approvedBy":"..."}`.
+Aprova somente a versão mais recente, quando o hash corresponde exatamente ao
+conteúdo persistido, todas as alegações possuem fontes e todo o checklist foi
+confirmado. A aprovação deriva um novo plano em autonomia A0; portanto ainda é
+necessária a aprovação final do plano e nenhuma escrita externa é liberada.
+
+### `GET /v1/creative-packages/:campaignId/latest?tenantId=...`
+Retorna somente a versão criativa mais recente do tenant. O dry-run exige que o
+plano referencie exatamente o ID, a versão e o hash desse pacote em estado
+`approved`; marcar apenas `copyStatus` no plano não é suficiente.
+
 ## Segurança
 - Tokens nunca entram em CampaignPackage, ExecutionPlan, ExecutionRecord ou AuditEvent.
 - O Meta Adapter está fail-closed até OAuth e permissões reais serem configurados.
@@ -195,11 +217,12 @@ mas todas as operações registram `willExecute: false`. Mesmo um relatório
 - Planos lógicos são idempotentes, explicáveis e não autorizam efeitos externos.
 - Aprovações são temporárias, vinculadas ao hash e auditadas atomicamente.
 - Simulações validam o plano inteiro e jamais executam as operações apresentadas.
+- Mudanças criativas invalidam o plano anterior; mídias e conteúdo são ligados por hash.
 - Respostas Graph são limitadas a 256 KiB, redirects são recusados e erros externos são normalizados.
 
 ## Próxima entrega
-Criar e aprovar o pacote criativo versionado, substituindo o briefing pendente
-por textos e peças rastreáveis. A escrita Meta continuará desligada. Em paralelo,
-criar/configurar o app Meta, concluir
+Criar um resumo operacional final e uma decisão consolidada de prontidão,
+explicando bloqueadores, evidências e a próxima ação antes de qualquer executor.
+A escrita Meta continuará desligada. Em paralelo, criar/configurar o app Meta, concluir
 um OAuth real e acionar o smoke test automatizado continua sendo a única
 validação externa restante para o vertical atual.

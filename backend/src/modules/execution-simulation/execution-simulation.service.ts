@@ -16,11 +16,13 @@ import {
 import { ExecutionPlanV1 } from '../../domain/contracts/execution-plan';
 import {
   ApprovalRepository,
+  CreativePackageRepository,
   ExecutionPlanRepository,
   ExecutionSimulationRepository,
 } from '../../domain/ports/repositories';
 import {
   APPROVAL_REPOSITORY,
+  CREATIVE_PACKAGE_REPOSITORY,
   EXECUTION_PLAN_REPOSITORY,
   EXECUTION_SIMULATION_REPOSITORY,
 } from '../../infrastructure/database/database.tokens';
@@ -40,6 +42,8 @@ export class ExecutionSimulationService {
     private readonly approvals: ApprovalRepository,
     @Inject(EXECUTION_SIMULATION_REPOSITORY)
     private readonly simulations: ExecutionSimulationRepository,
+    @Inject(CREATIVE_PACKAGE_REPOSITORY)
+    private readonly creativePackages: CreativePackageRepository,
   ) {}
 
   async bindTarget(
@@ -188,7 +192,7 @@ export class ExecutionSimulationService {
     checks.push(...target.checks);
     checks.push(this.capabilityCheck(plan, target.capabilities));
     checks.push(await this.approvalCheck(tenantId, plan, approvalId as string | undefined));
-    checks.push(this.creativeCheck(plan));
+    checks.push(await this.creativeCheck(tenantId, plan));
     checks.push(plan.externalEffects.writesAllowed || plan.externalEffects.writesPerformed ? {
       key: 'external_write_guard',
       status: 'blocked',
@@ -420,20 +424,30 @@ export class ExecutionSimulationService {
     };
   }
 
-  private creativeCheck(plan: ExecutionPlanV1): ExecutionSimulationCheck {
+  private async creativeCheck(
+    tenantId: string,
+    plan: ExecutionPlanV1,
+  ): Promise<ExecutionSimulationCheck> {
     const creatives = plan.objectsToCreate.filter((object) => object.type === 'creative');
-    const approved = creatives.length > 0
-      && creatives.every((creative) => creative.logicalConfig.copyStatus === 'approved');
+    const latest = await this.creativePackages.latest(tenantId, plan.campaignId);
+    const approved = creatives.length > 0 && latest?.status === 'approved'
+      && creatives.every((creative) => creative.logicalConfig.copyStatus === 'approved'
+        && creative.logicalConfig.creativePackageId === latest.creativePackageId
+        && creative.logicalConfig.creativePackageVersion === latest.version
+        && creative.logicalConfig.creativeContentHash === latest.contentHash);
     return approved ? {
       key: 'creative_approval',
       status: 'passed',
-      meaning: 'Todo conteúdo criativo do plano está marcado como aprovado.',
-      evidenceRefs: creatives.map((creative) => `creative:${creative.internalObjectId}`),
+      meaning: 'O plano referencia exatamente a versão criativa mais recente e aprovada.',
+      evidenceRefs: [
+        `creative_package:${latest.creativePackageId}`,
+        `creative_content_hash:${latest.contentHash}`,
+      ],
     } : {
       key: 'creative_approval',
       status: 'blocked',
-      meaning: 'O plano ainda contém briefing sem conteúdo criativo aprovado.',
-      nextAction: 'Gerar, revisar e aprovar textos e peças antes da execução.',
+      meaning: 'O plano não corresponde à versão criativa mais recente e aprovada.',
+      nextAction: 'Revisar, aprovar e vincular o pacote criativo mais recente.',
       evidenceRefs: creatives.map((creative) => `creative:${creative.internalObjectId}`),
     };
   }

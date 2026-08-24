@@ -13,6 +13,7 @@ import {
   APPROVAL_REPOSITORY,
   AUDIT_REPOSITORY,
   EXECUTION_SIMULATION_REPOSITORY,
+  CREATIVE_PACKAGE_REPOSITORY,
 } from './database.tokens';
 import { PostgresMetaConnectionRepository } from './postgres-meta-connection.repository';
 import { PostgresMetaOAuthAttemptRepository } from './postgres-meta-oauth-attempt.repository';
@@ -24,6 +25,7 @@ import { PostgresExecutionPlanRepository } from './postgres-execution-plan.repos
 import { PostgresApprovalRepository } from './postgres-approval.repository';
 import { PostgresAuditRepository } from './postgres-audit.repository';
 import { PostgresExecutionSimulationRepository } from './postgres-execution-simulation.repository';
+import { PostgresCreativePackageRepository } from './postgres-creative-package.repository';
 
 @Module({
   imports: [ConfigModule],
@@ -84,6 +86,11 @@ import { PostgresExecutionSimulationRepository } from './postgres-execution-simu
       inject: [DATABASE_POOL],
       useFactory: (pool: Pool) => new PostgresExecutionSimulationRepository(pool),
     },
+    {
+      provide: CREATIVE_PACKAGE_REPOSITORY,
+      inject: [DATABASE_POOL],
+      useFactory: (pool: Pool) => new PostgresCreativePackageRepository(pool),
+    },
   ],
   exports: [
     DATABASE_POOL,
@@ -97,6 +104,7 @@ import { PostgresExecutionSimulationRepository } from './postgres-execution-simu
     APPROVAL_REPOSITORY,
     AUDIT_REPOSITORY,
     EXECUTION_SIMULATION_REPOSITORY,
+    CREATIVE_PACKAGE_REPOSITORY,
   ],
 })
 export class DatabaseModule {}

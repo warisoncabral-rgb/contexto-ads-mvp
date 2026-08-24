@@ -17,6 +17,7 @@ import { ExecutionSimulationService } from '../../modules/execution-simulation/e
 import { MetaConnectionService } from '../../modules/meta-connection/meta-connection.service';
 import { CapabilityRegistryService } from '../../modules/capability-registry/capability-registry.service';
 import { MetaReadonlyAdapter } from '../../modules/meta-adapter/meta-readonly.adapter';
+import { PostgresCreativePackageRepository } from './postgres-creative-package.repository';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeWithPostgres = databaseUrl ? describe : describe.skip;
@@ -40,6 +41,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '009_execution_plans.sql',
       '010_plan_approvals.sql',
       '011_execution_simulations.sql',
+      '012_creative_packages.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -56,6 +58,7 @@ describeWithPostgres('PostgreSQL integration', () => {
   afterAll(async () => {
     await pool.query('delete from execution_simulation_reports where tenant_id = $1', [tenantId]);
     await pool.query('delete from plan_approvals where tenant_id = $1', [tenantId]);
+    await pool.query('delete from creative_package_versions where tenant_id = $1', [tenantId]);
     await pool.query('delete from execution_plans where tenant_id = $1', [tenantId]);
     await pool.query('delete from campaign_context_versions where tenant_id = $1', [tenantId]);
     await pool.query('delete from campaigns where tenant_id = $1', [tenantId]);
@@ -494,6 +497,7 @@ describeWithPostgres('PostgreSQL integration', () => {
     const plans = new PostgresExecutionPlanRepository(pool);
     const approvalRepository = new PostgresApprovalRepository(pool);
     const simulationRepository = new PostgresExecutionSimulationRepository(pool);
+    const creativePackageRepository = new PostgresCreativePackageRepository(pool);
     const connectionRepository = new PostgresMetaConnectionRepository(pool);
     const capabilityRepository = new PostgresCapabilityRepository(pool);
     const meta = {} as MetaReadonlyAdapter;
@@ -511,6 +515,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       plans,
       approvalRepository,
       simulationRepository,
+      creativePackageRepository,
     );
     const campaignId = randomUUID();
     const executionConnectionId = randomUUID();
@@ -569,6 +574,8 @@ describeWithPostgres('PostgreSQL integration', () => {
     const campaignObjectId = `${campaignId}:campaign`;
     const adSetObjectId = `${campaignId}:ad_set`;
     const creativeObjectId = `${campaignId}:creative`;
+    const creativePackageId = randomUUID();
+    const creativeContentHash = '9'.repeat(64);
     const sourcePlan = {
       executionPlanId: randomUUID(),
       tenantId,
@@ -597,7 +604,12 @@ describeWithPostgres('PostgreSQL integration', () => {
           internalObjectId: creativeObjectId,
           type: 'creative' as const,
           dependsOn: [],
-          logicalConfig: { copyStatus: 'approved' },
+          logicalConfig: {
+            copyStatus: 'approved',
+            creativePackageId,
+            creativePackageVersion: 1,
+            creativeContentHash,
+          },
         },
         {
           internalObjectId: `${campaignId}:ad`,
@@ -633,6 +645,60 @@ describeWithPostgres('PostgreSQL integration', () => {
       createdAt: '2026-08-24T01:03:00.000Z',
     };
     await plans.saveIdempotent(sourcePlan);
+    const creativeDraft = await creativePackageRepository.appendNext({
+      creativePackageId,
+      tenantId,
+      campaignId,
+      sourceExecutionPlanId: sourcePlan.executionPlanId,
+      sourcePlanHash: sourcePlan.planHash,
+      schemaVersion: '1.0',
+      status: 'needs_review',
+      copies: [],
+      claims: [],
+      assets: [],
+      reviewChecklist: {
+        claimsVerifiedAgainstSources: true,
+        visualFidelityReviewed: true,
+        safeAreaReviewed: true,
+        requiredFieldsReviewed: true,
+        automaticEnhancementsReviewed: true,
+      },
+      validationIssues: [],
+      contentHash: creativeContentHash,
+      createdAt: '2026-08-24T01:04:00.000Z',
+    }, {
+      auditEventId: randomUUID(),
+      tenantId,
+      correlationId: randomUUID(),
+      actorType: 'user',
+      actorId: 'warison',
+      eventType: 'creative_package_version_created',
+      objectType: 'creative_package',
+      objectId: creativePackageId,
+      result: 'success',
+      createdAt: '2026-08-24T01:04:00.000Z',
+    });
+    expect(creativeDraft).not.toBeNull();
+    await creativePackageRepository.approveLatest(
+      tenantId,
+      campaignId,
+      1,
+      creativeContentHash,
+      'warison',
+      '2026-08-24T01:05:00.000Z',
+      {
+        auditEventId: randomUUID(),
+        tenantId,
+        correlationId: randomUUID(),
+        actorType: 'user',
+        actorId: 'warison',
+        eventType: 'creative_package_approved',
+        objectType: 'creative_package',
+        objectId: creativePackageId,
+        result: 'success',
+        createdAt: '2026-08-24T01:05:00.000Z',
+      },
+    );
     const sourceApproval = await approvalService.request(
       tenantId,
       campaignId,
@@ -692,5 +758,133 @@ describeWithPostgres('PostgreSQL integration', () => {
       simulationId: randomUUID(),
       tenantId: otherTenantId,
     })).rejects.toThrow();
+  });
+
+  it('serializes creative versions, preserves approval history and blocks stale approval', async () => {
+    const contexts = new PostgresCampaignContextRepository(pool);
+    const plans = new PostgresExecutionPlanRepository(pool);
+    const creativePackages = new PostgresCreativePackageRepository(pool);
+    const campaignId = randomUUID();
+    const executionPlanId = randomUUID();
+    const planHash = 'd'.repeat(64);
+    await contexts.create({
+      packageId: randomUUID(),
+      tenantId,
+      campaignId,
+      version: 1,
+      schemaVersion: '1.0',
+      status: 'ready_for_generation',
+      facts: {},
+      inferences: [],
+      validationIssues: [],
+      contentHash: 'e'.repeat(64),
+      createdAt: '2026-08-24T03:00:00.000Z',
+    });
+    await plans.saveIdempotent({
+      executionPlanId,
+      tenantId,
+      campaignId,
+      campaignPackageVersion: 1,
+      planVersion: '1.0',
+      correlationId: randomUUID(),
+      planHash,
+      idempotencyKey: 'f'.repeat(64),
+      status: 'draft',
+      meta: { assetBindings: [], requiredCapabilities: [] },
+      objectsToCreate: [],
+      readiness: [],
+      autonomy: { level: 'A0', approvalRequired: true },
+      financials: {
+        currency: 'BRL',
+        budgetMode: 'daily',
+        configuredAmountMinor: 1000,
+        maximumPlannedSpendMinor: 7000,
+        calculation: '1000 x 7 days',
+      },
+      decisions: [],
+      risks: [],
+      externalEffects: { writesAllowed: false, writesPerformed: false },
+      createdAt: '2026-08-24T03:01:00.000Z',
+    });
+    const contentHash = '1'.repeat(64);
+    const makeDraft = (creativePackageId: string, hash: string) => ({
+      creativePackageId,
+      tenantId,
+      campaignId,
+      sourceExecutionPlanId: executionPlanId,
+      sourcePlanHash: planHash,
+      schemaVersion: '1.0' as const,
+      status: 'needs_review' as const,
+      copies: [],
+      claims: [],
+      assets: [],
+      reviewChecklist: {
+        claimsVerifiedAgainstSources: true,
+        visualFidelityReviewed: true,
+        safeAreaReviewed: true,
+        requiredFieldsReviewed: true,
+        automaticEnhancementsReviewed: true,
+      },
+      validationIssues: [],
+      contentHash: hash,
+      createdAt: '2026-08-24T03:02:00.000Z',
+    });
+    const makeEvent = (objectId: string, createdAt: string) => ({
+      auditEventId: randomUUID(),
+      tenantId,
+      correlationId: randomUUID(),
+      actorType: 'user' as const,
+      actorId: 'warison',
+      eventType: 'creative_package_version_created',
+      objectType: 'creative_package',
+      objectId,
+      result: 'success' as const,
+      createdAt,
+    });
+    const attempts = await Promise.all(Array.from({ length: 6 }, () => {
+      const id = randomUUID();
+      return creativePackages.appendNext(
+        makeDraft(id, contentHash),
+        makeEvent(id, '2026-08-24T03:02:00.000Z'),
+      );
+    }));
+    expect(new Set(attempts.map((item) => item?.creativePackageId)).size).toBe(1);
+    expect(new Set(attempts.map((item) => item?.version))).toEqual(new Set([1]));
+    const first = attempts[0]!;
+    const approved = await creativePackages.approveLatest(
+      tenantId,
+      campaignId,
+      1,
+      contentHash,
+      'warison',
+      '2026-08-24T03:03:00.000Z',
+      {
+        ...makeEvent(first.creativePackageId, '2026-08-24T03:03:00.000Z'),
+        eventType: 'creative_package_approved',
+      },
+    );
+    expect(approved?.status).toBe('approved');
+    const secondId = randomUUID();
+    const second = await creativePackages.appendNext(
+      makeDraft(secondId, '2'.repeat(64)),
+      makeEvent(secondId, '2026-08-24T03:04:00.000Z'),
+    );
+    expect(second?.version).toBe(2);
+    await expect(creativePackages.findVersion(tenantId, campaignId, 1)).resolves
+      .toEqual(expect.objectContaining({
+        status: 'superseded',
+        approvedBy: 'warison',
+        approvedAt: '2026-08-24T03:03:00.000Z',
+      }));
+    await expect(creativePackages.approveLatest(
+      tenantId,
+      campaignId,
+      1,
+      contentHash,
+      'warison',
+      '2026-08-24T03:05:00.000Z',
+      makeEvent(first.creativePackageId, '2026-08-24T03:05:00.000Z'),
+    )).resolves.toBeNull();
+    await expect(creativePackages.latest(otherTenantId, campaignId)).resolves.toBeNull();
   });
 });

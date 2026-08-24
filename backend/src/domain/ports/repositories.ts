@@ -10,6 +10,10 @@ import {
 import { ExecutionPlanV1 } from '../contracts/execution-plan';
 import { ApprovalV1 } from '../contracts/approval';
 import { ExecutionSimulationReportV1 } from '../contracts/execution-simulation';
+import {
+  CreativePackageV1,
+  UnversionedCreativePackageV1,
+} from '../contracts/creative-package';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
@@ -105,6 +109,28 @@ export interface ExecutionSimulationRepository {
     tenantId: string,
     executionPlanId: string,
   ): Promise<ExecutionSimulationReportV1 | null>;
+}
+
+export interface CreativePackageRepository {
+  appendNext(
+    creativePackage: UnversionedCreativePackageV1,
+    event: AuditEvent,
+  ): Promise<CreativePackageV1 | null>;
+  latest(tenantId: string, campaignId: string): Promise<CreativePackageV1 | null>;
+  findVersion(
+    tenantId: string,
+    campaignId: string,
+    version: number,
+  ): Promise<CreativePackageV1 | null>;
+  approveLatest(
+    tenantId: string,
+    campaignId: string,
+    version: number,
+    contentHash: string,
+    approvedBy: string,
+    approvedAt: string,
+    event: AuditEvent,
+  ): Promise<CreativePackageV1 | null>;
 }
 
 export interface MetaOAuthAttemptStore {
