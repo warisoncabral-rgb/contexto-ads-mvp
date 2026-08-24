@@ -5,6 +5,7 @@ import {
   OperatorWorkQueueStoredSnapshotV1,
 } from '../../domain/contracts/operator-work-queue';
 import { OperatorWorkQueueSnapshotRepository } from '../../domain/ports/repositories';
+import { compareWorkQueueSnapshots } from '../../modules/operator-access/operator-work-queue-changes';
 
 interface SnapshotRow {
   snapshot_id: string;
@@ -23,6 +24,7 @@ implements OperatorWorkQueueSnapshotRepository {
 
   async saveDaily(snapshot: OperatorWorkQueueSnapshotV1,
     items: OperatorWorkItemV1[]): Promise<OperatorWorkQueueSnapshotV1> {
+    const previous = await this.latestBefore(snapshot.tenantId, snapshot.queueDate);
     const result = await this.pool.query<SnapshotRow>(
       `insert into operator_work_queue_snapshots (
         snapshot_id, tenant_id, queue_date, snapshot_hash, items, source_decisions, generated_at
@@ -45,7 +47,12 @@ implements OperatorWorkQueueSnapshotRepository {
       [snapshot.tenantId, snapshot.queueDate],
     )).rows[0];
     if (!row) throw new Error('Daily work queue snapshot idempotency invariant failed');
-    return this.toSnapshot(row);
+    const comparison = compareWorkQueueSnapshots(snapshot.queueDate, items, previous);
+    return { ...this.toSnapshot(row), comparison: {
+      baselineAvailable: comparison.baselineAvailable,
+      previousQueueDate: previous?.queueDate ?? null,
+      changes: comparison.changes,
+    } };
   }
 
   async latestBefore(tenantId: string, queueDate: string): Promise<OperatorWorkQueueStoredSnapshotV1 | null> {
