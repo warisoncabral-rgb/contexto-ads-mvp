@@ -30,6 +30,20 @@ describe('BootstrapOperatorIdentityAdapter', () => {
       }));
   });
 
+  it('authenticates a Render-generated raw token shared with the panel', async () => {
+    const identity = adapter({
+      OPERATOR_BOOTSTRAP_SUBJECT: subject,
+      OPERATOR_BOOTSTRAP_TOKEN: token,
+    });
+    expect(identity.isAvailable()).toBe(true);
+    await expect(identity.authenticate(`Bearer ${token}`)).resolves
+      .toEqual(expect.objectContaining({
+        subject,
+        provider: 'bootstrap_token',
+        authenticatedAt: expect.any(String),
+      }));
+  });
+
   it('fails closed when subject or digest configuration is absent or malformed', async () => {
     for (const configuration of [
       {},
