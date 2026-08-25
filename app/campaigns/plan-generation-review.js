@@ -15,6 +15,19 @@ function money(currency, minor) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(minor / 100)
 }
 
+function calculation(plan) {
+  const match = /^(\d+) x (\d+) days$/.exec(plan.financials.calculation)
+  return match
+    ? `${money(plan.financials.currency, Number(match[1]))} × ${match[2]} dias`
+    : plan.financials.calculation
+}
+
+function riskMeaning(plan, risk) {
+  return risk.code === 'financial_commitment_requires_approval'
+    ? `O plano pode comprometer até ${money(plan.financials.currency, plan.financials.maximumPlannedSpendMinor)}.`
+    : risk.meaning
+}
+
 function GenerateButton() {
   const { pending } = useFormStatus()
   return <button type="submit" disabled={pending}>{pending ? 'Gerando plano verificável…' : 'Gerar plano lógico'}</button>
@@ -54,11 +67,11 @@ export default function PlanGenerationReview({ context, canGenerate }) {
 
       {plan && (
         <div className="generated-plan" aria-live="polite">
-          <div className="generated-plan-hero"><div><span className="eyebrow">Plano gerado e auditado</span><h3>{money(plan.financials.currency, plan.financials.maximumPlannedSpendMinor)} de teto máximo</h3><p>{plan.financials.calculation}</p></div><strong>A0 · aprovação obrigatória</strong></div>
+          <div className="generated-plan-hero"><div><span className="eyebrow">Plano gerado e auditado</span><h3>{money(plan.financials.currency, plan.financials.maximumPlannedSpendMinor)} de teto máximo</h3><p>{calculation(plan)}</p></div><strong>A0 · aprovação obrigatória</strong></div>
           <div className="plan-boundaries"><span>Publicação: não</span><span>Ativação: não</span><span>Escrita externa: bloqueada</span><span>Objetos: pausados</span></div>
           <div className="plan-result-grid">
             <div><span className="eyebrow">Decisões e justificativas</span>{plan.decisions.map((decision) => <article key={decision.decisionId}><strong>{categoryLabels[decision.category]}</strong><p>{decision.rationale}</p><small>Regra: {decision.ruleId}</small></article>)}</div>
-            <div><span className="eyebrow">Riscos que bloqueiam execução</span>{plan.risks.map((risk) => <article key={risk.code}><strong>{severityLabels[risk.severity]} · {risk.meaning}</strong><p>{risk.mitigation}</p></article>)}</div>
+            <div><span className="eyebrow">Riscos que bloqueiam execução</span>{plan.risks.map((risk) => <article key={risk.code}><strong>{severityLabels[risk.severity]} · {riskMeaning(plan, risk)}</strong><p>{risk.mitigation}</p></article>)}</div>
           </div>
           <a className="open-operation-link" href={`/?tenantId=${plan.tenantId}&executionPlanId=${plan.executionPlanId}`}>Abrir este plano na Central Operacional</a>
         </div>
