@@ -134,6 +134,38 @@ describeWithPostgres('PostgreSQL integration', () => {
     expect(results.filter(Boolean)).toHaveLength(1);
   });
 
+  it('keeps an earlier unexpired OAuth state valid when a second attempt starts', async () => {
+    const repository = new PostgresMetaOAuthAttemptRepository(pool);
+    const now = new Date();
+    const firstStateHash = randomUUID().replaceAll('-', '').padEnd(64, 'a');
+    const secondStateHash = randomUUID().replaceAll('-', '').padEnd(64, 'b');
+    const baseAttempt = {
+      tenantId,
+      connectionId,
+      requestedScopes: ['public_profile'],
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+    };
+
+    await repository.replaceActive({
+      ...baseAttempt,
+      attemptId: randomUUID(),
+      stateHash: firstStateHash,
+    });
+    await repository.replaceActive({
+      ...baseAttempt,
+      attemptId: randomUUID(),
+      stateHash: secondStateHash,
+    });
+
+    await expect(repository.consumeActive(firstStateHash)).resolves.toEqual(
+      expect.objectContaining({ stateHash: firstStateHash }),
+    );
+    await expect(repository.consumeActive(secondStateHash)).resolves.toEqual(
+      expect.objectContaining({ stateHash: secondStateHash }),
+    );
+  });
+
   it('stores no plaintext and enforces tenant isolation and revocation', async () => {
     const vault = new PostgresCredentialVaultAdapter(pool, Buffer.alloc(32, 7));
     const secret = '{"accessToken":"integration-only-secret"}';

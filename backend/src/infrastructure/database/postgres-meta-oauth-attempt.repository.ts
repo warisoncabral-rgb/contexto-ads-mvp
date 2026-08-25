@@ -11,13 +11,6 @@ export class PostgresMetaOAuthAttemptRepository implements MetaOAuthAttemptStore
       await client.query('begin');
       await this.lockConnection(client, attempt.tenantId, attempt.connectionId);
       await client.query(
-        `update meta_oauth_attempts
-        set invalidated_at = now()
-        where tenant_id = $1 and connection_id = $2
-          and consumed_at is null and invalidated_at is null`,
-        [attempt.tenantId, attempt.connectionId],
-      );
-      await client.query(
         `insert into meta_oauth_attempts (
           attempt_id, tenant_id, connection_id, state_hash, requested_scopes,
           created_at, expires_at, consumed_at, invalidated_at
