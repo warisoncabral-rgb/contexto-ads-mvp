@@ -335,11 +335,13 @@ somente tenants ativos vinculados ao sujeito autenticado por uma membership
 ativa. Perfis suspensos, memberships revogadas e vínculos de outro sujeito não
 aparecem na resposta.
 
-O primeiro adapter é um bootstrap sem dependência cloud: a hospedagem configura
-`OPERATOR_BOOTSTRAP_SUBJECT` e apenas o SHA-256 do token em
-`OPERATOR_BOOTSTRAP_TOKEN_SHA256`. Comparação é feita em tempo constante e
-configuração ausente ou inválida responde fail-closed. O token em texto puro
-nunca entra no Git, PostgreSQL, resposta ou auditoria.
+O primeiro adapter é um bootstrap sem dependência cloud. Ele aceita o fluxo
+manual legado com `OPERATOR_BOOTSTRAP_TOKEN_SHA256` ou, na hospedagem Render,
+um `OPERATOR_BOOTSTRAP_TOKEN` gerado pela própria plataforma e compartilhado
+com o painel. Nesse segundo fluxo, o backend deriva o SHA-256 somente em memória.
+A comparação é feita em tempo constante e configuração ausente ou inválida
+responde fail-closed. O token em texto puro nunca entra no Git, PostgreSQL,
+resposta ou auditoria.
 
 As permissões são derivadas exclusivamente do papel persistido (`owner`,
 `operator` ou `viewer`). Nenhum papel autoriza publicação ou escrita externa
