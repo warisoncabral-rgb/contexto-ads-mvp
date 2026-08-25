@@ -68,6 +68,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '017_meta_write_validation_protocols.sql',
       '018_operator_access.sql',
       '019_operator_work_queue_snapshots.sql',
+      '020_concurrent_meta_oauth_attempts.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
