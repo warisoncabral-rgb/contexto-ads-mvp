@@ -8,6 +8,7 @@ import {
 
 const SHA256_HEX = /^[0-9a-f]{64}$/i;
 const SUBJECT = /^[A-Za-z0-9][A-Za-z0-9:._@-]{2,199}$/;
+const TOKEN = /^[A-Za-z0-9._~+\/=\-]{32,512}$/;
 
 export class BootstrapOperatorIdentityAdapter implements OperatorIdentityPort {
   constructor(private readonly config: ConfigService) {}
@@ -40,7 +41,7 @@ export class BootstrapOperatorIdentityAdapter implements OperatorIdentityPort {
     const tokenDigest =
       configuredDigest && SHA256_HEX.test(configuredDigest)
         ? configuredDigest
-        : generatedToken && /^[A-Za-z0-9._~+=\/-]{32,512}$/.test(generatedToken)
+        : generatedToken && TOKEN.test(generatedToken)
           ? createHash('sha256').update(generatedToken).digest('hex')
           : undefined;
     if (!subject || !SUBJECT.test(subject) || !tokenDigest || !SHA256_HEX.test(tokenDigest)) {
@@ -51,7 +52,7 @@ export class BootstrapOperatorIdentityAdapter implements OperatorIdentityPort {
 
   private bearerToken(header: string | undefined): string {
     if (typeof header !== 'string') throw new InvalidOperatorCredentialsError();
-    const match = /^Bearer ([A-Za-z0-9._~-]{32,512})$/.exec(header);
+    const match = /^Bearer ([A-Za-z0-9._~+\/=\-]{32,512})$/.exec(header);
     if (!match) throw new InvalidOperatorCredentialsError();
     return match[1];
   }
