@@ -92,6 +92,15 @@ export async function runMetaReadOnlyValidation(_previousState, formData) {
   if ([401, 403].includes(response.status)) {
     return { error: 'Seu acesso não permite validar esta conexão.', report: null }
   }
+  if (response.status === 404) {
+    return { error: 'A conexão autorizada não foi localizada no backend.', report: null }
+  }
+  if (response.status === 409) {
+    return { error: 'A conexão existe, mas ainda não está pronta para a validação.', report: null }
+  }
+  if (response.status >= 500) {
+    return { error: 'O backend encontrou uma falha interna durante a validação.', report: null }
+  }
   if (!response.ok) {
     return { error: 'A validação foi interrompida com segurança pelo backend.', report: null }
   }
