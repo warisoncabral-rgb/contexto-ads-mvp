@@ -13,31 +13,16 @@ Este ambiente existe para comprovar o fluxo real **Connect → OAuth → Vault �
 
 O `render.yaml` provisiona os três recursos no Render. O plano gratuito é adequado somente para esta validação inicial: serviços podem entrar em repouso e o banco gratuito expira depois de 30 dias.
 
-## 1. Gerar o par de acesso do operador
-
-Execute uma única vez, em ambiente local seguro:
-
-```bash
-npm run deployment:secrets
-```
-
-O comando produz dois valores relacionados:
-
-- `CONTEXT_ADS_OPERATOR_TOKEN`: informar somente ao serviço `contexto-ads-validation-panel`.
-- `OPERATOR_BOOTSTRAP_TOKEN_SHA256`: informar somente ao serviço `contexto-ads-validation-api`.
-
-Não salvar esses valores no Git, em documentos ou em mensagens.
-
-## 2. Criar o Blueprint no Render
+## 1. Criar o Blueprint no Render
 
 1. Conectar o repositório ao Render.
 2. Criar um Blueprint a partir do `render.yaml`.
-3. Informar os quatro campos protegidos solicitados:
-   - `META_APP_ID` da API.
-   - `META_APP_SECRET` da API.
-   - `OPERATOR_BOOTSTRAP_TOKEN_SHA256` da API.
-   - `CONTEXT_ADS_OPERATOR_TOKEN` do painel.
-4. Confirmar o provisionamento.
+3. Confirmar o provisionamento sem informar segredos manualmente.
+
+O Render gera `OPERATOR_BOOTSTRAP_TOKEN` com 256 bits na API e referencia esse
+mesmo valor no painel como `CONTEXT_ADS_OPERATOR_TOKEN`. O backend deriva o
+SHA-256 somente em memória antes da comparação em tempo constante. O valor não
+entra no Git, no PostgreSQL, nas respostas ou na auditoria.
 
 A API deriva automaticamente seu callback HTTPS do hostname público fornecido pelo Render. Após o primeiro deploy, copiar o endereço exibido pela API e acrescentar:
 
@@ -51,18 +36,20 @@ Exemplo estrutural:
 https://<hostname-real-da-api>/v1/meta/oauth/callback
 ```
 
-## 3. Configurar a Meta
+## 2. Configurar a Meta
 
 No aplicativo Meta usado para o teste:
 
 1. Ativar o produto de Login aplicável ao fluxo.
 2. Cadastrar a URL acima exatamente em **Valid OAuth Redirect URIs**.
-3. Manter a mesma versão da Graph API configurada no ambiente.
-4. Confirmar que o usuário do teste possui acesso ao app e aos ativos que serão apenas lidos.
+3. Adicionar `META_APP_ID` e `META_APP_SECRET` somente ao ambiente do serviço
+   `contexto-ads-validation-api` no Render.
+4. Manter a mesma versão da Graph API configurada no ambiente.
+5. Confirmar que o usuário do teste possui acesso ao app e aos ativos que serão apenas lidos.
 
 O endereço precisa coincidir exatamente com o enviado no início do OAuth. Não adicionar barra final, parâmetros ou outro subdomínio.
 
-## 4. Executar a prova
+## 3. Executar a prova
 
 1. Abrir `https://<hostname-real-do-painel>/integrations/meta`.
 2. Selecionar **Rosa VIP Calçados**.
