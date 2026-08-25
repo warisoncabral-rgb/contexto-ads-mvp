@@ -31,12 +31,13 @@ describe('BootstrapOperatorIdentityAdapter', () => {
   });
 
   it('authenticates a Render-generated raw token shared with the panel', async () => {
+    const renderToken = 'B0jrphAPOY7pg92AN0c9MN4yecczLMdwnx4OkA1KFUk=';
     const identity = adapter({
       OPERATOR_BOOTSTRAP_SUBJECT: subject,
-      OPERATOR_BOOTSTRAP_TOKEN: token,
+      OPERATOR_BOOTSTRAP_TOKEN: renderToken,
     });
     expect(identity.isAvailable()).toBe(true);
-    await expect(identity.authenticate(`Bearer ${token}`)).resolves
+    await expect(identity.authenticate(`Bearer ${renderToken}`)).resolves
       .toEqual(expect.objectContaining({
         subject,
         provider: 'bootstrap_token',
