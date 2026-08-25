@@ -60,6 +60,21 @@ main { min-height: 100vh; }
 .integration-guardrails { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
 .integration-guardrails strong { font-size: 13px; }
 .integration-guardrails ul { margin: 12px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; line-height: 1.75; }
+.meta-validation-card { padding: 28px; }
+.meta-validation-card h2 { margin: 8px 0 14px; font-size: 25px; }
+.meta-validation-card > p { color: var(--muted); line-height: 1.6; font-size: 13px; }
+.meta-validation-card form { margin-top: 22px; }
+.meta-validation-card form button { width: 100%; }
+.meta-validation-result { margin-top: 22px; display: grid; gap: 16px; }
+.validation-passed, .validation-blocked { padding: 12px 14px; border-radius: 11px; }
+.validation-passed { color: var(--green); background: var(--green-soft); }
+.validation-blocked { color: var(--red); background: var(--red-soft); }
+.meta-validation-steps { display: grid; gap: 9px; }
+.meta-validation-steps article { padding: 13px; border: 1px solid var(--line); border-radius: 11px; display: grid; gap: 5px; }
+.meta-validation-steps article > span { color: var(--green); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
+.meta-validation-steps article > strong { font-size: 13px; }
+.meta-validation-steps article > p, .validation-blockers { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.meta-validation-result > small { color: var(--muted); }
 
 .topbar {
   max-width: 1240px;

@@ -6,6 +6,10 @@ import { parsePlanGenerationForm, validGeneratedPlan } from '../lib/execution-pl
 import { parseApprovalAction, validApproval } from '../lib/plan-approval.mjs'
 import { validOperationalDecision } from '../lib/operational-readiness.mjs'
 import { parseCreativeForm, validCreativePackage } from '../lib/creative-media-center.mjs'
+import {
+  parseMetaValidationInput,
+  validReadOnlySmokeReport,
+} from '../lib/meta-readonly-validation.mjs'
 import { parseExecutorAction, validExecutionAuthorization, validManifest, validPreflight,
   validProtocol } from '../lib/executor-preflight.mjs'
 
@@ -59,6 +63,54 @@ export async function startMetaAuthorization(formData) {
     redirect(`/integrations/meta?tenantId=${encodeURIComponent(tenantId)}&error=response`)
   }
   redirect(authorizationUrl.toString())
+}
+
+export async function runMetaReadOnlyValidation(_previousState, formData) {
+  const parsed = parseMetaValidationInput(formData)
+  if (!parsed.ok) return { error: 'A conexão informada é inválida.', report: null }
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) {
+    return { error: 'A central ainda não está conectada ao backend seguro.', report: null }
+  }
+
+  let response
+  try {
+    response = await fetch(
+      `${apiBaseUrl.replace(/\/$/, '')}/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+        + `/meta/connections/${encodeURIComponent(parsed.connectionId)}/smoke-test`,
+      {
+        method: 'POST',
+        headers: { accept: 'application/json', authorization: `Bearer ${operatorToken}` },
+        cache: 'no-store',
+        signal: globalThis.AbortSignal.timeout(65000),
+      },
+    )
+  } catch {
+    return { error: 'A Meta ou o backend não respondeu a tempo. Nenhuma escrita foi realizada.', report: null }
+  }
+  if ([401, 403].includes(response.status)) {
+    return { error: 'Seu acesso não permite validar esta conexão.', report: null }
+  }
+  if (!response.ok) {
+    return { error: 'A validação foi interrompida com segurança pelo backend.', report: null }
+  }
+
+  let report
+  try { report = await response.json() } catch {
+    return { error: 'O backend não devolveu uma evidência válida.', report: null }
+  }
+  if (!validReadOnlySmokeReport(report, parsed)) {
+    return { error: 'A evidência retornada não corresponde à conexão solicitada.', report: null }
+  }
+  return {
+    error: '',
+    report: {
+      passed: report.passed,
+      steps: report.steps.map(({ key, status, meaning }) => ({ key, status, meaning })),
+      blockers: [...report.blockers],
+    },
+  }
 }
 
 export async function saveCampaignContext(_previousState, formData) {
