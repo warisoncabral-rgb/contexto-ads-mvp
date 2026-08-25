@@ -34,8 +34,15 @@ export class BootstrapOperatorIdentityAdapter implements OperatorIdentityPort {
 
   private configuration(): { subject: string; tokenDigest: string } | null {
     const subject = this.config.get<string>('OPERATOR_BOOTSTRAP_SUBJECT')?.trim();
-    const tokenDigest = this.config
+    const configuredDigest = this.config
       .get<string>('OPERATOR_BOOTSTRAP_TOKEN_SHA256')?.trim().toLowerCase();
+    const generatedToken = this.config.get<string>('OPERATOR_BOOTSTRAP_TOKEN')?.trim();
+    const tokenDigest =
+      configuredDigest && SHA256_HEX.test(configuredDigest)
+        ? configuredDigest
+        : generatedToken && /^[A-Za-z0-9._~+=\/-]{32,512}$/.test(generatedToken)
+          ? createHash('sha256').update(generatedToken).digest('hex')
+          : undefined;
     if (!subject || !SUBJECT.test(subject) || !tokenDigest || !SHA256_HEX.test(tokenDigest)) {
       return null;
     }
