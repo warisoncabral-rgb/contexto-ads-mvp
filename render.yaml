@@ -48,17 +48,16 @@ services:
     plan: free
     region: virginia
     buildCommand: npm ci --include=dev && npm run build
-    startCommand: sh -c 'export CONTEXT_ADS_API_BASE_URL="http://$CONTEXT_ADS_API_HOSTPORT"; npm start'
+    startCommand: npm start
     healthCheckPath: /
     autoDeployTrigger: checksPass
     envVars:
       - key: NODE_ENV
         value: production
-      - key: CONTEXT_ADS_API_HOSTPORT
-        fromService:
-          type: web
-          name: contexto-ads-validation-api
-          property: hostport
+      - key: CONTEXT_ADS_API_BASE_URL
+        value: https://contexto-ads-validation-api.onrender.com
+      - key: CONTEXT_ADS_API_TIMEOUT_MS
+        value: "65000"
       - key: CONTEXT_ADS_OPERATOR_TOKEN
         fromService:
           type: web
