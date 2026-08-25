@@ -139,6 +139,15 @@ export class OperatorAccessService {
     return context;
   }
 
+  async authorizeCampaignPreparation(
+    authorizationHeader: string | undefined,
+    tenantId: string,
+  ) {
+    const context = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertCanPrepareCampaign(context.membership.role);
+    return context;
+  }
+
   async listTenants(
     authorizationHeader: string | undefined,
   ): Promise<OperatorWorkspaceAccessV1> {
@@ -354,6 +363,8 @@ export class OperatorAccessService {
         currency: plan.financials.currency,
         calculation: plan.financials.calculation,
         approvalRequired: plan.autonomy.approvalRequired,
+        ...(plan.meta?.connectionId ? { connectionId: plan.meta.connectionId } : {}),
+        ...(plan.meta?.adAccountId ? { adAccountId: plan.meta.adAccountId } : {}),
         externalWritesAllowed: false,
         createdAt: plan.createdAt,
       })),

@@ -66,6 +66,26 @@ describe('PostgresMetaConnectionRepository', () => {
     await expect(repository.findById('tenant-2', 'connection-1')).resolves.toBeNull();
   });
 
+  it('finds only the latest ready connection for a tenant', async () => {
+    query.mockResolvedValueOnce({ rows: [{
+      connection_id: 'connection-2', tenant_id: 'tenant-1', provider: 'meta',
+      status: 'connected', credential_ref: 'vault://credential-2',
+      last_validated_at: new Date('2026-08-25T22:00:00.000Z'),
+      created_at: new Date('2026-08-25T21:00:00.000Z'),
+      updated_at: new Date('2026-08-25T22:00:00.000Z'),
+    }] });
+
+    const result = await repository.latestReadyForTenant('tenant-1');
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(/status in \('connected', 'ready'\)[\s\S]*credential_ref is not null[\s\S]*order by updated_at desc/),
+      ['tenant-1'],
+    );
+    expect(result).toEqual(expect.objectContaining({
+      tenantId: 'tenant-1', connectionId: 'connection-2', status: 'connected',
+    }));
+  });
+
   it('marks only an authorization_pending tenant-scoped connection as connected', async () => {
     query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     await expect(repository.markConnected(

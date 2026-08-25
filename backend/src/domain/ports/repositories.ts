@@ -36,6 +36,7 @@ import { OperatorWorkItemV1, OperatorWorkQueueSnapshotV1 } from '../contracts/op
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
   findById(tenantId: string, connectionId: string): Promise<MetaConnection | null>;
+  latestReadyForTenant(tenantId: string): Promise<MetaConnection | null>;
   replaceBindings(
     tenantId: string,
     connectionId: string,
@@ -281,7 +282,7 @@ export interface MetaOAuthAttemptStore {
 }
 
 export interface MetaConnectionStore
-  extends Pick<MetaConnectionRepository, 'save' | 'findById'> {
+  extends Pick<MetaConnectionRepository, 'save' | 'findById' | 'latestReadyForTenant'> {
   markConnected(
     tenantId: string,
     connectionId: string,

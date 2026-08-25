@@ -84,6 +84,7 @@ describe('MetaOAuthService', () => {
     connectionStore = {
       save: jest.fn(),
       findById: jest.fn(),
+      latestReadyForTenant: jest.fn(),
       markConnected: jest.fn().mockResolvedValue(true),
     };
     service = new MetaOAuthService(

@@ -61,19 +61,21 @@ implements MetaConnectionStore, MetaAssetBindingStore {
       where tenant_id = $1 and connection_id = $2`,
       [tenantId, connectionId],
     );
-    const row = result.rows[0];
-    if (!row) return null;
+    return result.rows[0] ? this.toConnection(result.rows[0]) : null;
+  }
 
-    return {
-      connectionId: row.connection_id,
-      tenantId: row.tenant_id,
-      provider: row.provider,
-      status: row.status,
-      ...(row.credential_ref ? { credentialRef: row.credential_ref } : {}),
-      ...(row.last_validated_at ? { lastValidatedAt: row.last_validated_at.toISOString() } : {}),
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-    };
+  async latestReadyForTenant(tenantId: string): Promise<MetaConnection | null> {
+    const result = await this.pool.query<MetaConnectionRow>(
+      `select connection_id, tenant_id, provider, status, credential_ref,
+        last_validated_at, created_at, updated_at
+      from meta_connections
+      where tenant_id = $1 and status in ('connected', 'ready')
+        and credential_ref is not null
+      order by updated_at desc, connection_id desc
+      limit 1`,
+      [tenantId],
+    );
+    return result.rows[0] ? this.toConnection(result.rows[0]) : null;
   }
 
   async markConnected(
@@ -220,6 +222,19 @@ implements MetaConnectionStore, MetaAssetBindingStore {
       ...(row.display_name ? { displayName: row.display_name } : {}),
       selected: row.selected,
       observedAt: row.observed_at.toISOString(),
+    };
+  }
+
+  private toConnection(row: MetaConnectionRow): MetaConnection {
+    return {
+      connectionId: row.connection_id,
+      tenantId: row.tenant_id,
+      provider: row.provider,
+      status: row.status,
+      ...(row.credential_ref ? { credentialRef: row.credential_ref } : {}),
+      ...(row.last_validated_at ? { lastValidatedAt: row.last_validated_at.toISOString() } : {}),
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
     };
   }
 

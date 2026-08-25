@@ -85,6 +85,39 @@ export class MetaConnectionService {
     return this.connections.listBindings(tenantId, connectionId);
   }
 
+  async selectedExecutionTarget(tenantId: string) {
+    this.assertTenantId(tenantId);
+    const connection = await this.connections.latestReadyForTenant(tenantId);
+    if (!connection) throw new NotFoundException('Ready Meta connection not found');
+    const assets = await this.connections.listBindings(tenantId, connection.connectionId);
+    const selectedAccounts = assets.filter(
+      (asset) => asset.assetType === 'ad_account' && asset.selected,
+    );
+    if (selectedAccounts.length !== 1) {
+      throw new ConflictException('Exactly one discovered ad account must be selected');
+    }
+    const account = selectedAccounts[0];
+    return {
+      tenantId,
+      connectionId: connection.connectionId,
+      adAccountId: account.externalId,
+      ...(account.displayName ? { displayName: account.displayName } : {}),
+      selectedAssets: assets.filter((asset) => asset.selected).map((asset) => ({
+        assetType: asset.assetType,
+        externalId: asset.externalId,
+        ...(asset.displayName ? { displayName: asset.displayName } : {}),
+      })),
+      observedAt: account.observedAt,
+      boundaries: {
+        selectedDiscoverySnapshotOnly: true,
+        credentialExposed: false,
+        publicationAuthorized: false,
+        externalWritesAllowed: false,
+        externalWritesPerformed: false,
+      },
+    };
+  }
+
   async selectAssets(tenantId: string, connectionId: string, input: unknown) {
     const connection = await this.getConnection(tenantId, connectionId);
     if (!['connected', 'ready'].includes(connection.status) || !connection.credentialRef) {

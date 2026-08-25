@@ -60,6 +60,8 @@ export interface OperatorExecutionPlanSummaryV1 {
   currency: string;
   calculation: string;
   approvalRequired: boolean;
+  connectionId?: string;
+  adAccountId?: string;
   externalWritesAllowed: false;
   createdAt: string;
 }

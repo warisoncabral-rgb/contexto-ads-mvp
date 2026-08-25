@@ -8,6 +8,8 @@ import { loadExecutorWorkspace } from '../lib/executor-preflight.mjs'
 import ExecutorPreflightPanel from './executor-preflight-panel'
 import { loadOperationalTimeline } from '../lib/operational-timeline.mjs'
 import OperationalTimeline from './operational-timeline'
+import { loadSelectedExecutionTarget } from '../lib/meta-execution-target.mjs'
+import MetaExecutionTargetPanel from './meta-execution-target-panel'
 
 const phases = [
   ['campaignPreparation', 'Campanha'],
@@ -148,7 +150,7 @@ function WorkspaceSelector({ workspace }) {
   )
 }
 
-function DecisionDashboard({ decision, workspace, approvalResult, creativeResult, executorResult, timelineResult }) {
+function DecisionDashboard({ decision, workspace, approvalResult, creativeResult, executorResult, timelineResult, targetResult }) {
   const statusLabel = {
     blocked: 'Bloqueado',
     action_required: 'Ação necessária',
@@ -254,6 +256,7 @@ function DecisionDashboard({ decision, workspace, approvalResult, creativeResult
           ))}
         </div>
       </section>
+      <MetaExecutionTargetPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} result={targetResult} />
       <PlanApprovalPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} />
       <CreativeMediaCenter plan={workspace.selectedPlan} role={workspace.selectedTenant.role} result={creativeResult} />
       <ExecutorPreflightPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} result={executorResult} />
@@ -302,6 +305,9 @@ export default async function Page({ searchParams }) {
       apiBaseUrl: process.env.CONTEXT_ADS_API_BASE_URL,
       operatorToken: process.env.CONTEXT_ADS_OPERATOR_TOKEN })
     : { kind: 'none' }
+  const targetResult = workspace.kind === 'ready' && workspace.selectedPlan
+    ? await loadSelectedExecutionTarget({ tenantId: workspace.selectedTenant.tenantId })
+    : { kind: 'unavailable' }
 
   return (
     <main>
@@ -326,7 +332,7 @@ export default async function Page({ searchParams }) {
 
       <div className="content-shell">
         {result.kind === 'ready'
-          ? <DecisionDashboard decision={result.decision} workspace={workspace} approvalResult={approvalResult} creativeResult={creativeResult} executorResult={executorResult} timelineResult={timelineResult} />
+          ? <DecisionDashboard decision={result.decision} workspace={workspace} approvalResult={approvalResult} creativeResult={creativeResult} executorResult={executorResult} timelineResult={timelineResult} targetResult={targetResult} />
           : <EmptyState result={result} />}
       </div>
 

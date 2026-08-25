@@ -17,6 +17,7 @@ import {
 } from '../lib/meta-assets.mjs'
 import { parseExecutorAction, validExecutionAuthorization, validManifest, validPreflight,
   validProtocol } from '../lib/executor-preflight.mjs'
+import { parseExecutionTargetBinding, validBoundExecutionPlan } from '../lib/meta-execution-target.mjs'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SHA = /^[0-9a-f]{64}$/
@@ -278,6 +279,38 @@ export async function generateExecutionPlan(_previousState, formData) {
     return { error: 'O plano retornado não respeitou todas as travas e foi recusado.' }
   }
   return { plan }
+}
+
+export async function bindSelectedExecutionTarget(_previousState, formData) {
+  const parsed = parseExecutionTargetBinding(formData)
+  if (!parsed.ok) return { error: parsed.error }
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) return { error: 'A central não está conectada ao backend seguro.' }
+  let response
+  try {
+    response = await fetch(
+      `${apiBaseUrl.replace(/\/$/, '')}/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+        + `/campaigns/${encodeURIComponent(parsed.campaignId)}/plans/`
+        + `${encodeURIComponent(parsed.executionPlanId)}/target`,
+      { method: 'POST', headers: { accept: 'application/json',
+        authorization: `Bearer ${operatorToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ connectionId: parsed.connectionId, adAccountId: parsed.adAccountId }),
+      cache: 'no-store', signal: globalThis.AbortSignal.timeout(8000) },
+    )
+  } catch { return { error: 'Não foi possível vincular a conta agora. Nenhuma escrita foi iniciada.' } }
+  if ([401, 403].includes(response.status)) return { error: 'Seu acesso não permite vincular esta conta.' }
+  if ([404, 409].includes(response.status)) {
+    return { error: 'A seleção ou o plano mudou. Recarregue a integração antes de continuar.' }
+  }
+  if (!response.ok) return { error: 'O backend recusou o vínculo com segurança.' }
+  let plan
+  try { plan = await response.json() } catch { return { error: 'O backend não confirmou o novo plano.' } }
+  if (!validBoundExecutionPlan(plan, parsed)) {
+    return { error: 'O vínculo retornado não corresponde ao plano e foi recusado.' }
+  }
+  redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}`
+    + `&executionPlanId=${encodeURIComponent(plan.executionPlanId)}`)
 }
 
 export async function changePlanApproval(_previousState, formData) {

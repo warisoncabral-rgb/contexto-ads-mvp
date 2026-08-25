@@ -46,6 +46,15 @@ export class OperatorMetaController {
     return this.connections.listAssets(tenantId, connectionId);
   }
 
+  @Get('selected-execution-target')
+  async selectedExecutionTarget(
+    @Param('tenantId') tenantId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    return this.connections.selectedExecutionTarget(tenantId);
+  }
+
   @Post('connections/:connectionId/assets/selection')
   async selectAssets(
     @Param('tenantId') tenantId: string,

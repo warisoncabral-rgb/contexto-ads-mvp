@@ -74,6 +74,8 @@
 - A interface valida o contrato e recusa respostas cruzadas entre tenants, credenciais rejeitadas ou fronteiras externas inconsistentes.
 - A decisão operacional exibida usa rota autenticada de ponta a ponta; conhecer UUIDs não permite contornar a membership.
 - Fluxo guiado permite criar rascunhos de campanha, salvar progresso parcial e retomar pela versão mais recente.
+- A Central Operacional localiza a conta de anúncios previamente selecionada no snapshot Meta e a vincula ao plano sem digitação de IDs, sem expor o cofre e sem qualquer escrita externa.
+- O vínculo do alvo gera um novo plano imutável e torna conexão/conta visíveis no resumo autenticado; respostas cruzadas, seleção ausente ou múltipla são recusadas fail-closed.
 - Lacunas do contexto viram tarefas em linguagem operacional; fatos ausentes continuam sem inferência automática.
 - Criação e atualização de contexto exigem `manage_campaign_preparation`; papel `viewer` permanece estritamente leitura.
 - Versão do contexto e auditoria do operador são persistidas atomicamente na mesma transação PostgreSQL.
@@ -97,9 +99,9 @@
 3. O adapter permanece ausente até ambiente real, autorização curta e todos os gates comprovados.
 
 ## Próximo bloco interno de produto
-1. Criar a revisão humana do hash e do teto exatos do plano antes de solicitar aprovação.
-2. Proteger solicitação, aprovação, rejeição e revogação pelo papel do operador e registrar a decisão na interface.
-3. Manter aprovação separada da autorização curta de execução e toda escrita Meta desligada.
+1. Cadastrar e aprovar o primeiro pacote criativo real da Rosa VIP com referência de mídia e digest verificável.
+2. Concluir a descoberta/vinculação da Página, Instagram e WhatsApp exigidos pelo destino, sem ampliar permissões silenciosamente.
+3. Preparar o manifesto e o protocolo controlado da primeira campanha, mantendo toda escrita Meta desligada até o gate humano e a validação real.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.

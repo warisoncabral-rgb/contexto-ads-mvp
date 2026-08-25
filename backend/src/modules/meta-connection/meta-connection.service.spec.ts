@@ -26,6 +26,7 @@ describe('MetaConnectionService', () => {
     repository = {
       save: jest.fn(async (connection: MetaConnection) => { saved = connection; }),
       findById: jest.fn(async (_tenantId: string, _connectionId: string) => saved ?? null),
+      latestReadyForTenant: jest.fn(async (_tenantId: string) => saved ?? null),
       markConnected: jest.fn().mockResolvedValue(true),
       replaceBindings: jest.fn().mockResolvedValue(undefined),
       listBindings: jest.fn().mockResolvedValue([]),
@@ -208,6 +209,58 @@ describe('MetaConnectionService', () => {
       },
     }));
     expect(JSON.stringify(result)).not.toContain(saved.credentialRef!);
+  });
+
+  it('returns the selected execution target without exposing credentials', async () => {
+    saved = {
+      connectionId: missingConnectionId,
+      tenantId,
+      provider: 'meta',
+      status: 'connected',
+      credentialRef: 'postgres-vault://44444444-4444-4444-8444-444444444444',
+      createdAt: '2026-08-24T00:00:00.000Z',
+      updatedAt: '2026-08-24T00:00:00.000Z',
+    };
+    repository.listBindings.mockResolvedValueOnce([{
+      tenantId,
+      connectionId: missingConnectionId,
+      assetType: 'ad_account',
+      externalId: 'act_123',
+      displayName: 'Warison Cabral',
+      selected: true,
+      observedAt: '2026-08-25T22:00:00.000Z',
+    }]);
+
+    const result = await service.selectedExecutionTarget(tenantId);
+
+    expect(repository.latestReadyForTenant).toHaveBeenCalledWith(tenantId);
+    expect(result).toEqual(expect.objectContaining({
+      tenantId,
+      connectionId: missingConnectionId,
+      adAccountId: 'act_123',
+      displayName: 'Warison Cabral',
+      boundaries: expect.objectContaining({
+        selectedDiscoverySnapshotOnly: true,
+        credentialExposed: false,
+        externalWritesAllowed: false,
+      }),
+    }));
+    expect(JSON.stringify(result)).not.toContain('postgres-vault');
+  });
+
+  it('fails closed when a ready connection has no unique selected ad account', async () => {
+    saved = {
+      connectionId: missingConnectionId,
+      tenantId,
+      provider: 'meta',
+      status: 'connected',
+      credentialRef: 'postgres-vault://44444444-4444-4444-8444-444444444444',
+      createdAt: '2026-08-24T00:00:00.000Z',
+      updatedAt: '2026-08-24T00:00:00.000Z',
+    };
+    repository.listBindings.mockResolvedValueOnce([]);
+    await expect(service.selectedExecutionTarget(tenantId)).rejects
+      .toBeInstanceOf(ConflictException);
   });
 
   it('rejects an undiscovered, duplicated, or missing ad account selection', async () => {

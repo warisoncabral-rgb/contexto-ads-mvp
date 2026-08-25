@@ -690,3 +690,8 @@ footer p { margin: 0; }
 @media (prefers-reduced-motion: no-preference) {
   button, input, select { transition: .18s ease; }
 }
+
+.target-panel { margin-top: 24px; }
+.target-summary { display: grid; gap: 6px; padding: 18px; border: 1px solid #dbe4e1; border-radius: 14px; background: #f7faf9; }
+.target-summary span, .target-summary small { color: #65736f; }
+.target-summary strong { font-size: 1.05rem; color: #152a25; }
