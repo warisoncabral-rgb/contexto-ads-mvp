@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
 import { MetaConnectionService } from '../meta-connection/meta-connection.service';
 import { MetaOAuthService } from '../meta-oauth/meta-oauth.service';
 import { CapabilityRegistryService } from '../capability-registry/capability-registry.service';
@@ -44,6 +44,17 @@ export class OperatorMetaController {
   ) {
     await this.access.authorizeTenantConfiguration(authorization, tenantId);
     return this.connections.listAssets(tenantId, connectionId);
+  }
+
+  @Post('connections/:connectionId/assets/selection')
+  async selectAssets(
+    @Param('tenantId') tenantId: string,
+    @Param('connectionId') connectionId: string,
+    @Body() body: { assets?: unknown },
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    await this.access.authorizeTenantConfiguration(authorization, tenantId);
+    return this.connections.selectAssets(tenantId, connectionId, body?.assets);
   }
 
   @Get('connections/:connectionId')

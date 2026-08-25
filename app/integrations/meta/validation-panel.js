@@ -1,6 +1,7 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { runMetaReadOnlyValidation } from '../../actions.js'
 
 const labels = {
@@ -11,11 +12,15 @@ const labels = {
 }
 
 export default function MetaValidationPanel({ tenantId, connectionId }) {
+  const router = useRouter()
   const [state, action, pending] = useActionState(runMetaReadOnlyValidation, {
     error: '',
     report: null,
   })
   const report = state.report
+  useEffect(() => {
+    if (report?.passed) router.refresh()
+  }, [report?.passed, router])
 
   return <section className="panel meta-validation-card">
     <span className="eyebrow">Validação real somente leitura</span>

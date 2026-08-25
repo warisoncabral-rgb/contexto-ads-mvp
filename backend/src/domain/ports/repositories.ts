@@ -1,4 +1,8 @@
-import { MetaConnection, MetaAssetBinding } from '../contracts/meta-connection';
+import {
+  MetaConnection,
+  MetaAssetBinding,
+  MetaAssetSelection,
+} from '../contracts/meta-connection';
 import { CapabilityRecord } from '../contracts/capability';
 import { AuditEvent } from '../contracts/audit-event';
 import { ReadinessSnapshot, ReadOnlySmokeTestReport } from '../contracts/readiness';
@@ -38,6 +42,11 @@ export interface MetaConnectionRepository {
     bindings: MetaAssetBinding[],
   ): Promise<void>;
   listBindings(tenantId: string, connectionId: string): Promise<MetaAssetBinding[]>;
+  selectBindings(
+    tenantId: string,
+    connectionId: string,
+    selections: MetaAssetSelection[],
+  ): Promise<MetaAssetBinding[]>;
 }
 export interface CapabilityRepository {
   replaceForConnection(tenantId: string, connectionId: string, capabilities: CapabilityRecord[]): Promise<void>;
@@ -283,5 +292,5 @@ export interface MetaConnectionStore
 
 export type MetaAssetBindingStore = Pick<
   MetaConnectionRepository,
-  'replaceBindings' | 'listBindings'
+  'replaceBindings' | 'listBindings' | 'selectBindings'
 >;

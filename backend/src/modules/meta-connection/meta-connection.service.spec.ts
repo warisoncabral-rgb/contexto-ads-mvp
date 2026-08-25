@@ -29,6 +29,7 @@ describe('MetaConnectionService', () => {
       markConnected: jest.fn().mockResolvedValue(true),
       replaceBindings: jest.fn().mockResolvedValue(undefined),
       listBindings: jest.fn().mockResolvedValue([]),
+      selectBindings: jest.fn().mockResolvedValue([]),
     };
     service = new MetaConnectionService(meta, repository);
   });
@@ -154,6 +155,91 @@ describe('MetaConnectionService', () => {
     await service.listAssets(tenantId, saved!.connectionId);
     expect(repository.findById).toHaveBeenCalledWith(tenantId, saved!.connectionId);
     expect(repository.listBindings).toHaveBeenCalledWith(tenantId, saved!.connectionId);
+  });
+
+  it('selects only one discovered ad account per tenant-scoped connection', async () => {
+    saved = {
+      connectionId: missingConnectionId,
+      tenantId,
+      provider: 'meta',
+      status: 'connected',
+      credentialRef: 'postgres-vault://44444444-4444-4444-8444-444444444444',
+      createdAt: '2026-08-24T00:00:00.000Z',
+      updatedAt: '2026-08-24T00:00:00.000Z',
+    };
+    const bindings = [{
+      tenantId,
+      connectionId: missingConnectionId,
+      assetType: 'ad_account' as const,
+      externalId: 'act_123',
+      displayName: 'Main account',
+      selected: false,
+      observedAt: '2026-08-24T01:00:00.000Z',
+    }, {
+      tenantId,
+      connectionId: missingConnectionId,
+      assetType: 'facebook_page' as const,
+      externalId: '456',
+      displayName: 'WC Rosa Vip Calçados',
+      selected: false,
+      observedAt: '2026-08-24T01:00:00.000Z',
+    }];
+    repository.listBindings.mockResolvedValueOnce(bindings);
+    repository.selectBindings.mockResolvedValueOnce(bindings.map((binding) => ({
+      ...binding, selected: true,
+    })));
+
+    const result = await service.selectAssets(tenantId, missingConnectionId, [
+      { assetType: 'ad_account', externalId: 'act_123' },
+      { assetType: 'facebook_page', externalId: '456' },
+    ]);
+
+    expect(repository.selectBindings).toHaveBeenCalledWith(tenantId, missingConnectionId, [
+      { assetType: 'ad_account', externalId: 'act_123' },
+      { assetType: 'facebook_page', externalId: '456' },
+    ]);
+    expect(result).toEqual(expect.objectContaining({
+      tenantId,
+      connectionId: missingConnectionId,
+      boundaries: {
+        discoverySnapshotOnly: true,
+        externalWritesAllowed: false,
+        externalWritesPerformed: false,
+      },
+    }));
+    expect(JSON.stringify(result)).not.toContain(saved.credentialRef!);
+  });
+
+  it('rejects an undiscovered, duplicated, or missing ad account selection', async () => {
+    saved = {
+      connectionId: missingConnectionId,
+      tenantId,
+      provider: 'meta',
+      status: 'connected',
+      credentialRef: 'postgres-vault://44444444-4444-4444-8444-444444444444',
+      createdAt: '2026-08-24T00:00:00.000Z',
+      updatedAt: '2026-08-24T00:00:00.000Z',
+    };
+    repository.listBindings.mockResolvedValue([{
+      tenantId,
+      connectionId: missingConnectionId,
+      assetType: 'ad_account',
+      externalId: 'act_123',
+      selected: false,
+      observedAt: '2026-08-24T01:00:00.000Z',
+    }]);
+
+    await expect(service.selectAssets(tenantId, missingConnectionId, [
+      { assetType: 'ad_account', externalId: 'act_999' },
+    ])).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.selectAssets(tenantId, missingConnectionId, [
+      { assetType: 'facebook_page', externalId: '456' },
+    ])).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.selectAssets(tenantId, missingConnectionId, [
+      { assetType: 'ad_account', externalId: 'act_123' },
+      { assetType: 'ad_account', externalId: 'act_456' },
+    ])).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.selectBindings).not.toHaveBeenCalled();
   });
 
   it('reads only an ad account discovered for the tenant-scoped connection', async () => {

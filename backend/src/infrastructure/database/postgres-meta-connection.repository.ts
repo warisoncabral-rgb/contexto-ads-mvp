@@ -1,5 +1,9 @@
 import { Pool, PoolClient } from 'pg';
-import { MetaAssetBinding, MetaConnection } from '../../domain/contracts/meta-connection';
+import {
+  MetaAssetBinding,
+  MetaAssetSelection,
+  MetaConnection,
+} from '../../domain/contracts/meta-connection';
 import {
   MetaAssetBindingStore,
   MetaConnectionStore,
@@ -104,6 +108,15 @@ implements MetaConnectionStore, MetaAssetBindingStore {
     try {
       await client.query('begin');
       await this.lockConnection(client, tenantId, connectionId);
+      const selected = await client.query<Pick<MetaAssetBindingRow, 'asset_type' | 'external_id'>>(
+        `select asset_type, external_id from meta_asset_bindings
+        where tenant_id = $1 and connection_id = $2 and selected = true
+        for update`,
+        [tenantId, connectionId],
+      );
+      const selectedKeys = new Set(selected.rows.map(
+        (row) => `${row.asset_type}:${row.external_id}`,
+      ));
       await client.query(
         'delete from meta_asset_bindings where tenant_id = $1 and connection_id = $2',
         [tenantId, connectionId],
@@ -120,7 +133,7 @@ implements MetaConnectionStore, MetaAssetBindingStore {
             binding.assetType,
             binding.externalId,
             binding.displayName ?? null,
-            binding.selected,
+            binding.selected || selectedKeys.has(`${binding.assetType}:${binding.externalId}`),
             binding.observedAt,
           ],
         );
@@ -155,6 +168,59 @@ implements MetaConnectionStore, MetaAssetBindingStore {
       selected: row.selected,
       observedAt: row.observed_at.toISOString(),
     }));
+  }
+
+  async selectBindings(
+    tenantId: string,
+    connectionId: string,
+    selections: MetaAssetSelection[],
+  ): Promise<MetaAssetBinding[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await this.lockConnection(client, tenantId, connectionId);
+      await client.query(
+        `update meta_asset_bindings set selected = false
+        where tenant_id = $1 and connection_id = $2`,
+        [tenantId, connectionId],
+      );
+      for (const selection of selections) {
+        const updated = await client.query(
+          `update meta_asset_bindings set selected = true
+          where tenant_id = $1 and connection_id = $2
+            and asset_type = $3 and external_id = $4`,
+          [tenantId, connectionId, selection.assetType, selection.externalId],
+        );
+        if (updated.rowCount !== 1) throw new Error('Discovered Meta asset not found');
+      }
+      const result = await client.query<MetaAssetBindingRow>(
+        `select tenant_id, connection_id, asset_type, external_id,
+          display_name, selected, observed_at
+        from meta_asset_bindings
+        where tenant_id = $1 and connection_id = $2
+        order by asset_type, external_id`,
+        [tenantId, connectionId],
+      );
+      await client.query('commit');
+      return result.rows.map((row) => this.toBinding(row));
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private toBinding(row: MetaAssetBindingRow): MetaAssetBinding {
+    return {
+      tenantId: row.tenant_id,
+      connectionId: row.connection_id,
+      assetType: row.asset_type,
+      externalId: row.external_id,
+      ...(row.display_name ? { displayName: row.display_name } : {}),
+      selected: row.selected,
+      observedAt: row.observed_at.toISOString(),
+    };
   }
 
   private async lockConnection(

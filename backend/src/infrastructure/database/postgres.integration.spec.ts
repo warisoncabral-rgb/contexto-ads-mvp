@@ -352,6 +352,42 @@ describeWithPostgres('PostgreSQL integration', () => {
       observedAt,
     }]);
 
+    await expect(repository.selectBindings(tenantId, connectionId, [{
+      assetType: 'ad_account', externalId: 'act_123',
+    }])).resolves.toEqual([expect.objectContaining({
+      tenantId, connectionId, assetType: 'ad_account', externalId: 'act_123', selected: true,
+    })]);
+
+    await repository.replaceBindings(tenantId, connectionId, [{
+      tenantId,
+      connectionId,
+      assetType: 'ad_account',
+      externalId: 'act_123',
+      displayName: 'Main account refreshed',
+      selected: false,
+      observedAt: '2026-08-24T02:00:00.000Z',
+    }, {
+      tenantId,
+      connectionId,
+      assetType: 'facebook_page',
+      externalId: '456',
+      displayName: 'WC Rosa Vip Calçados',
+      selected: false,
+      observedAt: '2026-08-24T02:00:00.000Z',
+    }]);
+    await expect(repository.listBindings(tenantId, connectionId)).resolves.toEqual([
+      expect.objectContaining({ assetType: 'ad_account', externalId: 'act_123', selected: true }),
+      expect.objectContaining({ assetType: 'facebook_page', externalId: '456', selected: false }),
+    ]);
+
+    await expect(repository.selectBindings(tenantId, connectionId, [{
+      assetType: 'ad_account', externalId: 'act_999',
+    }])).rejects.toThrow('Discovered Meta asset not found');
+    await expect(repository.listBindings(tenantId, connectionId)).resolves.toEqual([
+      expect.objectContaining({ assetType: 'ad_account', externalId: 'act_123', selected: true }),
+      expect.objectContaining({ assetType: 'facebook_page', externalId: '456', selected: false }),
+    ]);
+
     await expect(pool.query(
       `insert into meta_asset_bindings (
         tenant_id, connection_id, asset_type, external_id, selected, observed_at

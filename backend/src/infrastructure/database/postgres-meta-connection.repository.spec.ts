@@ -110,17 +110,21 @@ describe('PostgresMetaConnectionRepository', () => {
       ['tenant-1', 'connection-1'],
     ]);
     expect(clientQuery.mock.calls[2]).toEqual([
-      expect.stringContaining('delete from meta_asset_bindings'),
+      expect.stringContaining('selected = true'),
       ['tenant-1', 'connection-1'],
     ]);
     expect(clientQuery.mock.calls[3]).toEqual([
+      expect.stringContaining('delete from meta_asset_bindings'),
+      ['tenant-1', 'connection-1'],
+    ]);
+    expect(clientQuery.mock.calls[4]).toEqual([
       expect.stringContaining('insert into meta_asset_bindings'),
       [
         'tenant-1', 'connection-1', 'ad_account', 'act_123',
         'Main account', false, binding.observedAt,
       ],
     ]);
-    expect(clientQuery.mock.calls[4]).toEqual(['commit']);
+    expect(clientQuery.mock.calls[5]).toEqual(['commit']);
     expect(release).toHaveBeenCalledTimes(1);
   });
 
@@ -140,6 +144,7 @@ describe('PostgresMetaConnectionRepository', () => {
     clientQuery
       .mockResolvedValueOnce({ rows: [], rowCount: null })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 })
       .mockRejectedValueOnce(new Error('insert failed'))
       .mockResolvedValueOnce({ rows: [], rowCount: null });
@@ -180,5 +185,34 @@ describe('PostgresMetaConnectionRepository', () => {
       expect.stringContaining('where tenant_id = $1 and connection_id = $2'),
       ['tenant-1', 'connection-1'],
     );
+  });
+
+  it('selects discovered bindings atomically and returns the resulting snapshot', async () => {
+    const observedAt = new Date('2026-08-24T01:00:00.000Z');
+    clientQuery
+      .mockResolvedValueOnce({ rows: [], rowCount: null })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 2 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{
+        tenant_id: 'tenant-1', connection_id: 'connection-1',
+        asset_type: 'ad_account', external_id: 'act_123',
+        display_name: 'Main account', selected: true, observed_at: observedAt,
+      }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: null });
+
+    await expect(repository.selectBindings('tenant-1', 'connection-1', [{
+      assetType: 'ad_account', externalId: 'act_123',
+    }])).resolves.toEqual([expect.objectContaining({
+      tenantId: 'tenant-1', connectionId: 'connection-1',
+      assetType: 'ad_account', externalId: 'act_123', selected: true,
+    })]);
+    expect(clientQuery).toHaveBeenNthCalledWith(3,
+      expect.stringContaining('set selected = false'), ['tenant-1', 'connection-1']);
+    expect(clientQuery).toHaveBeenNthCalledWith(4,
+      expect.stringContaining('set selected = true'),
+      ['tenant-1', 'connection-1', 'ad_account', 'act_123']);
+    expect(clientQuery).toHaveBeenLastCalledWith('commit');
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });

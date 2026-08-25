@@ -6,7 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { MetaAssetBinding, MetaConnection } from '../../domain/contracts/meta-connection';
+import {
+  MetaAssetBinding,
+  MetaAssetSelection,
+  MetaConnection,
+} from '../../domain/contracts/meta-connection';
 import {
   MetaAssetBindingStore,
   MetaConnectionStore,
@@ -81,6 +85,34 @@ export class MetaConnectionService {
     return this.connections.listBindings(tenantId, connectionId);
   }
 
+  async selectAssets(tenantId: string, connectionId: string, input: unknown) {
+    const connection = await this.getConnection(tenantId, connectionId);
+    if (!['connected', 'ready'].includes(connection.status) || !connection.credentialRef) {
+      throw new ConflictException('Meta connection is not ready for asset selection');
+    }
+    const selections = this.parseSelections(input);
+    const bindings = await this.connections.listBindings(tenantId, connectionId);
+    const discovered = new Set(bindings.map(
+      (binding) => `${binding.assetType}:${binding.externalId}`,
+    ));
+    if (selections.some(
+      (selection) => !discovered.has(`${selection.assetType}:${selection.externalId}`),
+    )) {
+      throw new BadRequestException('Every selected asset must exist in the discovery snapshot');
+    }
+    const assets = await this.connections.selectBindings(tenantId, connectionId, selections);
+    return {
+      tenantId,
+      connectionId,
+      assets,
+      boundaries: {
+        discoverySnapshotOnly: true,
+        externalWritesAllowed: false,
+        externalWritesPerformed: false,
+      },
+    };
+  }
+
   async readDiscoveredAdAccount(
     tenantId: string,
     connectionId: string,
@@ -120,5 +152,34 @@ export class MetaConnectionService {
     if (!/^act_\d+$/.test(adAccountId)) {
       throw new BadRequestException('adAccountId must use the act_<digits> format');
     }
+  }
+
+  private parseSelections(input: unknown): MetaAssetSelection[] {
+    if (!Array.isArray(input) || input.length === 0 || input.length > 5) {
+      throw new BadRequestException('assets must contain one selection per asset type');
+    }
+    const selections: MetaAssetSelection[] = [];
+    const types = new Set<string>();
+    for (const value of input) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new BadRequestException('Each asset selection must be an object');
+      }
+      const assetType = (value as Record<string, unknown>).assetType;
+      const externalId = (value as Record<string, unknown>).externalId;
+      if (!['business', 'ad_account', 'facebook_page', 'instagram_account', 'whatsapp']
+        .includes(String(assetType)) || typeof externalId !== 'string'
+        || externalId.length > 64 || types.has(String(assetType))) {
+        throw new BadRequestException('Asset selections must be unique and well formed');
+      }
+      if (assetType === 'ad_account' ? !/^act_\d+$/.test(externalId) : !/^\d+$/.test(externalId)) {
+        throw new BadRequestException('Asset id format is invalid');
+      }
+      types.add(String(assetType));
+      selections.push({ assetType: assetType as MetaAssetBinding['assetType'], externalId });
+    }
+    if (!types.has('ad_account')) {
+      throw new BadRequestException('Exactly one discovered ad account must be selected');
+    }
+    return selections;
   }
 }

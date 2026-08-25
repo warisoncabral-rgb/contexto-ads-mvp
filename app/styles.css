@@ -75,6 +75,19 @@ main { min-height: 100vh; }
 .meta-validation-steps article > strong { font-size: 13px; }
 .meta-validation-steps article > p, .validation-blockers { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .meta-validation-result > small { color: var(--muted); }
+.meta-assets-card { padding: 28px; }
+.meta-assets-card h2 { margin: 8px 0 14px; font-size: 25px; }
+.meta-assets-card > p { color: var(--muted); line-height: 1.6; font-size: 13px; }
+.meta-assets-card form { margin-top: 20px; display: grid; gap: 18px; }
+.meta-asset-groups { display: grid; gap: 14px; }
+.meta-asset-groups fieldset { margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+.meta-asset-groups legend { padding: 0 7px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
+.meta-asset-groups label { padding: 10px; border-radius: 9px; display: flex; gap: 10px; align-items: center; cursor: pointer; }
+.meta-asset-groups label:has(input:checked) { background: var(--green-soft); }
+.meta-asset-groups label span { display: grid; gap: 3px; }
+.meta-asset-groups label strong { font-size: 13px; }
+.meta-asset-groups label small { color: var(--muted); font-size: 10px; }
+.asset-selection-success { border-radius: 12px; background: var(--green-soft); color: var(--green) !important; padding: 12px 14px; font-weight: 750; }
 
 .topbar {
   max-width: 1240px;

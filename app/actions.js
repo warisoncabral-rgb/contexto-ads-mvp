@@ -10,6 +10,11 @@ import {
   parseMetaValidationInput,
   validReadOnlySmokeReport,
 } from '../lib/meta-readonly-validation.mjs'
+import {
+  parseMetaAssetSelection,
+  selectedMetaAssetsMatch,
+  validMetaAssetSnapshot,
+} from '../lib/meta-assets.mjs'
 import { parseExecutorAction, validExecutionAuthorization, validManifest, validPreflight,
   validProtocol } from '../lib/executor-preflight.mjs'
 
@@ -120,6 +125,55 @@ export async function runMetaReadOnlyValidation(_previousState, formData) {
       blockers: [...report.blockers],
     },
   }
+}
+
+export async function selectMetaAssets(_previousState, formData) {
+  const parsed = parseMetaAssetSelection(formData)
+  if (!parsed.ok) return { error: 'Selecione uma conta de anúncios válida.', selectedAssets: [] }
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) {
+    return { error: 'A central ainda não está conectada ao backend seguro.', selectedAssets: [] }
+  }
+  let response
+  try {
+    response = await fetch(
+      `${apiBaseUrl.replace(/\/$/, '')}/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+        + `/meta/connections/${encodeURIComponent(parsed.connectionId)}/assets/selection`,
+      {
+        method: 'POST',
+        headers: { accept: 'application/json', authorization: `Bearer ${operatorToken}`,
+          'content-type': 'application/json' },
+        body: JSON.stringify({ assets: parsed.assets }),
+        cache: 'no-store',
+        signal: globalThis.AbortSignal.timeout(65000),
+      },
+    )
+  } catch {
+    return { error: 'O backend não respondeu a tempo. Nenhuma seleção foi alterada.', selectedAssets: [] }
+  }
+  if ([401, 403].includes(response.status)) {
+    return { error: 'Seu acesso não permite vincular estes ativos.', selectedAssets: [] }
+  }
+  if (!response.ok) {
+    return { error: 'O backend recusou a seleção com segurança.', selectedAssets: [] }
+  }
+  let snapshot
+  try { snapshot = await response.json() } catch {
+    return { error: 'O backend não confirmou a seleção.', selectedAssets: [] }
+  }
+  if (!validMetaAssetSnapshot(snapshot, parsed)) {
+    return { error: 'A seleção retornada não corresponde à conexão solicitada.', selectedAssets: [] }
+  }
+  if (!selectedMetaAssetsMatch(snapshot, parsed.assets)) {
+    return { error: 'O backend não confirmou todos os ativos escolhidos.', selectedAssets: [] }
+  }
+  const selectedAssets = snapshot.assets.filter((asset) => asset.selected).map(
+    ({ assetType, externalId, displayName }) => ({
+      assetType, externalId, ...(displayName ? { displayName } : {}),
+    }),
+  )
+  return { error: '', selectedAssets }
 }
 
 export async function saveCampaignContext(_previousState, formData) {

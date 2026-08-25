@@ -10,7 +10,7 @@ describe('OperatorMetaController', () => {
   const connectionId = '33333333-3333-4333-8333-333333333333';
   let access: { authorizeTenantConfiguration: jest.Mock };
   let connections: { beginConnection: jest.Mock; getConnection: jest.Mock;
-    listAssets: jest.Mock; discoverAssets: jest.Mock };
+    listAssets: jest.Mock; discoverAssets: jest.Mock; selectAssets: jest.Mock };
   let oauth: { start: jest.Mock };
   let capabilities: { validateReadOnly: jest.Mock };
   let readiness: { runReadOnlySmokeTest: jest.Mock; latestReadOnlySmokeTest: jest.Mock };
@@ -21,6 +21,7 @@ describe('OperatorMetaController', () => {
     connections = {
       beginConnection: jest.fn().mockResolvedValue({ connectionId }),
       getConnection: jest.fn(), listAssets: jest.fn(), discoverAssets: jest.fn(),
+      selectAssets: jest.fn(),
     };
     oauth = { start: jest.fn().mockResolvedValue({
       authorizationUrl: 'https://www.facebook.com/v26.0/dialog/oauth?state=safe',
@@ -65,5 +66,19 @@ describe('OperatorMetaController', () => {
       'Bearer secret', tenantId,
     );
     expect(readiness.runReadOnlySmokeTest).toHaveBeenCalledWith(tenantId, connectionId);
+  });
+
+  it('authorizes membership before selecting discovered assets', async () => {
+    const assets = [{ assetType: 'ad_account', externalId: 'act_123' }];
+    connections.selectAssets.mockResolvedValue({ assets });
+
+    await controller.selectAssets(tenantId, connectionId, { assets }, 'Bearer secret');
+
+    expect(access.authorizeTenantConfiguration).toHaveBeenCalledWith(
+      'Bearer secret', tenantId,
+    );
+    expect(access.authorizeTenantConfiguration.mock.invocationCallOrder[0])
+      .toBeLessThan(connections.selectAssets.mock.invocationCallOrder[0]);
+    expect(connections.selectAssets).toHaveBeenCalledWith(tenantId, connectionId, assets);
   });
 });

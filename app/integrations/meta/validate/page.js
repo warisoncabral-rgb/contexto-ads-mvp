@@ -1,4 +1,6 @@
 import { loadOperatorWorkspace } from '../../../../lib/operator-workspace.mjs'
+import { loadMetaAssets } from '../../../../lib/meta-assets.mjs'
+import MetaAssetSelectionPanel from '../asset-selection-panel.js'
 import MetaValidationPanel from '../validation-panel.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -10,6 +12,9 @@ export default async function MetaValidationPage({ searchParams }) {
   const workspace = await loadOperatorWorkspace({ requestedTenantId: tenantId })
   const selectedTenant = workspace.kind === 'ready' ? workspace.selectedTenant : null
   const validScope = selectedTenant?.tenantId === tenantId && UUID.test(connectionId)
+  const assetState = validScope
+    ? await loadMetaAssets({ tenantId, connectionId })
+    : { kind: 'invalid' }
 
   return <main>
     <header className="topbar">
@@ -28,6 +33,9 @@ export default async function MetaValidationPage({ searchParams }) {
       {validScope
         ? <MetaValidationPanel tenantId={tenantId} connectionId={connectionId} />
         : <section className="panel integration-card"><h2>Validação indisponível</h2><p className="form-error">A empresa ou a conexão não correspondem ao seu acesso autorizado.</p></section>}
+      {validScope && assetState.kind === 'ready'
+        ? <MetaAssetSelectionPanel tenantId={tenantId} connectionId={connectionId} assets={assetState.assets} />
+        : validScope && <section className="panel integration-card"><h2>Ativos indisponíveis</h2><p className="empty-copy">O backend ainda não devolveu um snapshot válido dos ativos desta conexão.</p></section>}
     </section>
   </main>
 }
