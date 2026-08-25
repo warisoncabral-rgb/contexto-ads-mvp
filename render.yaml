@@ -14,7 +14,7 @@ services:
     plan: free
     region: virginia
     rootDir: backend
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: sh -c 'export META_OAUTH_REDIRECT_URI="${META_OAUTH_REDIRECT_URI:-https://$RENDER_EXTERNAL_HOSTNAME/v1/meta/oauth/callback}"; npm run start:prod'
     healthCheckPath: /v1/health
     autoDeployTrigger: checksPass
@@ -47,7 +47,7 @@ services:
     runtime: node
     plan: free
     region: virginia
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: sh -c 'export CONTEXT_ADS_API_BASE_URL="http://$CONTEXT_ADS_API_HOSTPORT"; npm start'
     healthCheckPath: /
     autoDeployTrigger: checksPass
