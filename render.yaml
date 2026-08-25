@@ -33,14 +33,10 @@ services:
         value: https://graph.facebook.com
       - key: META_GRAPH_API_VERSION
         value: v26.0
-      - key: META_APP_ID
-        sync: false
-      - key: META_APP_SECRET
-        sync: false
       - key: OPERATOR_BOOTSTRAP_SUBJECT
         value: operator:warison
-      - key: OPERATOR_BOOTSTRAP_TOKEN_SHA256
-        sync: false
+      - key: OPERATOR_BOOTSTRAP_TOKEN
+        generateValue: true
       - key: BOOTSTRAP_TENANT_ID
         value: 22222222-2222-4222-8222-222222222222
       - key: BOOTSTRAP_TENANT_DISPLAY_NAME
@@ -64,4 +60,7 @@ services:
           name: contexto-ads-validation-api
           property: hostport
       - key: CONTEXT_ADS_OPERATOR_TOKEN
-        sync: false
+        fromService:
+          type: web
+          name: contexto-ads-validation-api
+          envVarKey: OPERATOR_BOOTSTRAP_TOKEN
