@@ -84,6 +84,33 @@ test('authenticates server-side and selects the first authorized tenant and plan
   assert.equal(requests[1].url, `https://api.test/v1/operator/tenants/${tenantId}/plans`)
 })
 
+test('honors the configured backend timeout for free-service cold starts', async () => {
+  const originalTimeout = globalThis.AbortSignal.timeout
+  const originalSetting = process.env.CONTEXT_ADS_API_TIMEOUT_MS
+  const observed = []
+  globalThis.AbortSignal.timeout = (milliseconds) => {
+    observed.push(milliseconds)
+    return originalTimeout(milliseconds)
+  }
+  process.env.CONTEXT_ADS_API_TIMEOUT_MS = '65000'
+
+  try {
+    const result = await loadOperatorWorkspace({
+      apiBaseUrl: 'https://api.test',
+      operatorToken: 'server-only-secret',
+      fetchImpl: async (url) => url.endsWith('/tenants')
+        ? response(access)
+        : response(planList),
+    })
+    assert.equal(result.kind, 'ready')
+    assert.deepEqual(observed, [65000, 65000])
+  } finally {
+    globalThis.AbortSignal.timeout = originalTimeout
+    if (originalSetting === undefined) delete process.env.CONTEXT_ADS_API_TIMEOUT_MS
+    else process.env.CONTEXT_ADS_API_TIMEOUT_MS = originalSetting
+  }
+})
+
 test('refuses a tenant not returned by authenticated membership lookup', async () => {
   let requestCount = 0
   const result = await loadOperatorWorkspace({
