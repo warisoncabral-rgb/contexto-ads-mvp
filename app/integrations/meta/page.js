@@ -14,7 +14,7 @@ export default async function MetaIntegrationPage({ searchParams }) {
   const params = await searchParams
   const requestedTenantId = typeof params?.tenantId === 'string' ? params.tenantId : ''
   const workspace = await loadOperatorWorkspace({ requestedTenantId })
-  const tenants = workspace.kind === 'ready' ? workspace.tenants : []
+  const tenants = workspace.kind === 'ready' ? workspace.access.tenants : []
   const selectedTenantId = tenants.some((tenant) => tenant.tenantId === requestedTenantId)
     ? requestedTenantId : tenants[0]?.tenantId ?? ''
   const error = typeof params?.error === 'string' ? ERRORS[params.error] : ''
