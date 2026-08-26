@@ -31,7 +31,9 @@ export default async function MetaValidationPage({ searchParams }) {
         <p>A credencial permanece criptografada no backend. O navegador recebe apenas o resultado sanitizado de cada verificação.</p>
       </div>
       {validScope
-        ? <MetaValidationPanel tenantId={tenantId} connectionId={connectionId} />
+        ? <MetaValidationPanel tenantId={tenantId} connectionId={connectionId}
+          needsPageAuthorization={assetState.kind === 'ready'
+            && !assetState.assets.some((asset) => asset.assetType === 'facebook_page')} />
         : <section className="panel integration-card"><h2>Validação indisponível</h2><p className="form-error">A empresa ou a conexão não correspondem ao seu acesso autorizado.</p></section>}
       {validScope && assetState.kind === 'ready'
         ? <MetaAssetSelectionPanel tenantId={tenantId} connectionId={connectionId} assets={assetState.assets} />
