@@ -8,7 +8,10 @@ import {
   parseReadinessEvaluation,
   validOperationalDecision,
 } from '../lib/operational-readiness.mjs'
-import { parseCreativeForm, validCreativePackage } from '../lib/creative-media-center.mjs'
+import {
+  parseCreativeForm,
+  validCreativeMutationEnvelope,
+} from '../lib/creative-media-center.mjs'
 import {
   parseMetaValidationInput,
   validReadOnlySmokeReport,
@@ -432,15 +435,9 @@ export async function changeCreativePackage(_previousState, formData) {
     return { error: 'O backend não confirmou o criativo de forma válida.' }
   }
   const plan = result?.executionPlan
-  if (!validCreativePackage(result?.creativePackage, parsed)
-    || plan?.tenantId !== parsed.tenantId || plan?.campaignId !== parsed.campaignId
-    || !UUID.test(plan?.executionPlanId) || !SHA.test(plan?.planHash)
-    || plan?.approvalRequired !== true || plan?.externalWritesAllowed !== false
+  if (!validCreativeMutationEnvelope(result, parsed)
     || !validOperationalDecision(result?.readiness, parsed.tenantId, plan?.executionPlanId)
-    || result.boundaries?.creativeApprovalIsPlanApproval !== false
-    || result.boundaries?.publicationAuthorized !== false
-    || result.boundaries?.externalWritesAllowed !== false
-    || result.boundaries?.externalWritesPerformed !== false) {
+  ) {
     return { error: 'A confirmação criativa ficou inconsistente e foi recusada. Nada foi publicado.' }
   }
   redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}`

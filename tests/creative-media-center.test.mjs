@@ -5,6 +5,7 @@ import {
   parseCreativeForm,
   ROSA_VIP_CREATIVE_DRAFT_PRESET,
   ROSA_VIP_WHATSAPP_MESSAGE,
+  validCreativeMutationEnvelope,
   validCreativePackage,
 } from '../lib/creative-media-center.mjs'
 
@@ -83,4 +84,32 @@ test('keeps three Rosa VIP copy drafts aligned with the approved campaign bounda
     ROSA_VIP_WHATSAPP_MESSAGE,
     'Olá! Vi o anúncio da Rosa VIP e gostaria de conhecer os modelos disponíveis no atacado.',
   )
+})
+
+test('accepts the domain execution-plan envelope returned after creative mutation', () => {
+  const result = {
+    creativePackage,
+    executionPlan: {
+      tenantId: plan.tenantId,
+      campaignId: plan.campaignId,
+      executionPlanId: '55555555-5555-4555-8555-555555555555',
+      planHash: 'd'.repeat(64),
+      autonomy: { level: 'A0', approvalRequired: true },
+      externalEffects: { writesAllowed: false, writesPerformed: false },
+    },
+    boundaries: {
+      creativeApprovalIsPlanApproval: false,
+      publicationAuthorized: false,
+      externalWritesAllowed: false,
+      externalWritesPerformed: false,
+    },
+  }
+  assert.equal(validCreativeMutationEnvelope(result, plan), true)
+  assert.equal(validCreativeMutationEnvelope({
+    ...result,
+    executionPlan: {
+      ...result.executionPlan,
+      externalEffects: { writesAllowed: true, writesPerformed: false },
+    },
+  }, plan), false)
 })
