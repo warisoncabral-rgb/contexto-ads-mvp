@@ -185,16 +185,6 @@ export class OperatorAccessController {
     return this.service.getExecutionAuthorization(authorization, tenantId, executionAuthorizationId);
   }
 
-  @Post('tenants/:tenantId/execution-authorizations/:executionAuthorizationId/:decision')
-  decideExecutionAuthorization(@Param('tenantId') tenantId: string,
-    @Param('executionAuthorizationId') executionAuthorizationId: string,
-    @Param('decision') decision: string, @Body() body: { reason?: string },
-    @Headers('authorization') authorization?: string) {
-    return this.service.decideExecutionAuthorization(
-      authorization, tenantId, executionAuthorizationId, decision, body?.reason,
-    );
-  }
-
   @Post('tenants/:tenantId/execution-authorizations/:executionAuthorizationId/preflights')
   runExecutionPreflight(@Param('tenantId') tenantId: string,
     @Param('executionAuthorizationId') executionAuthorizationId: string,
@@ -237,6 +227,19 @@ export class OperatorAccessController {
     @Headers('authorization') authorization?: string) {
     return this.service.executeMetaPausedCreation(
       authorization, tenantId, executionAuthorizationId,
+    );
+  }
+
+  // Keep the catch-all decision route after the static execution routes. Express
+  // resolves controller routes in registration order; placing this route first
+  // makes "preflights" and "execute-paused" look like invalid decisions.
+  @Post('tenants/:tenantId/execution-authorizations/:executionAuthorizationId/:decision')
+  decideExecutionAuthorization(@Param('tenantId') tenantId: string,
+    @Param('executionAuthorizationId') executionAuthorizationId: string,
+    @Param('decision') decision: string, @Body() body: { reason?: string },
+    @Headers('authorization') authorization?: string) {
+    return this.service.decideExecutionAuthorization(
+      authorization, tenantId, executionAuthorizationId, decision, body?.reason,
     );
   }
 
