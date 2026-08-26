@@ -28,7 +28,17 @@ Permitido: validar, persistir/versionar internamente, criar/reusar Campaign Cont
 Proibido nessa operação: criar objetos Meta, ativar campanha, autorizar gasto, liberar veiculação, substituir aprovação humana ou executar manifesto.
 
 ### `getCampaignPackageStatus`
-Retorna estado sanitizado e próximo passo.
+Retorna estado sanitizado e próximo passo. Quando existir uma aprovação vigente ligada ao ID/hash exatos do plano atual, o status também devolve `plan_approval`.
+
+Estados de próximo passo congelados:
+
+- `REVIEW_AND_APPROVE_CREATIVE_PACKAGE`;
+- `RESOLVE_META_TARGET`;
+- `REQUEST_EXECUTION_PLAN_APPROVAL`;
+- `DECIDE_EXECUTION_PLAN_APPROVAL`;
+- `EXECUTION_GATE_SEPARATE`.
+
+`EXECUTION_GATE_SEPARATE` significa que o plano já foi aprovado e a responsabilidade da Action V1 terminou. Não significa autorização de execução.
 
 ### `submitReviewedCreativePackage`
 Envia uma nova versão do Creative Package após revisão humana dos textos, mídia e checklist. Não aprova automaticamente.
@@ -74,7 +84,8 @@ Sequência recomendada:
 8. `requestExecutionPlanApproval`;
 9. apresentar hash, teto financeiro e escopo;
 10. após aprovação explícita, `decideExecutionPlanApproval` com `approve`;
-11. encerrar a Action V1 nesse ponto; execução continua em gate separado.
+11. consultar novamente `getCampaignPackageStatus` e exigir `EXECUTION_GATE_SEPARATE`;
+12. encerrar a Action V1 nesse ponto; execução continua em gate separado.
 
 ## Limite de segurança congelado da Action V1
 
@@ -106,19 +117,48 @@ O workflow `Campaign Package E2E validation`, em PostgreSQL 18 e API Nest reais,
 9. `approvalIsExecutionAuthorization=false`;
 10. zero escrita Meta durante todo o fluxo.
 
+O smoke de aprovação também consulta novamente o status do pacote após aprovar o plano. O aceite final exige `plan_approval.status=approved`, `next_action=EXECUTION_GATE_SEPARATE`, `plan_approval_is_execution_authorization=false` e zero efeitos externos.
+
+## Prova hospedada automatizada
+
+Workflow preparado: `.github/workflows/campaign-package-hosted-smoke.yml`.
+
+Nome no GitHub Actions: `Campaign Package Hosted Candidate validation`.
+
+Ele é manual (`workflow_dispatch`) e recebe:
+
+- `base_url`: URL do backend candidato incluindo `/v1`;
+- `tenant_id`: tenant usado para a prova.
+
+Antes de executá-lo, deve existir o segredo de repositório:
+
+`CONTEXT_ADS_HOSTED_OPERATOR_TOKEN`
+
+Esse segredo deve conter o mesmo token operacional aceito pelo backend candidato. O workflow não imprime o token.
+
+Cada execução cria um `package_id` novo, remove IDs específicos de ad account/Página/Instagram/WhatsApp e executa somente:
+
+1. validação;
+2. preparação;
+3. handoff interno autenticado;
+4. consulta de status;
+5. revisão criativa;
+6. aprovação do criativo;
+7. solicitação de aprovação do plano;
+8. aprovação do plano;
+9. confirmação do gate separado de execução.
+
+Manifesto, autorização curta, preflight e `execute-paused` não são chamados pelo workflow hospedado.
+
 ## Teste de aceite hospedado sem escrita
 
-1. Criar campanha completa no Contexto Ads.
-2. Gerar novo `Campaign Package V1`.
-3. `submitCampaignPackage` e repetir para confirmar idempotência.
-4. `getCampaignPackageStatus`.
-5. Confirmar Campaign Context, Creative Package e Execution Plan.
-6. Confirmar binding Meta somente se o ativo já estiver descoberto para o tenant.
-7. Revisar e `submitReviewedCreativePackage`.
-8. Consultar e aprovar versão criativa exata.
-9. Solicitar e decidir aprovação do plano.
-10. Confirmar `publication_authorized=false`, `approvalIsExecutionAuthorization=false` e ausência de escrita Meta.
-11. Confirmar que nenhum objeto novo foi criado na Meta.
+1. Disponibilizar o candidato no backend hospedado.
+2. Configurar o segredo `CONTEXT_ADS_HOSTED_OPERATOR_TOKEN` no GitHub.
+3. Disparar `Campaign Package Hosted Candidate validation` apontando para a URL candidata.
+4. Exigir conclusão `success`.
+5. Confirmar `publication_authorized=false`, `approvalIsExecutionAuthorization=false`, `plan_approval_is_execution_authorization=false` e ausência de escrita Meta.
+6. Confirmar que nenhum objeto novo foi criado na Meta durante a prova.
+7. Somente depois importar o OpenAPI no GPT Contexto Ads e repetir o fluxo a partir de uma conversa real.
 
 ## Gate seguinte
 
