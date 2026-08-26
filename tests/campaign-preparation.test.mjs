@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { loadCampaignPreparation, parseCampaignForm } from '../lib/campaign-preparation.mjs'
+import {
+  APPROVED_ROSA_VIP_CAMPAIGN_PRESET,
+  loadCampaignPreparation,
+  parseCampaignForm,
+} from '../lib/campaign-preparation.mjs'
 
 const tenantId = '11111111-1111-4111-8111-111111111111'
 const campaignId = '22222222-2222-4222-8222-222222222222'
@@ -129,4 +133,20 @@ test('keeps partial progress but rejects ambiguous partial budget data', () => {
   assert.equal(result.ok, false)
   assert.match(result.error, /tipo e o valor/)
   assert.equal(result.values.businessName, 'Rosa VIP')
+})
+
+test('keeps the approved Rosa VIP launch preset exact and internally valid', () => {
+  const form = new FormData()
+  form.set('tenantId', tenantId)
+  Object.entries(APPROVED_ROSA_VIP_CAMPAIGN_PRESET)
+    .forEach(([name, value]) => form.set(name, value))
+  const result = parseCampaignForm(form)
+  assert.equal(result.ok, true)
+  assert.equal(result.facts.businessName, 'Rosa VIP')
+  assert.equal(result.facts.objective, 'leads')
+  assert.equal(result.facts.destination, 'whatsapp')
+  assert.equal(result.facts.geography, 'Recife-PE e Natal-RN')
+  assert.equal(result.facts.budget.amountMinor, 1000)
+  assert.equal(result.facts.durationDays, 30)
+  assert.doesNotMatch(result.facts.audience, /renda extra/i)
 })

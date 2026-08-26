@@ -42,3 +42,25 @@ test('requires exact version and SHA-256 to approve', () => {
   form.set('contentHash', 'short')
   assert.equal(parseCreativeForm(form).ok, false)
 })
+
+test('parses three complete ad variants and rejects a partial pair', () => {
+  const form = new FormData()
+  for (const key of ['tenantId', 'campaignId', 'executionPlanId']) form.set(key, plan[key])
+  form.set('creativeAction', 'create')
+  for (const index of [1, 2, 3]) {
+    const suffix = index === 1 ? '' : `_${index}`
+    Object.entries({ [`primaryText${suffix}`]: `Texto ${index}`,
+      [`headline${suffix}`]: `Título ${index}`,
+      [`callToAction${suffix}`]: 'SEND_WHATSAPP_MESSAGE',
+      [`storageRef${suffix}`]: `media/file-${index}`,
+      [`sha256${suffix}`]: `${index}`.repeat(64),
+      [`mimeType${suffix}`]: 'image/jpeg', [`width${suffix}`]: '1080',
+      [`height${suffix}`]: '1350' }).forEach(([key, value]) => form.set(key, value))
+  }
+  const parsed = parseCreativeForm(form)
+  assert.equal(parsed.ok, true)
+  assert.equal(parsed.creative.copies.length, 3)
+  assert.equal(parsed.creative.assets.length, 3)
+  form.delete('sha256_3')
+  assert.equal(parseCreativeForm(form).ok, false)
+})

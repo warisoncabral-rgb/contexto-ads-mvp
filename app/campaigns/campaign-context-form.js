@@ -1,8 +1,9 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useRef } from 'react'
 import { useFormStatus } from 'react-dom'
 import { saveCampaignContext } from '../actions'
+import { APPROVED_ROSA_VIP_CAMPAIGN_PRESET } from '../../lib/campaign-preparation.mjs'
 
 const fieldLabels = {
   businessName: 'Nome do negócio',
@@ -29,14 +30,22 @@ function value(context, field) {
 }
 
 export default function CampaignContextForm({ tenantId, context, canEdit }) {
+  const formRef = useRef(null)
   const [state, action] = useActionState(saveCampaignContext, { error: '', values: {} })
   const budget = value(context, 'budget')
   const defaults = state.values ?? {}
   const input = (field) => defaults[field] ?? value(context, field)
+  const fillApprovedRosaVipCampaign = () => {
+    const form = formRef.current
+    if (!form) return
+    Object.entries(APPROVED_ROSA_VIP_CAMPAIGN_PRESET).forEach(([name, fieldValue]) => {
+      if (form.elements.namedItem(name)) form.elements.namedItem(name).value = fieldValue
+    })
+  }
 
   return (
     <div className="preparation-layout">
-      <form className="campaign-form" action={action}>
+      <form ref={formRef} className="campaign-form" action={action}>
         <input type="hidden" name="tenantId" value={tenantId} />
         <input type="hidden" name="campaignId" value={context?.campaignId ?? ''} />
         <div className="form-heading">
@@ -47,6 +56,9 @@ export default function CampaignContextForm({ tenantId, context, canEdit }) {
           {context && <span className="version-badge">Versão {context.version}</span>}
         </div>
         <p className="form-intro">Preencha somente o que você sabe. Campos vazios viram tarefas claras; o sistema não inventa respostas.</p>
+        {canEdit && !context && <button className="campaign-preset-button" type="button" onClick={fillApprovedRosaVipCampaign}>
+          Preencher campanha atacado já aprovada
+        </button>}
         {state.error && <div className="form-error" role="alert">{state.error}</div>}
         <div className="form-grid">
           <label>Nome do negócio

@@ -74,6 +74,26 @@ test('refuses a plan that claims writes or active objects', () => {
   assert.equal(validGeneratedPlan(active, { tenantId, campaignId, contextVersion: 2 }), false)
 })
 
+test('accepts three creative variants only when each has one paused ad', () => {
+  const base = plan()
+  const campaign = base.objectsToCreate.find((object) => object.type === 'campaign')
+  const adSet = base.objectsToCreate.find((object) => object.type === 'ad_set')
+  const variants = [1, 2, 3].flatMap((number) => {
+    const creativeId = `creative-${number}`
+    return [{ internalObjectId: creativeId, type: 'creative', dependsOn: [],
+      logicalConfig: { copyStatus: 'requires_generation_and_approval',
+        claimsPolicy: 'source_only' } },
+    { internalObjectId: `ad-${number}`, type: 'ad',
+      dependsOn: [adSet.internalObjectId, creativeId],
+      logicalConfig: { lifecycleStatus: 'PAUSED' } }]
+  })
+  const threeAds = { ...base, objectsToCreate: [campaign, adSet, ...variants] }
+  const expected = { tenantId, campaignId, contextVersion: 2 }
+  assert.equal(validGeneratedPlan(threeAds, expected), true)
+  assert.equal(validGeneratedPlan({ ...threeAds,
+    objectsToCreate: threeAds.objectsToCreate.slice(0, -1) }, expected), false)
+})
+
 test('refuses cross-tenant, cross-campaign or different context-version responses', () => {
   assert.equal(validGeneratedPlan(plan(), {
     tenantId: '44444444-4444-4444-8444-444444444444', campaignId, contextVersion: 2,

@@ -189,19 +189,12 @@ export class CreativePackageService {
       creativePackageVersion: creativePackage.version,
       creativeContentHash: creativePackage.contentHash,
     };
-    const objectsToCreate = source.objectsToCreate.map((object) =>
-      object.type === 'creative' ? {
-        ...object,
-        logicalConfig: {
-          ...creativeRef,
-          copies: creativePackage.copies,
-          claims: creativePackage.claims,
-          assets: creativePackage.assets,
-          reviewChecklist: creativePackage.reviewChecklist,
-          copyStatus: approved ? 'approved' : 'requires_review',
-          claimsPolicy: 'source_only',
-        },
-      } : object);
+    const objectsToCreate = this.bindCreativeVariants(
+      source,
+      creativePackage,
+      creativeRef,
+      approved,
+    );
     const readiness = source.readiness.map((check) => check.key === 'creative_approval'
       ? approved ? {
         key: 'creative_approval',
@@ -287,6 +280,66 @@ export class CreativePackageService {
       persisted.createdAt,
     );
     return persisted;
+  }
+
+  private bindCreativeVariants(
+    source: ExecutionPlanV1,
+    creativePackage: CreativePackageV1,
+    creativeRef: {
+      creativePackageId: string;
+      creativePackageVersion: number;
+      creativeContentHash: string;
+    },
+    approved: boolean,
+  ): ExecutionPlanV1['objectsToCreate'] {
+    const structural = source.objectsToCreate.filter(
+      (object) => object.type !== 'creative' && object.type !== 'ad',
+    );
+    const adSet = structural.find((object) => object.type === 'ad_set');
+    if (!adSet || creativePackage.copies.length !== creativePackage.assets.length) {
+      return source.objectsToCreate.map((object) => object.type === 'creative' ? {
+        ...object,
+        logicalConfig: {
+          ...creativeRef,
+          copies: creativePackage.copies,
+          claims: creativePackage.claims,
+          assets: creativePackage.assets,
+          reviewChecklist: creativePackage.reviewChecklist,
+          copyStatus: approved ? 'approved' : 'requires_review',
+          claimsPolicy: 'source_only',
+        },
+      } : object);
+    }
+    const variants = creativePackage.copies.map((copy, index) => {
+      const asset = creativePackage.assets[index];
+      const variantKey = `variant_${index + 1}`;
+      const creativeId = `${source.campaignId}:creative:${variantKey}`;
+      return [{
+        internalObjectId: creativeId,
+        type: 'creative' as const,
+        dependsOn: [],
+        logicalConfig: {
+          ...creativeRef,
+          variantKey,
+          copy,
+          asset,
+          claims: creativePackage.claims,
+          reviewChecklist: creativePackage.reviewChecklist,
+          copyStatus: approved ? 'approved' : 'requires_review',
+          claimsPolicy: 'source_only',
+        },
+      }, {
+        internalObjectId: `${source.campaignId}:ad:${variantKey}`,
+        type: 'ad' as const,
+        dependsOn: [adSet.internalObjectId, creativeId],
+        logicalConfig: {
+          variantKey,
+          creativeInternalObjectId: creativeId,
+          lifecycleStatus: 'PAUSED',
+        },
+      }];
+    }).flat();
+    return [...structural, ...variants];
   }
 
   private normalize(input: CreativePackageInputV1 | undefined): Pick<
@@ -389,6 +442,9 @@ export class CreativePackageService {
       ...value.claims.map((item) => item.claimId),
       ...value.assets.map((item) => item.assetId)];
     if (new Set(ids).size !== ids.length) issues.push('duplicate_item_identifier');
+    if (value.copies.length !== value.assets.length) {
+      issues.push('creative_variant_pairing_mismatch');
+    }
     return issues;
   }
 
