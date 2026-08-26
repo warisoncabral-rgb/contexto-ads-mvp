@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { runMetaReadOnlyValidation } from '../../actions.js'
+import { requestMetaAdsManagement, runMetaReadOnlyValidation } from '../../actions.js'
 
 const labels = {
   identity: 'Identidade Meta',
@@ -11,7 +11,7 @@ const labels = {
   ad_account_read: 'Leitura da conta de anúncios',
 }
 
-export default function MetaValidationPanel({ tenantId, connectionId }) {
+export default function MetaValidationPanel({ tenantId, connectionId, needsPageAuthorization }) {
   const router = useRouter()
   const [state, action, pending] = useActionState(runMetaReadOnlyValidation, {
     error: '',
@@ -49,5 +49,11 @@ export default function MetaValidationPanel({ tenantId, connectionId }) {
       </p>}
       <small>Nenhuma escrita externa foi autorizada ou executada.</small>
     </div>}
+    {needsPageAuthorization && <form action={requestMetaAdsManagement} className="executor-action-form">
+      <input type="hidden" name="tenantId" value={tenantId} />
+      <input type="hidden" name="connectionId" value={connectionId} />
+      <p className="readonly-note">A conta está válida, mas a Página ainda não apareceu no inventário autorizado. Atualize a autorização para comprovar a leitura da Página, sem publicar ou ativar anúncios.</p>
+      <button>Atualizar autorização de Página na Meta</button>
+    </form>}
   </section>
 }
