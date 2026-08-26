@@ -372,7 +372,9 @@ export class ExecutionSimulationService {
       status: 'blocked',
       meaning: `Capacidades ainda não comprovadas: ${missing.join(', ')}.`,
       nextAction: 'Validar as permissões e capacidades de escrita no ambiente Meta real.',
-      evidenceRefs: [],
+      evidenceRefs: capabilities
+        .filter((record) => missing.includes(record.capabilityType))
+        .map((record) => `capability:${record.capabilityId}`),
     };
   }
 

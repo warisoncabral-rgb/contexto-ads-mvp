@@ -24,6 +24,10 @@ import {
 import { parseExecutorAction, validExecutionAuthorization, validManifest, validPreflight,
   validProtocol } from '../lib/executor-preflight.mjs'
 import { parseExecutionTargetBinding, validBoundExecutionPlan } from '../lib/meta-execution-target.mjs'
+import {
+  parseExecutionCapabilityValidation,
+  validExecutionCapabilitySnapshot,
+} from '../lib/meta-execution-capabilities.mjs'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SHA = /^[0-9a-f]{64}$/
@@ -514,4 +518,77 @@ export async function changeExecutorControl(_previousState, formData) {
     + `${parsed.approvalId ? `&approvalId=${encodeURIComponent(parsed.approvalId)}` : ''}`
     + `${manifestId ? `&executionManifestId=${encodeURIComponent(manifestId)}` : ''}`
     + `${authorizationId ? `&executionAuthorizationId=${encodeURIComponent(authorizationId)}` : ''}`)
+}
+
+export async function validateMetaExecutionCapabilities(_previousState, formData) {
+  const parsed = parseExecutionCapabilityValidation(formData)
+  if (!parsed.ok) return { error: 'O plano ou a conexão informada é inválida.' }
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) {
+    return { error: 'A central não está conectada ao backend seguro.' }
+  }
+  const base = apiBaseUrl.replace(/\/$/, '')
+  const headers = {
+    accept: 'application/json',
+    authorization: `Bearer ${operatorToken}`,
+    'content-type': 'application/json',
+  }
+  let response
+  try {
+    response = await fetch(
+      `${base}/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+        + `/meta/connections/${encodeURIComponent(parsed.connectionId)}`
+        + '/capabilities/validate-execution',
+      {
+        method: 'POST', headers, body: '{}', cache: 'no-store',
+        signal: globalThis.AbortSignal.timeout(15000),
+      },
+    )
+  } catch {
+    return { error: 'A Meta ou o backend não respondeu. Nenhuma escrita foi realizada.' }
+  }
+  if ([401, 403].includes(response.status)) {
+    return { error: 'Seu acesso não permite validar esta conexão.' }
+  }
+  if (!response.ok) {
+    return { error: 'A validação foi interrompida com segurança; nenhuma permissão foi alterada.' }
+  }
+  let snapshot
+  try { snapshot = await response.json() } catch {
+    return { error: 'O backend não devolveu uma evidência válida.' }
+  }
+  if (!validExecutionCapabilitySnapshot(snapshot, parsed)) {
+    return { error: 'A evidência de capacidade ficou inconsistente e foi recusada.' }
+  }
+
+  let readinessResponse
+  try {
+    readinessResponse = await fetch(
+      `${base}/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+        + `/campaigns/${encodeURIComponent(parsed.campaignId)}`
+        + `/plans/${encodeURIComponent(parsed.executionPlanId)}/readiness`,
+      {
+        method: 'POST', headers,
+        body: JSON.stringify({ approvalId: parsed.approvalId }),
+        cache: 'no-store', signal: globalThis.AbortSignal.timeout(15000),
+      },
+    )
+  } catch {
+    return { error: 'As evidências foram salvas, mas a prontidão não pôde ser recalculada.' }
+  }
+  if (!readinessResponse.ok) {
+    return { error: 'As evidências foram salvas, mas o plano recusou a atualização.' }
+  }
+  let decision
+  try { decision = await readinessResponse.json() } catch {
+    return { error: 'A atualização de prontidão não pôde ser confirmada.' }
+  }
+  if (!validOperationalDecision(decision, parsed.tenantId, parsed.executionPlanId)
+    || decision.planHash !== parsed.planHash) {
+    return { error: 'A prontidão retornada não corresponde ao hash aprovado.' }
+  }
+  redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}`
+    + `&executionPlanId=${encodeURIComponent(parsed.executionPlanId)}`
+    + `&approvalId=${encodeURIComponent(parsed.approvalId)}`)
 }

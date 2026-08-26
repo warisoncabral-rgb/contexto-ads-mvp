@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { changeExecutorControl } from './actions'
+import { changeExecutorControl, validateMetaExecutionCapabilities } from './actions'
 
 function ControlForm({ plan, manifest, authorization, approvalId = '', action, label, children }) {
   const [state, formAction, pending] = useActionState(changeExecutorControl, { error: '' })
@@ -24,19 +24,42 @@ function PreflightResult({ value }) {
     <p><strong>Próxima ação:</strong> {value.nextAction}</p></div>
 }
 
-export default function ExecutorPreflightPanel({ plan, role, approvalResult, result }) {
+function CapabilityValidationForm({ plan, approvalId }) {
+  const [state, formAction, pending] = useActionState(
+    validateMetaExecutionCapabilities,
+    { error: '' },
+  )
+  return <form action={formAction} className="executor-action-form">
+    {['tenantId', 'campaignId', 'executionPlanId', 'connectionId', 'planHash']
+      .map((key) => <input key={key} type="hidden" name={key} value={plan[key]} />)}
+    <input type="hidden" name="approvalId" value={approvalId} />
+    <button disabled={pending}>
+      {pending ? 'Conferindo sem escrever…' : 'Validar capacidades sem alterar permissões'}
+    </button>
+    {state.error && <small className="form-error" role="alert">{state.error}</small>}
+  </form>
+}
+
+export default function ExecutorPreflightPanel({ plan, role, approvalResult, result, decision }) {
   const manifest = result.kind === 'ready' ? result.manifest : null
   const authorization = result.kind === 'ready' ? result.authorization : null
   const approvedPlan = approvalResult.kind === 'ready' && approvalResult.approval.status === 'approved'
   const approvalId = approvalResult.kind === 'ready' ? approvalResult.approval.approvalId : ''
-  const canPrepare = ['owner', 'operator'].includes(role), canDecide = role === 'owner'
+  const canOperate = ['owner', 'operator'].includes(role), canDecide = role === 'owner'
+  const readinessReady = decision.status === 'ready_for_executor_validation'
+  const canPrepare = canOperate && readinessReady
+  const canValidateCapabilities = canOperate && approvedPlan && !readinessReady
+    && Boolean(plan.connectionId)
+    && decision.blockers.some((blocker) => blocker.code === 'write_capabilities')
   const labels = { pending: 'Aguardando proprietário', approved: 'Aprovada por 15 minutos', rejected: 'Rejeitada', revoked: 'Revogada', expired: 'Expirada', invalidated: 'Invalidada' }
   return <section className="panel executor-panel">
     <div className="section-heading"><div><span className="eyebrow">Validação do executor</span><h3>Preflight antes de qualquer tentativa</h3></div><span className="status-pill status-blocked">Gate fechado</span></div>
     <p className="executor-boundary">Esta central prepara e diagnostica. Mesmo com autorização humana, nenhuma publicação, ativação, entrega ou escrita externa é iniciada.</p>
     {!manifest && <div className="executor-empty"><p>O manifesto transforma o plano aprovado em operações ordenadas, pausadas e idempotentes.</p>{canPrepare && approvedPlan
       ? <ControlForm plan={plan} approvalId={approvalId} action="prepare_manifest" label="Preparar manifesto do plano" />
-      : <p className="readonly-note">A aprovação válida deste plano é necessária antes de preparar o manifesto.</p>}</div>}
+      : canValidateCapabilities
+        ? <><p className="readonly-note">A aprovação está concluída. Falta apenas conferir as permissões e os ativos exigidos usando consultas sem escrita.</p><CapabilityValidationForm plan={plan} approvalId={approvalId} /></>
+        : <p className="readonly-note">A aprovação válida e todos os controles de prontidão são necessários antes de preparar o manifesto.</p>}</div>}
     {manifest && <><div className="executor-facts"><div><span>Manifesto</span><strong>{manifest.manifestHash.slice(0, 12)}…</strong></div><div><span>Operações</span><strong>{manifest.operations.length}</strong></div><div><span>Estado pretendido</span><strong>PAUSED</strong></div><div><span>Executável</span><strong>Não</strong></div></div>
       <div className="operation-list">{manifest.operations.map((operation) => <div key={operation.operationKey}><span>{operation.order}</span><strong>{operation.action} · {operation.objectType}</strong><small>Não iniciada · execução bloqueada</small></div>)}</div>
       {!authorization && canPrepare && <ControlForm plan={plan} manifest={manifest} approvalId={approvalId} action="request_authorization" label="Solicitar autorização curta" />}
@@ -47,6 +70,6 @@ export default function ExecutorPreflightPanel({ plan, role, approvalResult, res
           {canPrepare && <ControlForm plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="preflight" label="Executar diagnóstico fail-closed" />}
           {canDecide && <ControlForm plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="revoke" label="Revogar autorização"><input name="reason" required minLength="3" placeholder="Motivo da revogação" /></ControlForm>}</>}
       </div>}</>}
-    {!canPrepare && <p className="readonly-note">Seu papel permite acompanhar as evidências, mas não alterar o controle de execução.</p>}
+    {!canOperate && <p className="readonly-note">Seu papel permite acompanhar as evidências, mas não alterar o controle de execução.</p>}
   </section>
 }

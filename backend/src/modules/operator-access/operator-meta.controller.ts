@@ -96,6 +96,25 @@ export class OperatorMetaController {
     return this.capabilities.validateReadOnly(tenantId, connectionId);
   }
 
+  @Post('connections/:connectionId/capabilities/validate-execution')
+  async validateExecutionCapabilities(
+    @Param('tenantId') tenantId: string,
+    @Param('connectionId') connectionId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    await this.access.authorizeTenantConfiguration(authorization, tenantId);
+    const result = await this.capabilities.validateForExecution(tenantId, connectionId);
+    return {
+      ...result,
+      validationMode: 'permission_and_asset_read_only' as const,
+      boundaries: {
+        permissionsChanged: false as const,
+        externalWritesAllowed: false as const,
+        externalWritesPerformed: false as const,
+      },
+    };
+  }
+
   @Post('connections/:connectionId/smoke-test')
   async smokeTest(
     @Param('tenantId') tenantId: string,

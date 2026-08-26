@@ -161,14 +161,24 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
     granted: Set<string>,
     apiVersion: string,
   ): MetaCapabilityEvidence[] {
+    const writeCapabilities: MetaCapabilityType[] = [
+      'CREATE_CAMPAIGN', 'CREATE_ADSET', 'CREATE_CREATIVE', 'CREATE_AD',
+      'MANAGE_AD_STATUS',
+    ];
     const requiredPermissions = capability === 'DISCOVER_ASSETS'
       ? ['ads_read', 'pages_show_list']
-      : capability === 'READ_AD_ACCOUNT'
+      : capability === 'READ_AD_ACCOUNT' || capability === 'READ_INSIGHTS'
         ? ['ads_read']
-        : [];
+        : writeCapabilities.includes(capability) || capability === 'CLICK_TO_WHATSAPP'
+          ? ['ads_management']
+          : [];
     const grantedPermissions = requiredPermissions.filter((permission) => granted.has(permission));
 
-    if (!['DISCOVER_ASSETS', 'READ_AD_ACCOUNT'].includes(capability)) {
+    const supported = [
+      'DISCOVER_ASSETS', 'READ_AD_ACCOUNT', 'READ_INSIGHTS',
+      ...writeCapabilities, 'CLICK_TO_WHATSAPP',
+    ];
+    if (!supported.includes(capability)) {
       return [{
         capability,
         available: false,
@@ -210,6 +220,23 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
         apiVersion,
         reason: 'asset_missing',
       }];
+    }
+    if (capability === 'CLICK_TO_WHATSAPP') {
+      const selectedPage = assetBindings.some((binding) =>
+        binding.assetType === 'facebook_page' && binding.selected);
+      const selectedWhatsApp = assetBindings.some((binding) =>
+        binding.assetType === 'whatsapp' && binding.selected);
+      if (!selectedPage || !selectedWhatsApp) {
+        return adAccounts.map((binding) => ({
+          capability,
+          available: false,
+          requiredPermissions,
+          grantedPermissions,
+          apiVersion,
+          assetScope: binding.externalId,
+          reason: 'asset_missing',
+        }));
+      }
     }
     return adAccounts.map((binding) => ({
       capability,

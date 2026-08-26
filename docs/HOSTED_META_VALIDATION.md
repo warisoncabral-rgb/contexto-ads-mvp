@@ -80,7 +80,12 @@ O endereço precisa coincidir exatamente com o enviado no início do OAuth. Não
 
 ## Gate seguinte
 
-Cadastrar três mídias finais com referência e SHA-256 verificáveis, revisar os três
-textos sugeridos, aprovar o pacote criativo e somente então preparar manifesto e
-protocolo. A criação controlada na Meta continua fora deste ambiente até autorização
-humana específica e validação de `ads_management`.
+O pacote criativo v2 e o plano com teto de R$ 300 foram aprovados em 26/08/2026.
+O painel agora oferece uma validação de capacidades para execução que consulta
+somente `/me/permissions` e o snapshot interno de ativos. Ela não solicita escopos,
+não muda permissões e não realiza escrita externa.
+
+O manifesto permanece indisponível enquanto `ads_management`, a conta de anúncios e
+os ativos selecionados para Click-to-WhatsApp não tiverem evidência suficiente. A
+criação controlada na Meta continua fora deste ambiente até autorização humana
+específica para qualquer mudança de permissão e para qualquer tentativa externa.

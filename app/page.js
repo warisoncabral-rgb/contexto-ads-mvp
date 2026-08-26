@@ -261,7 +261,7 @@ function DecisionDashboard({ decision, workspace, approvalResult, creativeResult
       <MetaExecutionTargetPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} result={targetResult} />
       <PlanApprovalPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} />
       <CreativeMediaCenter plan={workspace.selectedPlan} role={workspace.selectedTenant.role} result={creativeResult} />
-      <ExecutorPreflightPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} result={executorResult} />
+      <ExecutorPreflightPanel plan={workspace.selectedPlan} role={workspace.selectedTenant.role} approvalResult={approvalResult} result={executorResult} decision={decision} />
       <OperationalTimeline result={timelineResult} />
     </>
   )

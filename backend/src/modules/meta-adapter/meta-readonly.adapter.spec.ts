@@ -228,6 +228,85 @@ describe('MetaReadonlyAdapter', () => {
     }));
   });
 
+  it('validates execution capabilities using permission and selected asset evidence only', async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: [
+      { permission: 'ads_management', status: 'granted' },
+    ] }));
+    const bindings = [
+      {
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'ad_account' as const,
+        externalId: 'act_123',
+        selected: true,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      },
+      {
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'facebook_page' as const,
+        externalId: '456',
+        selected: true,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      },
+      {
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'whatsapp' as const,
+        externalId: '789',
+        selected: true,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      },
+    ];
+
+    const result = await adapter.validateCapabilities(
+      tenantId,
+      credentialRef,
+      bindings,
+      ['CREATE_CAMPAIGN', 'CREATE_ADSET', 'CREATE_CREATIVE', 'CREATE_AD',
+        'CLICK_TO_WHATSAPP'],
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      data: expect.arrayContaining([
+        expect.objectContaining({ capability: 'CREATE_CAMPAIGN', available: true,
+          assetScope: 'act_123', requiredPermissions: ['ads_management'] }),
+        expect.objectContaining({ capability: 'CLICK_TO_WHATSAPP', available: true,
+          assetScope: 'act_123', requiredPermissions: ['ads_management'] }),
+      ]),
+    }));
+  });
+
+  it('keeps Click-to-WhatsApp unavailable without selected page and WhatsApp assets', async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: [
+      { permission: 'ads_management', status: 'granted' },
+    ] }));
+
+    const result = await adapter.validateCapabilities(
+      tenantId,
+      credentialRef,
+      [{
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'ad_account',
+        externalId: 'act_123',
+        selected: true,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      }],
+      ['CREATE_CAMPAIGN', 'CLICK_TO_WHATSAPP'],
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      data: [
+        expect.objectContaining({ capability: 'CREATE_CAMPAIGN', available: true }),
+        expect.objectContaining({ capability: 'CLICK_TO_WHATSAPP', available: false,
+          reason: 'asset_missing' }),
+      ],
+    }));
+  });
+
   it('fails closed on malformed permission evidence', async () => {
     fetchMock.mockResolvedValueOnce(json({ data: [
       { permission: 'ads_read' },
