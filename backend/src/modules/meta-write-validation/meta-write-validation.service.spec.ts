@@ -174,6 +174,57 @@ describe('MetaWriteValidationService', () => {
       .rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('carries a safely reconciled campaign and prepares only the remaining operations', async () => {
+    const campaign = manifest.operations[0];
+    const creative = {
+      ...campaign,
+      order: 2,
+      operationKey: 'operation:creative:1',
+      internalObjectId: 'creative:1',
+      objectType: 'creative' as const,
+      action: 'create_creative' as const,
+      dependsOnOperationKeys: [campaign.operationKey],
+    };
+    const expanded = { ...manifest, operations: [campaign, creative] };
+    manifests.findById.mockResolvedValue(expanded);
+    manifests.latestForPlan.mockResolvedValue(expanded);
+    const previous = await service.prepare(tenantId, manifestId, 'operator-1');
+    protocols.latestForManifest.mockResolvedValueOnce({
+      ...previous,
+      status: 'external_validation_failed',
+      boundaries: { ...previous.boundaries, externalWritesPerformed: true },
+      execution: {
+        executionAuthorizationId: '77777777-7777-4777-8777-777777777777',
+        startedAt: '2026-08-24T15:10:00.000Z',
+        completedAt: '2026-08-24T15:10:01.000Z',
+        operations: [{
+          operationKey: campaign.operationKey,
+          objectType: 'campaign',
+          status: 'succeeded',
+          externalObjectId: '120253268736310359',
+          observedStatus: 'PAUSED',
+        }, {
+          operationKey: creative.operationKey,
+          objectType: 'creative',
+          status: 'failed',
+          normalizedError: 'VALIDATION',
+        }],
+      },
+    });
+
+    const resumed = await service.prepare(tenantId, manifestId, 'operator-2');
+
+    expect(resumed.reconciledOperations).toEqual([{
+      operationKey: campaign.operationKey,
+      objectType: 'campaign',
+      externalObjectId: '120253268736310359',
+      observedStatus: 'PAUSED',
+    }]);
+    expect(resumed.operations.map((operation) => operation.operationKey))
+      .toEqual([creative.operationKey]);
+    expect(resumed.limits.exactOperationCount).toBe(1);
+  });
+
   it('isolates lookup by tenant and validates inputs', async () => {
     manifests.findById.mockResolvedValue(null);
     await expect(service.latest(tenantId, manifestId))

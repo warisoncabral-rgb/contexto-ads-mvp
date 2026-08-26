@@ -60,23 +60,49 @@ export class MetaWriteValidationService {
     }
     const previous = await this.protocols.latestForManifest(tenantId, executionManifestId);
     if (previous && previous.status !== 'external_validation_failed') return previous;
-    if (previous?.boundaries.externalWritesPerformed
-      || previous?.execution?.operations.some((operation) => operation.externalObjectId)) {
+    const previousReconciled = previous?.reconciledOperations ?? [];
+    const succeeded = previous?.execution?.operations.filter((operation) =>
+      operation.status === 'succeeded' && operation.externalObjectId
+      && this.safeObservedStatus(operation.objectType, operation.observedStatus)) ?? [];
+    const unsafeExternalObject = previous?.execution?.operations.some((operation) =>
+      operation.externalObjectId
+      && (operation.status !== 'succeeded'
+        || !this.safeObservedStatus(operation.objectType, operation.observedStatus)));
+    if (unsafeExternalObject
+      || (previous?.boundaries.externalWritesPerformed
+        && previousReconciled.length === 0 && succeeded.length === 0)) {
       throw new ConflictException(
         'External objects must be reconciled before preparing another validation attempt',
       );
     }
+    const reconciledByOperation = new Map(previousReconciled.map((operation) => [
+      operation.operationKey, operation,
+    ]));
+    for (const operation of succeeded) {
+      reconciledByOperation.set(operation.operationKey, {
+        operationKey: operation.operationKey,
+        objectType: operation.objectType,
+        externalObjectId: operation.externalObjectId!,
+        observedStatus: operation.observedStatus!,
+      });
+    }
+    const reconciledOperations = [...reconciledByOperation.values()];
     const attempt = previous ? (previous.attempt ?? 1) + 1 : 1;
     const replacesProtocolId = previous?.metaWriteValidationProtocolId;
 
-    const operations = manifest.operations.map((operation) => ({
-      order: operation.order,
-      operationKey: operation.operationKey,
-      objectType: operation.objectType,
-      action: operation.action,
-      requestFingerprint: operation.requestFingerprint,
-      intendedLifecycleStatus: operation.intendedLifecycleStatus,
-    }));
+    const operations = manifest.operations
+      .filter((operation) => !reconciledByOperation.has(operation.operationKey))
+      .map((operation) => ({
+        order: operation.order,
+        operationKey: operation.operationKey,
+        objectType: operation.objectType,
+        action: operation.action,
+        requestFingerprint: operation.requestFingerprint,
+        intendedLifecycleStatus: operation.intendedLifecycleStatus,
+      }));
+    if (previous && operations.length === 0) {
+      throw new ConflictException('No unreconciled operations remain for a new validation attempt');
+    }
     const allowedActions = [...new Set(operations.map((operation) => operation.action))];
     const limits: MetaWriteValidationProtocolV1['limits'] = {
       exactOperationCount: operations.length,
@@ -128,6 +154,7 @@ export class MetaWriteValidationService {
       planHash: manifest.planHash,
       manifestHash: manifest.manifestHash,
       mode: 'controlled_paused_creation',
+      reconciledOperations,
       operations,
       limits,
       requiredEvidence,
@@ -152,6 +179,7 @@ export class MetaWriteValidationService {
       mode: 'controlled_paused_creation',
       status: 'prepared_external_validation_required',
       preparedBy: actor,
+      ...(reconciledOperations.length > 0 ? { reconciledOperations } : {}),
       operations,
       limits,
       requiredEvidence,
@@ -207,6 +235,16 @@ export class MetaWriteValidationService {
 
   private hash(value: unknown): string {
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  }
+
+  private safeObservedStatus(
+    objectType: MetaWriteValidationProtocolV1['operations'][number]['objectType'],
+    observedStatus?: string,
+  ): boolean {
+    if (objectType === 'creative') return observedStatus === 'CREATED_NO_DELIVERY_STATE';
+    return observedStatus === 'PAUSED'
+      || observedStatus === 'CAMPAIGN_PAUSED'
+      || observedStatus === 'ADSET_PAUSED';
   }
 
   private assertActor(value: unknown): string {

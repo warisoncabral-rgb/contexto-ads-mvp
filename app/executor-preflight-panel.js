@@ -74,8 +74,10 @@ export default function ExecutorPreflightPanel({ plan, role, approvalResult, res
   const protocolReady = result.protocol?.status === 'prepared_external_validation_required'
   const switchesReleased = result.killSwitch?.tenant.status === 'released'
     && result.killSwitch?.campaign.status === 'released'
+  const hasUnsafeExternalObject = result.protocol?.execution?.operations?.some((operation) =>
+    operation.externalObjectId && operation.status !== 'succeeded')
   const canPrepareReconciledAttempt = result.protocol?.status === 'external_validation_failed'
-    && result.protocol.boundaries?.externalWritesPerformed === false
+    && !hasUnsafeExternalObject
     && result.killSwitch?.campaign.status === 'engaged'
   return <section className="panel executor-panel">
     <div className="section-heading"><div><span className="eyebrow">Validação do executor</span><h3>Preflight antes de qualquer tentativa</h3></div><span className="status-pill status-blocked">Gate fechado</span></div>

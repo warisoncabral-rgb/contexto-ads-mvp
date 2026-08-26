@@ -133,7 +133,7 @@ export class MetaExecutionService {
       execution: {
         executionAuthorizationId,
         startedAt,
-        operations: manifest.operations.map((operation) => ({
+        operations: prepared.operations.map((operation) => ({
           operationKey: operation.operationKey,
           objectType: operation.objectType,
           status: 'pending',
@@ -144,7 +144,7 @@ export class MetaExecutionService {
       running,
       this.event(running, actor, 'meta_write_execution_started', 'info', {
         executionAuthorizationId,
-        operationCount: manifest.operations.length,
+        operationCount: prepared.operations.length,
       }),
     );
     if (!begun) throw new ConflictException('Meta execution already started');
@@ -152,13 +152,25 @@ export class MetaExecutionService {
 
     const ids: ExternalIds = {};
     try {
+      for (const reconciled of prepared.reconciledOperations ?? []) {
+        const operation = manifest.operations.find(
+          (candidate) => candidate.operationKey === reconciled.operationKey,
+        );
+        if (!operation || operation.objectType !== reconciled.objectType) {
+          throw new Error('RECONCILED_OPERATION_MISMATCH');
+        }
+        ids[operation.internalObjectId] = reconciled.externalObjectId;
+      }
       const configs = new Map(plan.objectsToCreate.map((item) => [
         item.internalObjectId, item.logicalConfig,
       ]));
       const cityKeys = await this.cityKeys(
         tenantId, connection.credentialRef, plan,
       );
-      for (const operation of [...manifest.operations].sort((a, b) => a.order - b.order)) {
+      const executableKeys = new Set(prepared.operations.map((operation) => operation.operationKey));
+      for (const operation of [...manifest.operations]
+        .filter((candidate) => executableKeys.has(candidate.operationKey))
+        .sort((a, b) => a.order - b.order)) {
         const config = configs.get(operation.internalObjectId);
         if (!config) throw new Error('MANIFEST_CONFIG_MISSING');
         const request = this.requestFor(

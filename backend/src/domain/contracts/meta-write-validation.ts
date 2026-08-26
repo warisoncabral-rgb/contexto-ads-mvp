@@ -32,6 +32,12 @@ export interface MetaWriteValidationProtocolV1 {
     | 'external_validation_failed'
     | 'external_validation_succeeded';
   preparedBy: string;
+  reconciledOperations?: Array<{
+    operationKey: string;
+    objectType: SimulatedOperation['objectType'];
+    externalObjectId: string;
+    observedStatus: string;
+  }>;
   operations: Array<{
     order: number;
     operationKey: string;
