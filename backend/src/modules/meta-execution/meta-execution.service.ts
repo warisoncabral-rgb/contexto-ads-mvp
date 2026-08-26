@@ -325,28 +325,25 @@ export class MetaExecutionService {
     if (operation.objectType === 'creative') {
       const copy = this.record(config.copy, 'creative.copy');
       const asset = this.record(config.asset, 'creative.asset');
-      const phone = whatsappId.replace(/\D/g, '');
-      const message = this.string(copy.whatsappMessage, 'creative.whatsappMessage');
       const publicBase = this.config.get<string>('CONTEXT_ADS_PUBLIC_BASE_URL')?.trim()
         || 'https://contexto-ads-validation-panel.onrender.com';
       const storageRef = this.string(asset.storageRef, 'creative.storageRef');
       const picture = /^https:\/\//.test(storageRef)
         ? storageRef
         : new URL(storageRef.replace(/^\//, ''), `${publicBase.replace(/\/$/, '')}/`).toString();
-      const destination = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
       return { edge: 'adcreatives', params: {
         name: `Contexto Ads creative [CTX-${suffix}]`,
         object_story_spec: {
           page_id: pageId,
           link_data: {
-            link: destination,
+            link: 'https://api.whatsapp.com/send',
             picture,
             message: this.string(copy.primaryText, 'creative.primaryText'),
             name: this.string(copy.headline, 'creative.headline'),
             ...(typeof copy.description === 'string' ? { description: copy.description } : {}),
             call_to_action: {
               type: 'WHATSAPP_MESSAGE',
-              value: { app_destination: 'WHATSAPP', link: destination },
+              value: { app_destination: 'WHATSAPP' },
             },
           },
         },
