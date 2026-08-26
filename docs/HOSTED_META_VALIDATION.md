@@ -61,9 +61,26 @@ O endereço precisa coincidir exatamente com o enviado no início do OAuth. Não
 ## Critérios de aprovação
 
 - Healthcheck da API responde com banco alcançável.
-- Migrações 001–019 aparecem como verificadas no log de inicialização.
+- Migrações 001–020 aparecem como verificadas no log de inicialização.
 - URL de autorização aponta somente para `https://www.facebook.com`.
 - Callback aceita o `state` uma vez e rejeita repetição.
 - Banco não contém access token em texto puro.
 - Conexão muda para `connected` somente após troca real do código e gravação no cofre.
 - Nenhuma chamada de escrita, publicação ou alteração de orçamento é executada.
+
+## Evidência hospedada concluída em 25/08/2026
+
+- OAuth real concluído após a correção de concorrência do `state`.
+- Smoke test somente leitura aprovado nas quatro etapas.
+- Conta de anúncios `Warison Cabral` selecionada internamente.
+- Contexto Rosa VIP atualizado para Leads → WhatsApp, Recife e Natal,
+  R$ 10/dia por 30 dias, teto máximo de R$ 300.
+- Plano A0 gerado com objetos pausados e escrita externa bloqueada.
+- O fluxo não cria, publica, ativa ou entrega anúncios.
+
+## Gate seguinte
+
+Cadastrar três mídias finais com referência e SHA-256 verificáveis, revisar os três
+textos sugeridos, aprovar o pacote criativo e somente então preparar manifesto e
+protocolo. A criação controlada na Meta continua fora deste ambiente até autorização
+humana específica e validação de `ads_management`.

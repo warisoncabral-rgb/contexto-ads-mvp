@@ -47,6 +47,18 @@ export class OperatorAccessController {
     return this.service.latestReadiness(authorization, tenantId, executionPlanId);
   }
 
+  @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/readiness')
+  evaluateReadiness(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Param('executionPlanId') executionPlanId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.service.evaluateReadiness(
+      authorization, tenantId, campaignId, executionPlanId,
+    );
+  }
+
   @Get('tenants/:tenantId/campaign-contexts')
   listCampaignContexts(
     @Param('tenantId') tenantId: string,

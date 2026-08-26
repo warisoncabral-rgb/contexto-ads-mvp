@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { loadLatestCreative, parseCreativeForm, validCreativePackage } from '../lib/creative-media-center.mjs'
+import {
+  loadLatestCreative,
+  parseCreativeForm,
+  ROSA_VIP_CREATIVE_DRAFT_PRESET,
+  ROSA_VIP_WHATSAPP_MESSAGE,
+  validCreativePackage,
+} from '../lib/creative-media-center.mjs'
 
 const plan = { tenantId: '11111111-1111-4111-8111-111111111111', campaignId: '22222222-2222-4222-8222-222222222222', executionPlanId: '33333333-3333-4333-8333-333333333333' }
 const creativePackage = { creativePackageId: '44444444-4444-4444-8444-444444444444', tenantId: plan.tenantId, campaignId: plan.campaignId, sourceExecutionPlanId: plan.executionPlanId, sourcePlanHash: 'a'.repeat(64), version: 1, schemaVersion: '1.0', status: 'needs_review', copies: [{ copyId: 'copy_primary', primaryText: 'Texto', headline: 'Título', callToAction: 'LEARN_MORE' }], claims: [], assets: [{ assetId: 'asset_primary', storageRef: 'media/file', sha256: 'b'.repeat(64), mimeType: 'image/png', width: 1080, height: 1080 }], reviewChecklist: { claimsVerifiedAgainstSources: true, visualFidelityReviewed: true, safeAreaReviewed: true, requiredFieldsReviewed: true, automaticEnhancementsReviewed: true }, validationIssues: [], contentHash: 'c'.repeat(64), createdAt: '2026-08-24T18:00:00.000Z' }
@@ -52,6 +58,7 @@ test('parses three complete ad variants and rejects a partial pair', () => {
     Object.entries({ [`primaryText${suffix}`]: `Texto ${index}`,
       [`headline${suffix}`]: `Título ${index}`,
       [`callToAction${suffix}`]: 'SEND_WHATSAPP_MESSAGE',
+      [`whatsappMessage${suffix}`]: ROSA_VIP_WHATSAPP_MESSAGE,
       [`storageRef${suffix}`]: `media/file-${index}`,
       [`sha256${suffix}`]: `${index}`.repeat(64),
       [`mimeType${suffix}`]: 'image/jpeg', [`width${suffix}`]: '1080',
@@ -63,4 +70,17 @@ test('parses three complete ad variants and rejects a partial pair', () => {
   assert.equal(parsed.creative.assets.length, 3)
   form.delete('sha256_3')
   assert.equal(parseCreativeForm(form).ok, false)
+})
+
+test('keeps three Rosa VIP copy drafts aligned with the approved campaign boundaries', () => {
+  assert.equal(ROSA_VIP_CREATIVE_DRAFT_PRESET.length, 3)
+  for (const copy of ROSA_VIP_CREATIVE_DRAFT_PRESET) {
+    assert.ok(copy.primaryText.length <= 2200)
+    assert.ok(copy.headline.length <= 255)
+    assert.doesNotMatch(copy.primaryText, /renda extra/i)
+  }
+  assert.equal(
+    ROSA_VIP_WHATSAPP_MESSAGE,
+    'Olá! Vi o anúncio da Rosa VIP e gostaria de conhecer os modelos disponíveis no atacado.',
+  )
 })

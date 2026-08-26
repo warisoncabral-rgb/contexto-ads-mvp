@@ -1,7 +1,11 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useRef } from 'react'
 import { changeCreativePackage } from './actions'
+import {
+  ROSA_VIP_CREATIVE_DRAFT_PRESET,
+  ROSA_VIP_WHATSAPP_MESSAGE,
+} from '../lib/creative-media-center.mjs'
 
 function Hidden({ plan, action }) {
   return <>{['tenantId', 'campaignId', 'executionPlanId'].map((key) =>
@@ -19,6 +23,10 @@ function VariantFields({ index }) {
     </label>
     <label>Título<input name={`headline${suffix}`} required={required} maxLength="255" /></label>
     <label>Descrição opcional<input name={`description${suffix}`} maxLength="500" /></label>
+    <label className="wide">Mensagem inicial do WhatsApp
+      <input name={`whatsappMessage${suffix}`} maxLength="1000" required={required}
+        placeholder="Mensagem que a pessoa enviará ao abrir a conversa" />
+    </label>
     <label>CTA<select name={`callToAction${suffix}`} defaultValue={required ? 'SEND_WHATSAPP_MESSAGE' : ''}>
       {!required && <option value="">Não usar esta variação</option>}
       <option value="SEND_WHATSAPP_MESSAGE">Enviar mensagem no WhatsApp</option>
@@ -41,9 +49,22 @@ function VariantFields({ index }) {
 }
 
 export default function CreativeMediaCenter({ plan, role, result }) {
+  const formRef = useRef(null)
   const [state, formAction, pending] = useActionState(changeCreativePackage, { error: '' })
   const creative = result.kind === 'ready' ? result.creativePackage : null
   const canEdit = ['owner', 'operator'].includes(role), canApprove = role === 'owner'
+  const fillRosaVipDrafts = () => {
+    const form = formRef.current
+    if (!form) return
+    ROSA_VIP_CREATIVE_DRAFT_PRESET.forEach((copy, offset) => {
+      const suffix = offset === 0 ? '' : `_${offset + 1}`
+      Object.entries({ ...copy, whatsappMessage: ROSA_VIP_WHATSAPP_MESSAGE,
+        callToAction: 'SEND_WHATSAPP_MESSAGE' }).forEach(([name, value]) => {
+        const field = form.elements.namedItem(`${name}${suffix}`)
+        if (field) field.value = value
+      })
+    })
+  }
   return <section className="panel creative-center">
     <div className="section-heading"><div><span className="eyebrow">Central de Mídias</span>
       <h3>Conteúdo criativo versionado</h3></div>{creative &&
@@ -65,8 +86,11 @@ export default function CreativeMediaCenter({ plan, role, result }) {
         <button disabled={pending}>Aprovar este hash criativo</button></form>}
     {canEdit && <details className="creative-form-shell" open={!creative}>
       <summary>{creative ? 'Criar nova versão' : 'Cadastrar criativos da campanha'}</summary>
-      <form action={formAction} className="creative-form creative-variants-form">
+      <form ref={formRef} action={formAction} className="creative-form creative-variants-form">
         <Hidden plan={plan} action="create" />
+        <button className="wide creative-preset-button" type="button" onClick={fillRosaVipDrafts}>
+          Preencher os três textos sugeridos da Rosa VIP
+        </button>
         {[1, 2, 3].map((index) => <VariantFields key={index} index={index} />)}
         <label className="wide">Alegação opcional<input name="claimText" placeholder="Ex.: pedido mínimo de R$ 500" /></label>
         <label className="wide">Fonte da alegação<input name="claimSource" placeholder="Ex.: campaign_context:offer" /></label>

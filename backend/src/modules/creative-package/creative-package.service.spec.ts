@@ -73,6 +73,7 @@ describe('CreativePackageService', () => {
       primaryText: 'Produto premium com entrega por rota planejada.',
       headline: 'Conheça a coleção',
       description: 'Atendimento pelo WhatsApp.',
+      whatsappMessage: 'Olá! Gostaria de conhecer os modelos disponíveis no atacado.',
       callToAction: 'SEND_WHATSAPP_MESSAGE',
     }],
     claims: [{
@@ -174,6 +175,9 @@ describe('CreativePackageService', () => {
       expect.objectContaining({
         copyStatus: 'requires_review',
         creativeContentHash: result.creativePackage.contentHash,
+        copies: [expect.objectContaining({
+          whatsappMessage: input.copies[0].whatsappMessage,
+        })],
       }),
     );
     expect(approvals.invalidateForCampaignExceptHash).toHaveBeenCalledWith(
@@ -246,6 +250,16 @@ describe('CreativePackageService', () => {
     const invalid = {
       ...input,
       claims: [{ claimId: 'claim-1', text: 'Sem fonte', sourceRefs: [] }],
+    };
+    await expect(service.appendVersion(
+      tenantId, campaignId, executionPlanId, invalid, 'warison',
+    )).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('requires an initial message for every WhatsApp creative', async () => {
+    const invalid = {
+      ...input,
+      copies: [{ ...input.copies[0], whatsappMessage: undefined }],
     };
     await expect(service.appendVersion(
       tenantId, campaignId, executionPlanId, invalid, 'warison',

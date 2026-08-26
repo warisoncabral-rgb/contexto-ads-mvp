@@ -525,6 +525,13 @@ export class OperatorAccessService {
     );
   }
 
+  async evaluateReadiness(authorizationHeader: string | undefined, tenantId: string,
+    campaignId: string, executionPlanId: string) {
+    const { membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertCanPrepareCampaign(membership.role);
+    return this.operationalReadiness.generate(tenantId, campaignId, executionPlanId);
+  }
+
   async requestPlanApproval(authorizationHeader: string | undefined, tenantId: string,
     campaignId: string, executionPlanId: string) {
     const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);

@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   loadOperationalReadiness,
+  parseReadinessEvaluation,
   validateOperationalQuery,
 } from '../lib/operational-readiness.mjs'
 
 const tenantId = '11111111-1111-4111-8111-111111111111'
 const executionPlanId = '22222222-2222-4222-8222-222222222222'
+const campaignId = '33333333-3333-4333-8333-333333333333'
 process.env.CONTEXT_ADS_OPERATOR_TOKEN = 'test-server-only-token'
 
 function decision(overrides = {}) {
@@ -51,6 +53,18 @@ function decision(overrides = {}) {
 
 test('keeps an empty query in a transparent empty state', () => {
   assert.deepEqual(validateOperationalQuery('', ''), { kind: 'empty' })
+})
+
+test('parses an exact plan scope before recalculating readiness', () => {
+  const form = new FormData()
+  form.set('tenantId', tenantId)
+  form.set('campaignId', campaignId)
+  form.set('executionPlanId', executionPlanId)
+  assert.deepEqual(parseReadinessEvaluation(form), {
+    ok: true, tenantId, campaignId, executionPlanId,
+  })
+  form.set('campaignId', '../other')
+  assert.deepEqual(parseReadinessEvaluation(form), { ok: false })
 })
 
 test('rejects malformed identifiers before calling the backend', async () => {

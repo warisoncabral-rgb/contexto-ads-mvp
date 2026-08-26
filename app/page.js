@@ -10,6 +10,7 @@ import { loadOperationalTimeline } from '../lib/operational-timeline.mjs'
 import OperationalTimeline from './operational-timeline'
 import { loadSelectedExecutionTarget } from '../lib/meta-execution-target.mjs'
 import MetaExecutionTargetPanel from './meta-execution-target-panel'
+import ReadinessBootstrap from './readiness-bootstrap'
 
 const phases = [
   ['campaignPreparation', 'Campanha'],
@@ -46,7 +47,7 @@ function money(currency, minor) {
   }).format(minor / 100)
 }
 
-function EmptyState({ result }) {
+function EmptyState({ result, plan }) {
   const copy = {
     empty: {
       eyebrow: 'Consulta segura',
@@ -104,6 +105,7 @@ function EmptyState({ result }) {
         <span className="status-dot" />
         Nenhuma publicação, ativação ou entrega foi inferida.
       </div>
+      {result.kind === 'not_found' && plan && <ReadinessBootstrap plan={plan} />}
     </section>
   )
 }
@@ -333,7 +335,7 @@ export default async function Page({ searchParams }) {
       <div className="content-shell">
         {result.kind === 'ready'
           ? <DecisionDashboard decision={result.decision} workspace={workspace} approvalResult={approvalResult} creativeResult={creativeResult} executorResult={executorResult} timelineResult={timelineResult} targetResult={targetResult} />
-          : <EmptyState result={result} />}
+          : <EmptyState result={result} plan={workspace.selectedPlan} />}
       </div>
 
       <footer>

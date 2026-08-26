@@ -76,6 +76,8 @@
 - Fluxo guiado permite criar rascunhos de campanha, salvar progresso parcial e retomar pela versão mais recente.
 - A Central Operacional localiza a conta de anúncios previamente selecionada no snapshot Meta e a vincula ao plano sem digitação de IDs, sem expor o cofre e sem qualquer escrita externa.
 - O vínculo do alvo gera um novo plano imutável e torna conexão/conta visíveis no resumo autenticado; respostas cruzadas, seleção ausente ou múltipla são recusadas fail-closed.
+- Planos recém-gerados podem calcular sua primeira decisão de prontidão explicitamente, sem solicitar aprovação e sem depender de uma decisão anterior para abrir a Central Operacional.
+- A primeira campanha Rosa VIP possui preset rastreável de contexto e três rascunhos de copy para WhatsApp, incluindo mensagem inicial aprovada; referências e hashes de mídia continuam obrigatórios.
 - Lacunas do contexto viram tarefas em linguagem operacional; fatos ausentes continuam sem inferência automática.
 - Criação e atualização de contexto exigem `manage_campaign_preparation`; papel `viewer` permanece estritamente leitura.
 - Versão do contexto e auditoria do operador são persistidas atomicamente na mesma transação PostgreSQL.
@@ -99,7 +101,7 @@
 3. O adapter permanece ausente até ambiente real, autorização curta e todos os gates comprovados.
 
 ## Próximo bloco interno de produto
-1. Cadastrar e aprovar o primeiro pacote criativo real da Rosa VIP com referência de mídia e digest verificável.
+1. Cadastrar e aprovar o primeiro pacote criativo real da Rosa VIP com três referências de mídia e digests verificáveis.
 2. Concluir a descoberta/vinculação da Página, Instagram e WhatsApp exigidos pelo destino, sem ampliar permissões silenciosamente.
 3. Preparar o manifesto e o protocolo controlado da primeira campanha, mantendo toda escrita Meta desligada até o gate humano e a validação real.
 

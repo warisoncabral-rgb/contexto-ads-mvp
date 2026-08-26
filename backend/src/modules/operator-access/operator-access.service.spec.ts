@@ -373,6 +373,21 @@ describe('OperatorAccessService', () => {
       .rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('lets preparation roles calculate readiness without requesting approval', async () => {
+    const tenantId = membershipsFixture[0].tenantId;
+    const campaignId = '55555555-5555-4555-8555-555555555555';
+    const planId = '66666666-6666-4666-8666-666666666666';
+    await service.evaluateReadiness('Bearer token', tenantId, campaignId, planId);
+    expect(operationalReadiness.generate).toHaveBeenCalledWith(
+      tenantId, campaignId, planId,
+    );
+    expect(approvalService.request).not.toHaveBeenCalled();
+
+    await expect(service.evaluateReadiness(
+      'Bearer token', membershipsFixture[1].tenantId, campaignId, planId,
+    )).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it('lets an operator request approval but reserves decisions for owners', async () => {
     const tenantId = membershipsFixture[0].tenantId;
     const campaignId = '55555555-5555-4555-8555-555555555555';

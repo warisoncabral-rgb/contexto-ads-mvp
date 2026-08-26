@@ -366,6 +366,14 @@ export class CreativePackageService {
       if (!CTAS.includes(callToAction as CreativeCallToAction)) {
         throw new BadRequestException(`copies[${index}].callToAction is not supported`);
       }
+      const whatsappMessage = item.whatsappMessage === undefined
+        ? undefined
+        : this.text(item.whatsappMessage, `copies[${index}].whatsappMessage`, 1_000);
+      if (callToAction === 'SEND_WHATSAPP_MESSAGE' && !whatsappMessage) {
+        throw new BadRequestException(
+          `copies[${index}].whatsappMessage is required for WhatsApp CTA`,
+        );
+      }
       return {
         copyId: this.identifier(item.copyId, `copies[${index}].copyId`),
         primaryText: this.text(item.primaryText, `copies[${index}].primaryText`, 2_200),
@@ -373,6 +381,7 @@ export class CreativePackageService {
         ...(item.description === undefined ? {} : {
           description: this.text(item.description, `copies[${index}].description`, 500),
         }),
+        ...(whatsappMessage ? { whatsappMessage } : {}),
         callToAction: callToAction as CreativeCallToAction,
       };
     });

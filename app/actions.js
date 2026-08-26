@@ -4,7 +4,10 @@ import { redirect } from 'next/navigation'
 import { parseCampaignForm } from '../lib/campaign-preparation.mjs'
 import { parsePlanGenerationForm, validGeneratedPlan } from '../lib/execution-plan-view.mjs'
 import { parseApprovalAction, validApproval } from '../lib/plan-approval.mjs'
-import { validOperationalDecision } from '../lib/operational-readiness.mjs'
+import {
+  parseReadinessEvaluation,
+  validOperationalDecision,
+} from '../lib/operational-readiness.mjs'
 import { parseCreativeForm, validCreativePackage } from '../lib/creative-media-center.mjs'
 import {
   parseMetaValidationInput,
@@ -311,6 +314,42 @@ export async function bindSelectedExecutionTarget(_previousState, formData) {
   }
   redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}`
     + `&executionPlanId=${encodeURIComponent(plan.executionPlanId)}`)
+}
+
+export async function recalculateOperationalReadiness(_previousState, formData) {
+  const parsed = parseReadinessEvaluation(formData)
+  if (!parsed.ok) return { error: 'O escopo do plano é inválido.' }
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) {
+    return { error: 'A central não está conectada ao backend seguro.' }
+  }
+  let response
+  try {
+    response = await fetch(
+      `${apiBaseUrl.replace(/\/$/, '')}/v1/operator/tenants/${encodeURIComponent(parsed.tenantId)}`
+        + `/campaigns/${encodeURIComponent(parsed.campaignId)}/plans/`
+        + `${encodeURIComponent(parsed.executionPlanId)}/readiness`,
+      { method: 'POST', headers: { accept: 'application/json',
+        authorization: `Bearer ${operatorToken}` }, cache: 'no-store',
+      signal: globalThis.AbortSignal.timeout(8000) },
+    )
+  } catch {
+    return { error: 'Não foi possível calcular a prontidão agora. Nenhuma escrita externa ocorreu.' }
+  }
+  if ([401, 403].includes(response.status)) {
+    return { error: 'Seu papel não permite calcular a prontidão.' }
+  }
+  if (!response.ok) return { error: 'O backend bloqueou o cálculo com segurança.' }
+  let decision
+  try { decision = await response.json() } catch {
+    return { error: 'O backend não devolveu uma decisão verificável.' }
+  }
+  if (!validOperationalDecision(decision, parsed.tenantId, parsed.executionPlanId)) {
+    return { error: 'A decisão não corresponde ao plano selecionado.' }
+  }
+  redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}`
+    + `&executionPlanId=${encodeURIComponent(parsed.executionPlanId)}`)
 }
 
 export async function changePlanApproval(_previousState, formData) {
