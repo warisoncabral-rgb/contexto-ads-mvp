@@ -57,7 +57,7 @@ export class CampaignPackageService {
       pkg.locations.forEach((location, index) => {
         if (!this.nonEmptyString(location?.city)) missing.push(`locations[${index}].city`);
         if (!this.nonEmptyString(location?.country)) missing.push(`locations[${index}].country`);
-        if (location?.radius_km !== undefined && (!Number.isFinite(location.radius_km) || location.radius_km <= 0)) {
+        if (location?.radius_km !== undefined && (!Number.isFinite(Number(location.radius_km)) || location.radius_km <= 0)) {
           blockers.push(`locations[${index}].radius_km must be greater than zero`);
         }
       });
@@ -66,7 +66,7 @@ export class CampaignPackageService {
     if (pkg.budget_type !== 'DAILY' && pkg.budget_type !== 'LIFETIME') {
       missing.push('budget_type');
     }
-    if (!Number.isFinite(pkg.budget_amount) || Number(pkg.budget_amount) <= 0) {
+    if (!Number.isFinite(Number(pkg.budget_amount)) || Number(pkg.budget_amount) <= 0) {
       missing.push('budget_amount');
     }
     if (pkg.budget_type === 'DAILY' && (!Number.isInteger(pkg.duration_days) || Number(pkg.duration_days) < 1)) {
@@ -152,7 +152,7 @@ export class CampaignPackageService {
         .map(([key, item]) => `${JSON.stringify(key)}:${this.stableStringify(item)}`)
         .join(',')}}`;
     }
-    return JSON.stringify(value);
+    return JSON.stringify(value) ?? 'null';
   }
 
   private nonEmptyString(value: unknown): value is string {
