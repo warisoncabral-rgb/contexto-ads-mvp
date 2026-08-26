@@ -77,7 +77,15 @@ describe('MetaReadonlyAdapter', () => {
       if (input.pathname.endsWith('/adaccounts')) {
         return json({ data: [{ id: 'act_456', name: 'Secondary ads' }] });
       }
-      return json({ data: [{ id: '789', name: 'Main page' }] });
+      if (input.pathname.endsWith('/accounts')) {
+        return json({ data: [{ id: '789', name: 'Main page' }] });
+      }
+      return json({
+        id: '789',
+        name: 'Main page',
+        has_whatsapp_number: true,
+        whatsapp_number: '+55 83 99999-0000',
+      });
     });
 
     const result = await adapter.discoverAssets(credentialRef, tenantId);
@@ -88,12 +96,38 @@ describe('MetaReadonlyAdapter', () => {
         { assetType: 'ad_account', externalId: 'act_123', displayName: 'Primary ads' },
         { assetType: 'ad_account', externalId: 'act_456', displayName: 'Secondary ads' },
         { assetType: 'facebook_page', externalId: '789', displayName: 'Main page' },
+        { assetType: 'whatsapp', externalId: '5583999990000',
+          displayName: 'WhatsApp · Main page' },
       ],
     }));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     const cursorRequest = (fetchMock.mock.calls as Array<[URL]>).find(([url]) =>
       url.searchParams.get('after') === 'cursor-1');
     expect(cursorRequest).toBeDefined();
+  });
+
+  it('falls back to pages promotable by the discovered ad account', async () => {
+    fetchMock.mockImplementation(async (input: URL) => {
+      if (input.pathname.endsWith('/adaccounts')) {
+        return json({ data: [{ id: 'act_123', name: 'Primary ads' }] });
+      }
+      if (input.pathname.endsWith('/accounts')) return json({ data: [] });
+      if (input.pathname.endsWith('/promote_pages')) {
+        return json({ data: [{ id: '789', name: 'Promotable page' }] });
+      }
+      return json({ id: '789', name: 'Promotable page', has_whatsapp_number: false });
+    });
+
+    await expect(adapter.discoverAssets(credentialRef, tenantId)).resolves.toEqual(
+      expect.objectContaining({
+        success: true,
+        data: expect.arrayContaining([
+          { assetType: 'facebook_page', externalId: '789', displayName: 'Promotable page' },
+        ]),
+      }),
+    );
+    expect((fetchMock.mock.calls as Array<[URL]>).some(([url]) =>
+      url.pathname.endsWith('/act_123/promote_pages'))).toBe(true);
   });
 
   it('fails closed instead of persisting partial discovery', async () => {
