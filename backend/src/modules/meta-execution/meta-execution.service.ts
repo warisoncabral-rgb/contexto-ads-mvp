@@ -187,6 +187,7 @@ export class MetaExecutionService {
           if (operationState) {
             operationState.status = result.retryable ? 'uncertain' : 'failed';
             operationState.normalizedError = result.normalizedError ?? 'UNKNOWN';
+            operationState.diagnosticCode = result.diagnosticCode;
           }
           throw new Error(result.normalizedError ?? 'UNKNOWN');
         }
@@ -199,6 +200,7 @@ export class MetaExecutionService {
           operationState.status = observed.retryable ? 'uncertain' : 'failed';
           operationState.externalObjectId = result.data.id;
           operationState.normalizedError = observed.normalizedError ?? 'UNKNOWN';
+          operationState.diagnosticCode = observed.diagnosticCode;
           throw new Error(observed.normalizedError ?? 'UNKNOWN');
         }
         if (operation.objectType !== 'creative'

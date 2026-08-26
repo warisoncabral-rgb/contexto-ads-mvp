@@ -15,6 +15,7 @@ class MetaWriteRequestError extends Error {
   constructor(
     readonly normalizedError: NormalizedError,
     readonly retryable: boolean,
+    readonly diagnosticCode?: string,
   ) {
     super('Meta Graph write request failed');
   }
@@ -190,16 +191,21 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
   private classify(status: number, payload: unknown): MetaWriteRequestError {
     const code = this.isObject(payload) && this.isObject(payload.error)
       && typeof payload.error.code === 'number' ? payload.error.code : 0;
+    const subcode = this.isObject(payload) && this.isObject(payload.error)
+      && typeof payload.error.error_subcode === 'number' ? payload.error.error_subcode : 0;
+    const diagnosticCode = code > 0
+      ? `META_${code}${subcode > 0 ? `_${subcode}` : ''}`
+      : `HTTP_${status}`;
     if ([190, 10, 200, 294].includes(code) || status === 401 || status === 403) {
-      return new MetaWriteRequestError('AUTH_PERMISSION', false);
+      return new MetaWriteRequestError('AUTH_PERMISSION', false, diagnosticCode);
     }
     if (code === 100 || status === 400 || status === 422) {
-      return new MetaWriteRequestError('VALIDATION', false);
+      return new MetaWriteRequestError('VALIDATION', false, diagnosticCode);
     }
     if (code === 17 || code === 4 || status === 429 || status >= 500) {
-      return new MetaWriteRequestError('TRANSIENT_API', true);
+      return new MetaWriteRequestError('TRANSIENT_API', true, diagnosticCode);
     }
-    return new MetaWriteRequestError('UNKNOWN', false);
+    return new MetaWriteRequestError('UNKNOWN', false, diagnosticCode);
   }
 
   private async readBoundedBody(response: Response, controller: AbortController) {
@@ -235,6 +241,7 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
       observedAt,
       retryable: normalized.retryable,
       normalizedError: normalized.normalizedError,
+      ...(normalized.diagnosticCode ? { diagnosticCode: normalized.diagnosticCode } : {}),
     };
   }
 

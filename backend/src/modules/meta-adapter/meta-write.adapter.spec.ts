@@ -72,7 +72,9 @@ describe('MetaWriteAdapter', () => {
 
   it('normalizes Meta validation errors without returning the raw body', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(new Response(
-      JSON.stringify({ error: { code: 100, message: 'sensitive raw detail' } }),
+      JSON.stringify({ error: {
+        code: 100, error_subcode: 1815007, message: 'sensitive raw detail',
+      } }),
       { status: 400, headers: { 'content-type': 'application/json' } },
     ));
     const adapter = new MetaWriteAdapter(new ConfigService({
@@ -87,6 +89,7 @@ describe('MetaWriteAdapter', () => {
     );
     expect(result).toEqual(expect.objectContaining({
       success: false, normalizedError: 'VALIDATION', retryable: false,
+      diagnosticCode: 'META_100_1815007',
     }));
     expect(JSON.stringify(result)).not.toContain('sensitive raw detail');
   });

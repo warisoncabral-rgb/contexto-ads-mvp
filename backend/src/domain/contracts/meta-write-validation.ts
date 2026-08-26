@@ -96,6 +96,7 @@ export interface MetaWriteValidationProtocolV1 {
       observedStatus?: string;
       sanitizedResponseRef?: string;
       normalizedError?: string;
+      diagnosticCode?: string;
     }>;
   };
   correlationId: string;
