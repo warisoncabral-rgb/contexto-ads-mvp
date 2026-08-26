@@ -139,12 +139,13 @@ describe('MetaOAuthService', () => {
     const url = new URL(result.authorizationUrl);
 
     expect(url.searchParams.get('scope')).toBe(
-      'public_profile,ads_read,pages_show_list,pages_read_engagement,ads_management',
+      'public_profile,ads_read,pages_show_list,pages_read_engagement,ads_management,'
+      + 'business_management,whatsapp_business_management',
     );
     expect(url.searchParams.get('auth_type')).toBe('rerequest');
     expect(saved[0].requestedScopes).toEqual([
       'public_profile', 'ads_read', 'pages_show_list', 'pages_read_engagement',
-      'ads_management',
+      'ads_management', 'business_management', 'whatsapp_business_management',
     ]);
   });
 

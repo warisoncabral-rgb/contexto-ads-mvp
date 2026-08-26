@@ -100,7 +100,7 @@ describe('MetaReadonlyAdapter', () => {
           displayName: 'WhatsApp · Main page' },
       ],
     }));
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     const cursorRequest = (fetchMock.mock.calls as Array<[URL]>).find(([url]) =>
       url.searchParams.get('after') === 'cursor-1');
     expect(cursorRequest).toBeDefined();
@@ -110,6 +110,9 @@ describe('MetaReadonlyAdapter', () => {
     const pageAccessToken = 'page-only-access-token-123456';
     fetchMock.mockImplementation(async (input: URL, init?: RequestInit) => {
       if (input.pathname.endsWith('/adaccounts')) return json({ data: [] });
+      if (input.pathname.endsWith('/businesses')) {
+        return json({ error: { code: 200 } }, 403);
+      }
       if (input.pathname.endsWith('/accounts')) {
         expect(input.searchParams.get('fields')).toBe('id,name,access_token');
         return json({ data: [{
@@ -139,6 +142,41 @@ describe('MetaReadonlyAdapter', () => {
           { assetType: 'whatsapp', externalId: '5583999990000',
             displayName: 'WhatsApp · Main page' },
         ],
+      }),
+    );
+  });
+
+  it('discovers owned WhatsApp numbers through the business portfolio', async () => {
+    fetchMock.mockImplementation(async (input: URL) => {
+      if (input.pathname.endsWith('/adaccounts') || input.pathname.endsWith('/accounts')) {
+        return json({ data: [] });
+      }
+      if (input.pathname.endsWith('/businesses')) {
+        return json({ data: [{ id: '181822913144307', name: 'Rosa VIP' }] });
+      }
+      if (input.pathname.endsWith('/owned_whatsapp_business_accounts')) {
+        return json({ data: [{ id: '1002133529311219', name: 'Rosa VIP WhatsApp' }] });
+      }
+      if (input.pathname.endsWith('/phone_numbers')) {
+        expect(input.searchParams.get('fields'))
+          .toBe('id,display_phone_number,verified_name');
+        return json({ data: [{
+          id: '123456789012345',
+          display_phone_number: '+55 83 99999-0000',
+          verified_name: 'Warison Representante Rosavip',
+        }] });
+      }
+      return json({ data: [] });
+    });
+
+    await expect(adapter.discoverAssets(credentialRef, tenantId)).resolves.toEqual(
+      expect.objectContaining({
+        success: true,
+        data: [{
+          assetType: 'whatsapp',
+          externalId: '5583999990000',
+          displayName: 'Warison Representante Rosavip',
+        }],
       }),
     );
   });

@@ -55,9 +55,10 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
     const observedAt = new Date().toISOString();
     try {
       const credential = await this.getCredential(tenantId, credentialRef);
-      const [adAccounts, managedPages] = await Promise.all([
+      const [adAccounts, managedPages, ownedWhatsappAssets] = await Promise.all([
         this.collectEdge('/me/adaccounts', credential.accessToken),
         this.collectEdge('/me/accounts', credential.accessToken, 'id,name,access_token'),
+        this.discoverOwnedWhatsapp(credential.accessToken),
       ]);
       const adAccountAssets = adAccounts.map((item) => this.toAsset(item, 'ad_account'));
       const promotedPages = managedPages.length === 0
@@ -78,7 +79,7 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
       const assets: DiscoveredMetaAsset[] = [
         ...adAccountAssets,
         ...pageAssets,
-        ...whatsappAssets,
+        ...this.uniqueAssets([...whatsappAssets, ...ownedWhatsappAssets]),
       ];
       return this.success(assets, observedAt);
     } catch (error) {
@@ -419,6 +420,53 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
       tokens.set(value.id, value.access_token);
     }
     return tokens;
+  }
+
+  private async discoverOwnedWhatsapp(accessToken: string): Promise<DiscoveredMetaAsset[]> {
+    try {
+      const businesses = await this.collectEdge('/me/businesses', accessToken);
+      const wabas = (await Promise.all(businesses.map((business) => {
+        if (!this.isObject(business) || !this.isDigits(business.id)) {
+          throw new MetaGraphRequestError('VALIDATION', false);
+        }
+        return this.collectEdge(
+          `/${business.id}/owned_whatsapp_business_accounts`,
+          accessToken,
+        );
+      }))).flat();
+      const phones = (await Promise.all(wabas.map((waba) => {
+        if (!this.isObject(waba) || !this.isDigits(waba.id)) {
+          throw new MetaGraphRequestError('VALIDATION', false);
+        }
+        return this.collectEdge(
+          `/${waba.id}/phone_numbers`,
+          accessToken,
+          'id,display_phone_number,verified_name',
+        );
+      }))).flat();
+      return this.uniqueAssets(phones.flatMap((phone) => this.toWhatsappAsset(phone)));
+    } catch (error) {
+      if (error instanceof MetaGraphRequestError && !error.retryable) return [];
+      throw error;
+    }
+  }
+
+  private toWhatsappAsset(value: unknown): DiscoveredMetaAsset[] {
+    if (!this.isObject(value) || !this.isDigits(value.id)
+      || typeof value.display_phone_number !== 'string'
+      || (value.verified_name !== undefined && typeof value.verified_name !== 'string')) {
+      throw new MetaGraphRequestError('VALIDATION', false);
+    }
+    const phoneNumber = value.display_phone_number.replace(/\D/g, '');
+    if (!/^\d{8,15}$/.test(phoneNumber)) return [];
+    const name = typeof value.verified_name === 'string'
+      ? value.verified_name
+      : `WhatsApp ${phoneNumber.slice(-4)}`;
+    return [{
+      assetType: 'whatsapp',
+      externalId: phoneNumber,
+      displayName: name.slice(0, 255),
+    }];
   }
 
   private async discoverPageWhatsapp(
