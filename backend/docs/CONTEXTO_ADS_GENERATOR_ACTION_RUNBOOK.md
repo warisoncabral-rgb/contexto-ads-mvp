@@ -21,149 +21,107 @@ O backend continua validando a associação do operador ao tenant antes de aceit
 ## Operações expostas ao Contexto Ads
 
 ### `submitCampaignPackage`
-
 Envia uma estratégia concluída como `Campaign Package V1`.
 
-Efeitos permitidos:
+Permitido: validar, persistir/versionar internamente, criar/reusar Campaign Context, Execution Plan e Creative Package inicial, e vincular connection/ad account somente quando o ativo já tiver sido descoberto e validado pelo Gerador.
 
-- validar o pacote;
-- persistir/versionar o handoff internamente;
-- criar/reusar o Campaign Context interno;
-- criar/reusar o Execution Plan;
-- criar/reusar o Creative Package inicial;
-- vincular connection/ad account somente quando o ativo informado já tiver sido descoberto e validado pelo Gerador.
-
-Efeitos proibidos nessa operação:
-
-- criar objetos na Meta;
-- ativar campanha;
-- autorizar gasto;
-- liberar veiculação;
-- substituir aprovação humana do plano;
-- executar manifesto.
+Proibido nessa operação: criar objetos Meta, ativar campanha, autorizar gasto, liberar veiculação, substituir aprovação humana ou executar manifesto.
 
 ### `getCampaignPackageStatus`
-
-Retorna estado sanitizado para o Contexto Ads explicar ao usuário o estágio atual e o próximo passo.
+Retorna estado sanitizado e próximo passo.
 
 ### `submitReviewedCreativePackage`
-
-Envia uma nova versão do Creative Package após a revisão humana dos textos, mídia e checklist. A chamada usa o `executionPlanId` corrente e não aprova o criativo automaticamente.
+Envia uma nova versão do Creative Package após revisão humana dos textos, mídia e checklist. Não aprova automaticamente.
 
 ### `getLatestCreativePackage`
-
-Consulta a versão criativa atual e seu hash exato. É somente leitura e serve para o Contexto Ads apresentar ao usuário aquilo que efetivamente está prestes a ser aprovado.
+Consulta a versão criativa atual e seu hash exato.
 
 ### `approveCreativePackage`
-
-Registra a aprovação humana da versão criativa exata pelo `contentHash`. A chamada só deve ocorrer depois de uma decisão explícita do usuário. Aprovar o criativo não aprova o plano e não autoriza execução.
+Registra aprovação humana da versão criativa exata pelo `contentHash`. Não aprova plano nem execução.
 
 ### `requestExecutionPlanApproval`
-
-Abre a aprovação formal do plano atual, vinculada ao ID/hash do plano e ao escopo financeiro calculado pelo Gerador. Abrir a solicitação não executa o plano.
+Abre a aprovação formal do plano atual, ligada ao ID/hash e escopo financeiro. Não executa o plano.
 
 ### `getExecutionPlanApproval`
-
-Consulta o estado da aprovação do plano. É somente leitura.
+Consulta o estado da aprovação do plano.
 
 ### `decideExecutionPlanApproval`
-
-Registra uma decisão humana explícita `approve`, `reject` ou `revoke`. O Contexto Ads não deve inferir nem antecipar essa decisão. Mesmo quando o plano é aprovado, isso não equivale à autorização curta de execução e não permite escrita Meta por si só.
+Registra decisão humana explícita `approve`, `reject` ou `revoke`. Plano aprovado não equivale a autorização curta de execução.
 
 ## Regra de uso pelo GPT
 
-O Contexto Ads só deve chamar `submitCampaignPackage` quando:
+O Contexto Ads só chama `submitCampaignPackage` quando estratégia e handoff estiverem concluídos, todos os campos obrigatórios existirem, as mídias tiverem referência real/SHA-256/MIME/dimensões, cada anúncio estiver ligado à mídia correta e a revisão estratégica anterior ao handoff tiver terminado.
 
-1. a estratégia estiver concluída;
-2. `strategy_status = COMPLETE`;
-3. `handoff_status = READY_FOR_GENERATOR`;
-4. os campos obrigatórios do contrato estiverem presentes;
-5. as mídias possuírem referência real, SHA-256, MIME e dimensões;
-6. cada anúncio estiver ligado explicitamente à sua mídia;
-7. o usuário tiver concluído a revisão estratégica que precede o handoff.
-
-O handoff não deve ser descrito ao usuário como publicação ou ativação.
+O handoff nunca deve ser descrito como publicação ou ativação.
 
 ## Regra de aprovação humana
 
 O Contexto Ads pode consultar e explicar estados livremente, mas não pode transformar linguagem ambígua em aprovação.
 
-Para `submitReviewedCreativePackage`, a revisão deve ter ocorrido de fato. Para `approveCreativePackage` ou `decideExecutionPlanApproval` com decisão `approve`, deve existir manifestação explícita e específica do usuário sobre o objeto apresentado.
+Para `submitReviewedCreativePackage`, a revisão precisa ter ocorrido de fato. Para `approveCreativePackage` ou `decideExecutionPlanApproval` com `approve`, deve existir manifestação explícita e específica do usuário sobre a versão/hash apresentados.
 
-A aprovação fica ligada à versão/hash exatos; qualquer alteração relevante exige nova versão e nova decisão.
+Qualquer alteração relevante invalida a decisão anterior e exige nova versão e nova aprovação.
 
-A sequência recomendada é:
+Sequência recomendada:
 
 1. `getCampaignPackageStatus`;
-2. apresentar textos, mídia e checklist ao usuário;
-3. após a revisão, `submitReviewedCreativePackage` com o checklist real;
+2. apresentar textos, mídia e checklist;
+3. após revisão, `submitReviewedCreativePackage`;
 4. `getLatestCreativePackage`;
-5. apresentar versão/hash do criativo;
+5. apresentar versão/hash;
 6. após aprovação explícita, `approveCreativePackage`;
-7. consultar novamente o status/plano;
+7. consultar o plano corrente;
 8. `requestExecutionPlanApproval`;
-9. apresentar hash, teto financeiro e escopo ao usuário;
+9. apresentar hash, teto financeiro e escopo;
 10. após aprovação explícita, `decideExecutionPlanApproval` com `approve`;
-11. encerrar a Action V1 nesse ponto e informar que execução continua em gate separado.
+11. encerrar a Action V1 nesse ponto; execução continua em gate separado.
 
-## Comportamento de retorno
-
-Se o backend devolver pendências, o Contexto Ads deve apresentar somente as pendências acionáveis e solicitar os dados faltantes. Não deve inventar valores para completar o pacote.
-
-Se o handoff for aceito, o GPT deve usar o retorno estruturado e, quando necessário, `getCampaignPackageStatus` para informar:
-
-- versão aceita;
-- estado do Creative Package;
-- ID/hash do Execution Plan;
-- estado do alvo Meta;
-- teto financeiro calculado quando disponível no status;
-- próximo passo.
-
-## Limite de segurança da Action V1
+## Limite de segurança congelado da Action V1
 
 A Action V1 deliberadamente NÃO expõe:
 
-- preparação de manifesto de execução;
+- preparação de manifesto;
 - criação de autorização curta de execução;
 - decisão da autorização curta;
 - preflight de execução;
 - alteração do Kill Switch;
-- preparação de protocolo de escrita Meta;
+- protocolo de escrita Meta;
 - `execute-paused`;
 - qualquer chamada direta à Marketing API.
 
-Esses endpoints continuam existindo no Gerador, mas permanecem fora do contrato conversacional até a prova hospedada sem escrita ser concluída. Essa separação impede que a simples instalação da Action transforme o Contexto Ads em executor externo.
+Essas capacidades continuam no Gerador, mas ficam fora do contrato conversacional enquanto não houver prova hospedada sem escrita e configuração real da Action no GPT.
 
 ## Evidência E2E interna atual
 
-O workflow `Campaign Package E2E validation` valida em PostgreSQL real e API Nest real:
+O workflow `Campaign Package E2E validation`, em PostgreSQL 18 e API Nest reais, já comprovou:
 
 1. handoff autenticado;
-2. persistência do Campaign Context;
-3. criação do Execution Plan;
-4. criação do Creative Package inicial em `needs_review`;
-5. submissão de Creative Package revisado;
-6. aprovação do criativo pelo hash exato;
-7. solicitação de aprovação do plano;
-8. aprovação do plano;
-9. confirmação de `approvalIsExecutionAuthorization=false`;
-10. confirmação de zero escrita Meta durante todo o fluxo.
+2. Campaign Context persistido;
+3. Execution Plan criado;
+4. Creative Package inicial em `needs_review`;
+5. Creative Package revisado submetido;
+6. criativo aprovado pelo hash exato;
+7. aprovação do plano solicitada;
+8. plano aprovado;
+9. `approvalIsExecutionAuthorization=false`;
+10. zero escrita Meta durante todo o fluxo.
 
 ## Teste de aceite hospedado sem escrita
 
-1. Criar uma campanha completa no Contexto Ads.
-2. Gerar um `Campaign Package V1` novo.
-3. Chamar `submitCampaignPackage` uma vez.
-4. Reenviar o mesmo pacote e confirmar idempotência.
-5. Chamar `getCampaignPackageStatus`.
-6. Confirmar que Campaign Context, Creative Package e Execution Plan existem internamente.
-7. Confirmar que o alvo Meta só foi vinculado se a conta fornecida já estava descoberta para o tenant.
-8. Revisar o conteúdo e chamar `submitReviewedCreativePackage`.
-9. Consultar e aprovar a versão criativa exata.
-10. Solicitar e decidir a aprovação do plano.
-11. Confirmar `publication_authorized=false`, `approvalIsExecutionAuthorization=false` e ausência de escrita Meta.
-12. Confirmar que nenhuma campanha, conjunto, criativo ou anúncio novo foi criado na Meta durante esse teste.
+1. Criar campanha completa no Contexto Ads.
+2. Gerar novo `Campaign Package V1`.
+3. `submitCampaignPackage` e repetir para confirmar idempotência.
+4. `getCampaignPackageStatus`.
+5. Confirmar Campaign Context, Creative Package e Execution Plan.
+6. Confirmar binding Meta somente se o ativo já estiver descoberto para o tenant.
+7. Revisar e `submitReviewedCreativePackage`.
+8. Consultar e aprovar versão criativa exata.
+9. Solicitar e decidir aprovação do plano.
+10. Confirmar `publication_authorized=false`, `approvalIsExecutionAuthorization=false` e ausência de escrita Meta.
+11. Confirmar que nenhum objeto novo foi criado na Meta.
 
 ## Gate seguinte
 
-Depois do teste acima passar no ambiente hospedado e a Action funcionar numa conversa real do Contexto Ads, poderá ser criado um contrato separado para o trecho de execução. Esse futuro contrato deverá continuar exigindo manifesto, aprovação curta, preflight, Kill Switch, criação apenas em `PAUSED` e reconciliação antes de qualquer promoção a V1 concluída.
+Após a prova hospedada e a Action funcionando em conversa real do Contexto Ads, o trecho de execução deverá ser promovido por contrato separado, mantendo manifesto, autorização curta, preflight, Kill Switch, criação apenas em `PAUSED` e reconciliação.
+
+**Regra congelada desta fase:** aprovação do plano conclui a responsabilidade da Action V1 sem escrita. Qualquer operação externa pertence ao gate de execução e não pode ser adicionada silenciosamente ao mesmo contrato.
