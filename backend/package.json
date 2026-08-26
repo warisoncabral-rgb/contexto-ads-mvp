@@ -11,7 +11,8 @@
     "start:dev": "nest start --watch",
     "migrate": "node scripts/run-migrations.mjs",
     "test": "jest --runInBand",
-    "lint": "eslint . --max-warnings=0"
+    "lint": "eslint . --max-warnings=0",
+    "smoke:campaign-package": "node scripts/smoke-campaign-package-handoff.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.1",
