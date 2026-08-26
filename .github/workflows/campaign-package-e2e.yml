@@ -5,6 +5,12 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/campaign-package-e2e.yml'
+  push:
+    branches:
+      - agent/contexto-gerador-integration-v1
+    paths:
+      - 'backend/**'
+      - '.github/workflows/campaign-package-e2e.yml'
 
 permissions:
   contents: read
