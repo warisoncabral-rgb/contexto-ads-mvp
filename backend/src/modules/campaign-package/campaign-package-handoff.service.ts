@@ -19,6 +19,7 @@ import { CampaignContextRepository } from '../../domain/ports/repositories';
 import { CAMPAIGN_CONTEXT_REPOSITORY } from '../../infrastructure/database/database.tokens';
 import { CreativePackageService } from '../creative-package/creative-package.service';
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
+import { ExecutionSimulationService } from '../execution-simulation/execution-simulation.service';
 import { CampaignPackageMapper } from './campaign-package.mapper';
 
 export interface CampaignPackageHandoffResultV1 {
@@ -34,6 +35,7 @@ export interface CampaignPackageHandoffResultV1 {
   execution_plan_id: string;
   execution_plan_hash: string;
   execution_plan_status: string;
+  target_binding_status: 'BOUND' | 'PENDING_RESOLUTION';
   execution_target_hints: unknown;
   next_action: 'REVIEW_CREATIVE_AND_EXECUTION_PLAN';
   boundaries: {
@@ -54,6 +56,7 @@ export class CampaignPackageHandoffService {
     private readonly contexts: CampaignContextRepository,
     private readonly executionPlans: ExecutionPlanService,
     private readonly creativePackages: CreativePackageService,
+    private readonly executionSimulations: ExecutionSimulationService,
   ) {}
 
   async submit(
@@ -88,6 +91,17 @@ export class CampaignPackageHandoffService {
       prepared.generator_inputs.creative_package,
       operatorSubject,
     );
+    const hints = prepared.generator_inputs.execution_target_hints;
+    const targetBound = Boolean(hints.ad_account_id);
+    const finalPlan = targetBound
+      ? await this.executionSimulations.bindTarget(
+        tenantId,
+        campaignId,
+        creativeBinding.executionPlan.executionPlanId,
+        hints.meta_connection_id,
+        hints.ad_account_id,
+      )
+      : creativeBinding.executionPlan;
 
     return {
       package_id: prepared.package_id,
@@ -99,10 +113,11 @@ export class CampaignPackageHandoffService {
       creative_package_version: creativeBinding.creativePackage.version,
       creative_package_hash: creativeBinding.creativePackage.contentHash,
       creative_package_status: creativeBinding.creativePackage.status,
-      execution_plan_id: creativeBinding.executionPlan.executionPlanId,
-      execution_plan_hash: creativeBinding.executionPlan.planHash,
-      execution_plan_status: creativeBinding.executionPlan.status,
-      execution_target_hints: prepared.generator_inputs.execution_target_hints,
+      execution_plan_id: finalPlan.executionPlanId,
+      execution_plan_hash: finalPlan.planHash,
+      execution_plan_status: finalPlan.status,
+      target_binding_status: targetBound ? 'BOUND' : 'PENDING_RESOLUTION',
+      execution_target_hints: hints,
       next_action: 'REVIEW_CREATIVE_AND_EXECUTION_PLAN',
       boundaries: {
         persisted: true,
