@@ -32,6 +32,24 @@ import {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SHA = /^[0-9a-f]{64}$/
 
+async function safeBackendFailure(response, fallback) {
+  let payload
+  try { payload = await response.json() } catch { payload = null }
+  const candidateCode = payload?.code ?? payload?.error?.code
+  const candidateMessage = typeof payload?.message === 'string'
+    ? payload.message
+    : typeof payload?.error?.message === 'string' ? payload.error.message : ''
+  const code = typeof candidateCode === 'string' && /^[a-z0-9_-]{2,80}$/i.test(candidateCode)
+    ? candidateCode : ''
+  const message = candidateMessage
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180)
+  const detail = [response.status, code, message].filter(Boolean).join(' · ')
+  return detail ? `${fallback} (${detail})` : fallback
+}
+
 export async function startMetaAuthorization(formData) {
   const tenantId = String(formData.get('tenantId') ?? '').trim()
   if (!UUID.test(tenantId)) redirect('/integrations/meta?error=tenant')
@@ -533,7 +551,9 @@ export async function changeExecutorControl(_previousState, formData) {
   } catch { return { error: 'Não foi possível validar o executor. Nenhuma tentativa externa começou.' } }
   if ([401, 403].includes(response.status)) return { error: 'Seu papel não permite esta ação.' }
   if (response.status === 409) return { error: 'O estado mudou ou expirou. Recarregue antes de decidir.' }
-  if (!response.ok) return { error: 'O backend bloqueou a ação com segurança.' }
+  if (!response.ok) return {
+    error: await safeBackendFailure(response, 'O backend bloqueou a ação com segurança.'),
+  }
   let result
   try { result = await response.json() } catch { return { error: 'O backend não confirmou a ação.' } }
   const expectedPlan = { tenantId: parsed.tenantId, campaignId: parsed.campaignId,
