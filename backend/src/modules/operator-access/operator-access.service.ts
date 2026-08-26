@@ -79,6 +79,7 @@ const TIMELINE_COPY: Record<string, Pick<OperatorTimelineItemV1, 'category' | 't
   meta_write_validation_protocol_prepared: { category: 'safety', title: 'Protocolo real preparado', detail: 'As onze evidências externas foram definidas, ainda não coletadas.' },
   meta_write_execution_started: { category: 'executor', title: 'Criação pausada iniciada', detail: 'O executor iniciou o manifesto autorizado com entrega bloqueada.' },
   meta_write_operation_succeeded: { category: 'executor', title: 'Operação Meta comprovada', detail: 'Um objeto externo foi criado e reconciliado em estado seguro.' },
+  meta_write_operation_reconciled: { category: 'safety', title: 'Objeto Meta reconciliado', detail: 'Uma releitura autenticada confirmou o status configurado como pausado, sem nova escrita.' },
   meta_write_validation_succeeded: { category: 'executor', title: 'Executor real validado', detail: 'Todos os objetos foram criados uma vez, observados pausados e reconciliados.' },
   meta_write_validation_failed: { category: 'safety', title: 'Execução interrompida', detail: 'O fluxo parou dependências e acionou a trava da campanha para reconciliação.' },
 };
@@ -657,6 +658,9 @@ export class OperatorAccessService {
     executionManifestId: string) {
     const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
     this.assertPermission(membership.role, 'prepare_write_validation');
+    await this.metaExecution.reconcileFailedPausedObjects(
+      tenantId, executionManifestId, operator.subject,
+    );
     return this.metaWriteValidation.prepare(tenantId, executionManifestId, operator.subject);
   }
 

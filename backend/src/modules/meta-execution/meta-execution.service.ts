@@ -46,6 +46,87 @@ export class MetaExecutionService {
     private readonly config: ConfigService,
   ) {}
 
+  async reconcileFailedPausedObjects(
+    tenantIdValue: unknown,
+    executionManifestIdValue: unknown,
+    actorValue: unknown,
+  ): Promise<MetaWriteValidationProtocolV1 | null> {
+    const tenantId = this.uuid(tenantIdValue, 'tenantId');
+    const executionManifestId = this.uuid(
+      executionManifestIdValue, 'executionManifestId',
+    );
+    const actor = this.actor(actorValue);
+    const manifest = await this.manifests.findById(tenantId, executionManifestId);
+    if (!manifest) throw new NotFoundException('Execution manifest not found');
+    const protocol = await this.protocols.latestForManifest(tenantId, executionManifestId);
+    if (!protocol || protocol.status !== 'external_validation_failed') return protocol;
+    const plan = await this.plans.findById(tenantId, manifest.executionPlanId);
+    if (!plan || plan.planHash !== manifest.planHash) {
+      throw new ConflictException('Execution plan is missing or stale');
+    }
+    const connectionId = plan.meta.connectionId;
+    if (!connectionId) throw new ConflictException('A valid Meta execution target is required');
+    const connection = await this.connections.findById(tenantId, connectionId);
+    if (!connection?.credentialRef || !['connected', 'ready'].includes(connection.status)) {
+      throw new ConflictException('The Meta connection is not ready');
+    }
+    let changed = false;
+    for (const operationState of protocol.execution?.operations ?? []) {
+      if (!operationState.externalObjectId || operationState.status === 'succeeded') continue;
+      const manifestOperation = manifest.operations.find(
+        (candidate) => candidate.operationKey === operationState.operationKey,
+      );
+      if (!manifestOperation || manifestOperation.objectType !== operationState.objectType) {
+        throw new ConflictException('External object does not match the current manifest');
+      }
+      const observed = await this.adapter.read(
+        tenantId,
+        connection.credentialRef,
+        operationState.externalObjectId,
+        operationState.objectType !== 'creative',
+      );
+      if (!observed.success || !observed.data) {
+        throw new ConflictException({
+          code: 'meta_reconciliation_read_failed',
+          message: 'External object could not be reconciled safely',
+        });
+      }
+      const observedStatus = operationState.objectType === 'creative'
+        ? 'CREATED_NO_DELIVERY_STATE'
+        : observed.data.configuredStatus;
+      if (!observedStatus || (operationState.objectType !== 'creative'
+        && observedStatus !== 'PAUSED')) {
+        await this.killSwitch.changeCampaign(
+          tenantId, manifest.campaignId, 'engaged', actor,
+          'Reconciliação encontrou objeto externo sem status configurado PAUSED.',
+        );
+        throw new ConflictException({
+          code: 'meta_reconciliation_not_paused',
+          message: 'External object is not configured as PAUSED',
+        });
+      }
+      operationState.status = 'succeeded';
+      operationState.observedStatus = observedStatus;
+      operationState.sanitizedResponseRef = this.hash({
+        operationKey: operationState.operationKey,
+        externalObjectId: operationState.externalObjectId,
+        observedAt: observed.observedAt,
+        reconciliation: true,
+      });
+      delete operationState.normalizedError;
+      delete operationState.diagnosticCode;
+      changed = true;
+    }
+    if (!changed) return protocol;
+    return this.protocols.updateExecution(
+      protocol,
+      this.event(protocol, actor, 'meta_write_operation_reconciled', 'success', {
+        readOnly: true,
+        externalWritesPerformed: false,
+      }),
+    );
+  }
+
   async executePaused(
     tenantIdValue: unknown,
     executionAuthorizationIdValue: unknown,
@@ -207,8 +288,8 @@ export class MetaExecutionService {
           && !this.paused(observed.data.configuredStatus, observed.data.effectiveStatus)) {
           operationState.status = 'failed';
           operationState.externalObjectId = result.data.id;
-          operationState.observedStatus = observed.data.effectiveStatus
-            ?? observed.data.configuredStatus ?? 'UNKNOWN';
+          operationState.observedStatus = observed.data.configuredStatus
+            ?? observed.data.effectiveStatus ?? 'UNKNOWN';
           await this.killSwitch.changeCampaign(
             tenantId, manifest.campaignId, 'engaged', actor,
             'Objeto externo observado fora do estado pausado esperado.',
@@ -219,7 +300,7 @@ export class MetaExecutionService {
         operationState.externalObjectId = result.data.id;
         operationState.observedStatus = operation.objectType === 'creative'
           ? 'CREATED_NO_DELIVERY_STATE'
-          : observed.data.effectiveStatus ?? observed.data.configuredStatus ?? 'PAUSED';
+          : observed.data.configuredStatus ?? observed.data.effectiveStatus ?? 'PAUSED';
         operationState.sanitizedResponseRef = this.hash({
           operationKey: operation.operationKey,
           externalObjectId: result.data.id,
@@ -423,9 +504,10 @@ export class MetaExecutionService {
   }
 
   private paused(configured?: string, effective?: string): boolean {
-    const values = [configured, effective].filter(Boolean);
-    return values.length > 0 && values.every((value) =>
-      value === 'PAUSED' || value === 'CAMPAIGN_PAUSED' || value === 'ADSET_PAUSED');
+    if (configured) return configured === 'PAUSED';
+    return effective === 'PAUSED'
+      || effective === 'CAMPAIGN_PAUSED'
+      || effective === 'ADSET_PAUSED';
   }
 
   private event(
