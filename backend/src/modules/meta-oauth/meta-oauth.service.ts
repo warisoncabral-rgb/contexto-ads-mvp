@@ -35,6 +35,7 @@ const META_EXECUTION_OAUTH_SCOPES = [
   ...META_OAUTH_SCOPES,
   'ads_management',
   'business_management',
+  'whatsapp_business_management',
 ] as const;
 const META_AUTHORIZATION_ORIGIN = 'https://www.facebook.com';
 
