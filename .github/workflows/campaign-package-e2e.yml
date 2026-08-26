@@ -31,6 +31,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://contexto_ads:contexto_ads@localhost:5432/contexto_ads_e2e
       PORT: '3000'
+      BOOTSTRAP_TENANT_ID: 22222222-2222-4222-8222-222222222222
+      BOOTSTRAP_TENANT_DISPLAY_NAME: Campaign Package E2E
       OPERATOR_BOOTSTRAP_SUBJECT: operator:e2e
       OPERATOR_BOOTSTRAP_TOKEN: campaign-package-e2e-token-1234567890
       CONTEXT_ADS_TENANT_ID: 22222222-2222-4222-8222-222222222222
@@ -50,30 +52,6 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npm run migrate
-      - name: Seed authenticated tenant membership
-        run: |
-          node --input-type=module <<'NODE'
-          import pg from 'pg';
-          import { randomUUID } from 'node:crypto';
-          const { Pool } = pg;
-          const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-          const tenantId = process.env.CONTEXT_ADS_TENANT_ID;
-          await pool.query(
-            `insert into tenant_profiles (tenant_id, display_name, status, created_at, updated_at)
-             values ($1, 'E2E Tenant', 'active', now(), now())
-             on conflict (tenant_id) do update set status = 'active', updated_at = now()`,
-            [tenantId],
-          );
-          await pool.query(
-            `insert into operator_tenant_memberships
-             (membership_id, operator_subject, tenant_id, role, status, created_at, revoked_at)
-             values ($1, $2, $3, 'owner', 'active', now(), null)
-             on conflict (operator_subject, tenant_id)
-             do update set role = 'owner', status = 'active', revoked_at = null`,
-            [randomUUID(), process.env.OPERATOR_BOOTSTRAP_SUBJECT, tenantId],
-          );
-          await pool.end();
-          NODE
       - run: npm run build
       - name: Start API locally
         run: |
