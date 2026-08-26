@@ -55,13 +55,25 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
     const observedAt = new Date().toISOString();
     try {
       const credential = await this.getCredential(tenantId, credentialRef);
-      const [adAccounts, pages] = await Promise.all([
+      const [adAccounts, managedPages] = await Promise.all([
         this.collectEdge('/me/adaccounts', credential.accessToken),
         this.collectEdge('/me/accounts', credential.accessToken),
       ]);
+      const adAccountAssets = adAccounts.map((item) => this.toAsset(item, 'ad_account'));
+      const promotedPages = managedPages.length === 0
+        ? (await Promise.all(adAccountAssets.map((account) => this.collectEdge(
+          `/${account.externalId}/promote_pages`, credential.accessToken,
+        )))).flat()
+        : [];
+      const pageAssets = this.uniqueAssets(
+        [...managedPages, ...promotedPages].map((item) => this.toAsset(item, 'facebook_page')),
+      );
+      const whatsappAssets = (await Promise.all(pageAssets.map((page) =>
+        this.discoverPageWhatsapp(page, credential.accessToken)))).flat();
       const assets: DiscoveredMetaAsset[] = [
-        ...adAccounts.map((item) => this.toAsset(item, 'ad_account')),
-        ...pages.map((item) => this.toAsset(item, 'facebook_page')),
+        ...adAccountAssets,
+        ...pageAssets,
+        ...whatsappAssets,
       ];
       return this.success(assets, observedAt);
     } catch (error) {
@@ -377,6 +389,43 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
       externalId: value.id,
       ...(typeof value.name === 'string' ? { displayName: value.name.slice(0, 255) } : {}),
     } as const;
+  }
+
+  private uniqueAssets<T extends DiscoveredMetaAsset>(assets: T[]): T[] {
+    const seen = new Set<string>();
+    return assets.filter((asset) => {
+      const key = `${asset.assetType}:${asset.externalId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private async discoverPageWhatsapp(
+    page: DiscoveredMetaAsset,
+    accessToken: string,
+  ): Promise<DiscoveredMetaAsset[]> {
+    try {
+      const payload = await this.graphGet(
+        `/${page.externalId}`,
+        { fields: 'id,name,has_whatsapp_number,whatsapp_number' },
+        accessToken,
+      );
+      if (!this.isObject(payload) || payload.id !== page.externalId
+        || payload.has_whatsapp_number !== true || typeof payload.whatsapp_number !== 'string') {
+        return [];
+      }
+      const phoneNumber = payload.whatsapp_number.replace(/\D/g, '');
+      if (!/^\d{8,15}$/.test(phoneNumber)) return [];
+      return [{
+        assetType: 'whatsapp',
+        externalId: phoneNumber,
+        displayName: `WhatsApp · ${page.displayName ?? page.externalId}`.slice(0, 255),
+      }];
+    } catch (error) {
+      if (error instanceof MetaGraphRequestError && !error.retryable) return [];
+      throw error;
+    }
   }
 
   private isGraphPage(value: unknown): value is GraphPage {
