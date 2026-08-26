@@ -5,6 +5,10 @@ import {
   CampaignPackageValidationResultV1,
 } from '../../domain/contracts/campaign-package';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SHA256_PATTERN = /^(?:sha256:)?[a-f0-9]{64}$/i;
+const OFFER_TYPES = new Set(['product', 'service', 'catalog', 'promotion', 'lead_generation']);
+
 @Injectable()
 export class CampaignPackageService {
   validate(input: unknown): CampaignPackageValidationResultV1 {
@@ -18,28 +22,26 @@ export class CampaignPackageService {
     const warnings: string[] = [];
 
     const requiredTextFields: Array<keyof CampaignPackageV1> = [
-      'package_id',
-      'created_at',
-      'client_id',
-      'business_name',
-      'business_description',
-      'offer_name',
-      'offer_description',
-      'campaign_goal_description',
-      'audience_description',
-      'currency',
+      'package_id', 'created_at', 'client_id', 'business_name',
+      'business_description', 'offer_name', 'offer_description',
+      'campaign_goal_description', 'audience_description', 'currency',
       'meta_connection_id',
     ];
-
     for (const field of requiredTextFields) {
       if (!this.nonEmptyString(pkg[field])) missing.push(String(field));
     }
 
+    if (this.nonEmptyString(pkg.package_id) && !UUID_PATTERN.test(pkg.package_id)) {
+      blockers.push('package_id must be a valid UUID');
+    }
+    if (this.nonEmptyString(pkg.created_at) && Number.isNaN(Date.parse(pkg.created_at))) {
+      blockers.push('created_at must be a valid ISO date-time');
+    }
     if (!Number.isInteger(pkg.package_version) || Number(pkg.package_version) < 1) {
       missing.push('package_version');
     }
     if (pkg.source !== 'contexto_ads') blockers.push('source must be contexto_ads');
-    if (pkg.offer_type === undefined) missing.push('offer_type');
+    if (!OFFER_TYPES.has(String(pkg.offer_type))) blockers.push('offer_type is not supported in V1');
     if (pkg.campaign_objective !== 'LEADS') blockers.push('campaign_objective must be LEADS in V1');
     if (pkg.conversion_destination !== 'WHATSAPP') {
       blockers.push('conversion_destination must be WHATSAPP in V1');
@@ -50,6 +52,9 @@ export class CampaignPackageService {
     if (pkg.handoff_status !== 'READY_FOR_GENERATOR') {
       blockers.push('handoff_status must be READY_FOR_GENERATOR');
     }
+    if (this.nonEmptyString(pkg.currency) && !/^[A-Z]{3}$/.test(pkg.currency)) {
+      blockers.push('currency must be a 3-letter uppercase code');
+    }
 
     if (!Array.isArray(pkg.locations) || pkg.locations.length === 0) {
       missing.push('locations');
@@ -57,7 +62,8 @@ export class CampaignPackageService {
       pkg.locations.forEach((location, index) => {
         if (!this.nonEmptyString(location?.city)) missing.push(`locations[${index}].city`);
         if (!this.nonEmptyString(location?.country)) missing.push(`locations[${index}].country`);
-        if (location?.radius_km !== undefined && (!Number.isFinite(Number(location.radius_km)) || location.radius_km <= 0)) {
+        if (location?.radius_km !== undefined
+          && (!Number.isFinite(Number(location.radius_km)) || location.radius_km <= 0)) {
           blockers.push(`locations[${index}].radius_km must be greater than zero`);
         }
       });
@@ -69,13 +75,16 @@ export class CampaignPackageService {
     if (!Number.isFinite(Number(pkg.budget_amount)) || Number(pkg.budget_amount) <= 0) {
       missing.push('budget_amount');
     }
-    if (pkg.budget_type === 'DAILY' && (!Number.isInteger(pkg.duration_days) || Number(pkg.duration_days) < 1)) {
+    if (pkg.budget_type === 'DAILY'
+      && (!Number.isInteger(pkg.duration_days) || Number(pkg.duration_days) < 1)) {
       missing.push('duration_days');
     }
-    if (pkg.age_min !== undefined && (!Number.isInteger(pkg.age_min) || pkg.age_min < 18 || pkg.age_min > 65)) {
+    if (pkg.age_min !== undefined
+      && (!Number.isInteger(pkg.age_min) || pkg.age_min < 18 || pkg.age_min > 65)) {
       blockers.push('age_min must be an integer between 18 and 65');
     }
-    if (pkg.age_max !== undefined && (!Number.isInteger(pkg.age_max) || pkg.age_max < 18 || pkg.age_max > 65)) {
+    if (pkg.age_max !== undefined
+      && (!Number.isInteger(pkg.age_max) || pkg.age_max < 18 || pkg.age_max > 65)) {
       blockers.push('age_max must be an integer between 18 and 65');
     }
     if (pkg.age_min !== undefined && pkg.age_max !== undefined && pkg.age_min > pkg.age_max) {
@@ -85,9 +94,7 @@ export class CampaignPackageService {
     if (!Array.isArray(pkg.ads) || pkg.ads.length < 1 || pkg.ads.length > 3) {
       blockers.push('ads must contain between 1 and 3 items in V1');
     }
-    if (!Array.isArray(pkg.media) || pkg.media.length < 1) {
-      missing.push('media');
-    }
+    if (!Array.isArray(pkg.media) || pkg.media.length < 1) missing.push('media');
 
     const mediaIds = new Set<string>();
     if (Array.isArray(pkg.media)) {
@@ -98,6 +105,13 @@ export class CampaignPackageService {
         if (media?.media_type !== 'image') blockers.push(`media[${index}].media_type must be image in V1`);
         if (!this.nonEmptyString(media?.source)) missing.push(`media[${index}].source`);
         if (!this.nonEmptyString(media?.file_reference)) missing.push(`media[${index}].file_reference`);
+        if (!this.nonEmptyString(media?.checksum)) missing.push(`media[${index}].checksum`);
+        else if (!SHA256_PATTERN.test(media.checksum)) blockers.push(`media[${index}].checksum must be SHA-256`);
+        if (media?.mime_type !== 'image/jpeg' && media?.mime_type !== 'image/png') {
+          blockers.push(`media[${index}].mime_type must be image/jpeg or image/png`);
+        }
+        if (!Number.isInteger(media?.width) || Number(media?.width) < 1) missing.push(`media[${index}].width`);
+        if (!Number.isInteger(media?.height) || Number(media?.height) < 1) missing.push(`media[${index}].height`);
       });
     }
 
@@ -108,9 +122,13 @@ export class CampaignPackageService {
         else if (adReferences.has(ad.ad_reference)) blockers.push(`duplicate ad_reference: ${ad.ad_reference}`);
         else adReferences.add(ad.ad_reference);
         if (!this.nonEmptyString(ad?.primary_text)) missing.push(`ads[${index}].primary_text`);
+        if (!this.nonEmptyString(ad?.headline)) missing.push(`ads[${index}].headline`);
+        if (!this.nonEmptyString(ad?.initial_message)) missing.push(`ads[${index}].initial_message`);
         if (ad?.cta !== 'WHATSAPP_MESSAGE') blockers.push(`ads[${index}].cta must be WHATSAPP_MESSAGE`);
         if (!this.nonEmptyString(ad?.media_id)) missing.push(`ads[${index}].media_id`);
-        else if (!mediaIds.has(ad.media_id)) blockers.push(`ads[${index}].media_id does not reference an existing media item`);
+        else if (!mediaIds.has(ad.media_id)) {
+          blockers.push(`ads[${index}].media_id does not reference an existing media item`);
+        }
       });
     }
 
