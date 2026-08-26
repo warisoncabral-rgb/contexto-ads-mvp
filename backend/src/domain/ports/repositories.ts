@@ -104,6 +104,11 @@ export interface OperatorPlanSelectionRepository {
 export interface ApprovalRepository {
   request(approval: ApprovalV1, event: AuditEvent): Promise<ApprovalV1>;
   findById(tenantId: string, approvalId: string): Promise<ApprovalV1 | null>;
+  findCurrentForPlan(
+    tenantId: string,
+    executionPlanId: string,
+    planHash: string,
+  ): Promise<ApprovalV1 | null>;
   approveIfCurrent(
     tenantId: string,
     approvalId: string,
