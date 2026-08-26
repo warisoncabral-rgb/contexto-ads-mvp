@@ -13,6 +13,7 @@ import {
 } from '../../domain/ports/repositories';
 import { ExecutionAuthorizationService } from './execution-authorization.service';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
+import { MetaWriteAdapter } from '../meta-adapter/meta-write.adapter';
 
 describe('ExecutionAuthorizationService', () => {
   const tenantId = '11111111-1111-4111-8111-111111111111';
@@ -190,6 +191,48 @@ describe('ExecutionAuthorizationService', () => {
       }),
     ]));
     expect(result.blockers).toContain('real_meta_write_validation');
+    expect(result.boundaries.externalAttemptStarted).toBe(false);
+  });
+
+  it('reports the hosted executor ready without starting an external attempt', async () => {
+    authorizations.findById.mockResolvedValue({ ...pending, status: 'approved' });
+    killSwitch.effective.mockResolvedValue({
+      tenantId, campaignId, writesBlocked: false, decision: 'released',
+      tenant: { known: true, status: 'released', stateId: authorizationId, version: 1 },
+      campaign: { known: true, status: 'released', stateId: manifestId, version: 1 },
+      boundaries: { externalWritesAllowed: false, externalWritesPerformed: false },
+      evaluatedAt: '2026-08-24T13:00:00.000Z',
+    });
+    validationProtocols.latestForManifest.mockResolvedValue({
+      metaWriteValidationProtocolId: '99999999-9999-4999-8999-999999999999',
+      status: 'prepared_external_validation_required',
+    } as MetaWriteValidationProtocolV1);
+    const plans = {
+      findById: jest.fn().mockResolvedValue({
+        meta: { connectionId: authorizationId, adAccountId: 'act_123' },
+      }),
+    };
+    const connections = {
+      findById: jest.fn().mockResolvedValue({ status: 'ready', credentialRef: 'vault/ref' }),
+      listBindings: jest.fn().mockResolvedValue([
+        { assetType: 'facebook_page', externalId: '10', selected: true },
+        { assetType: 'whatsapp', externalId: '20', selected: true },
+      ]),
+    };
+    const adapter = { enabled: jest.fn().mockReturnValue(true) };
+    service = new ExecutionAuthorizationService(
+      manifests, authorizations, killSwitch, validationProtocols,
+      plans as never, connections as never, adapter as unknown as MetaWriteAdapter,
+    );
+
+    const result = await service.preflight(tenantId, authorizationId);
+
+    expect(result.blockers).toEqual([]);
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'real_meta_write_validation', status: 'passed' }),
+      expect.objectContaining({ key: 'write_adapter_enabled', status: 'passed' }),
+    ]));
+    expect(result.nextAction).toContain('uma única criação controlada');
     expect(result.boundaries.externalAttemptStarted).toBe(false);
   });
 
