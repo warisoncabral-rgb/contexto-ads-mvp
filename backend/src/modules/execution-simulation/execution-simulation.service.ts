@@ -360,6 +360,21 @@ export class ExecutionSimulationService {
     const missing = plan.meta.requiredCapabilities.filter((required) =>
       !available.some((record) => record.capabilityType === required
         && (!record.assetScope || record.assetScope === plan.meta.adAccountId)));
+    const missingEvidence = capabilities.filter((record) =>
+      missing.includes(record.capabilityType)
+      && (!record.assetScope || record.assetScope === plan.meta.adAccountId));
+    const permissionMissing = missingEvidence.some((record) =>
+      record.status === 'permission_missing'
+      || record.restrictions.some((restriction) =>
+        restriction === 'missing_permission:ads_management'));
+    const clickToWhatsAppAssetsMissing = missingEvidence.some((record) =>
+      record.capabilityType === 'CLICK_TO_WHATSAPP'
+      && record.status === 'asset_missing');
+    const nextAction = permissionMissing
+      ? 'A autorização atual não concedeu ads_management. Uma nova autorização explícita será necessária; nenhuma permissão será alterada automaticamente.'
+      : clickToWhatsAppAssetsMissing
+        ? 'Selecionar uma Página e um ativo WhatsApp comprovados antes de validar Click-to-WhatsApp.'
+        : 'Validar as permissões e capacidades de escrita no ambiente Meta real.';
     return missing.length === 0 ? {
       key: 'write_capabilities',
       status: 'passed',
@@ -371,10 +386,8 @@ export class ExecutionSimulationService {
       key: 'write_capabilities',
       status: 'blocked',
       meaning: `Capacidades ainda não comprovadas: ${missing.join(', ')}.`,
-      nextAction: 'Validar as permissões e capacidades de escrita no ambiente Meta real.',
-      evidenceRefs: capabilities
-        .filter((record) => missing.includes(record.capabilityType))
-        .map((record) => `capability:${record.capabilityId}`),
+      nextAction,
+      evidenceRefs: missingEvidence.map((record) => `capability:${record.capabilityId}`),
     };
   }
 
