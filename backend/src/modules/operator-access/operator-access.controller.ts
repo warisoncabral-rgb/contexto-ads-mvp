@@ -231,6 +231,15 @@ export class OperatorAccessController {
     return this.service.latestMetaWriteValidation(authorization, tenantId, executionManifestId);
   }
 
+  @Post('tenants/:tenantId/execution-authorizations/:executionAuthorizationId/execute-paused')
+  executeMetaPausedCreation(@Param('tenantId') tenantId: string,
+    @Param('executionAuthorizationId') executionAuthorizationId: string,
+    @Headers('authorization') authorization?: string) {
+    return this.service.executeMetaPausedCreation(
+      authorization, tenantId, executionAuthorizationId,
+    );
+  }
+
   @Post('tenants/:tenantId/campaigns/:campaignId/plans/:executionPlanId/approvals')
   requestPlanApproval(
     @Param('tenantId') tenantId: string,

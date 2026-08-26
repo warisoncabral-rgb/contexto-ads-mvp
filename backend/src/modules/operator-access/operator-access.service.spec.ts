@@ -132,6 +132,7 @@ describe('OperatorAccessService', () => {
       executionAuthorizations as unknown as ExecutionAuthorizationService,
       killSwitch as unknown as KillSwitchService,
       metaWriteValidation as unknown as MetaWriteValidationService,
+      { executePaused: jest.fn() } as never,
     );
   });
 

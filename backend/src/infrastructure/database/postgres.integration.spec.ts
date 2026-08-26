@@ -69,6 +69,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       '018_operator_access.sql',
       '019_operator_work_queue_snapshots.sql',
       '020_concurrent_meta_oauth_attempts.sql',
+      '021_meta_write_execution.sql',
     ]) {
       await pool.query(
         await readFile(join(process.cwd(), 'db', 'migrations', migration), 'utf8'),
@@ -240,6 +241,7 @@ describeWithPostgres('PostgreSQL integration', () => {
       {} as import('../../modules/execution-authorization/execution-authorization.service').ExecutionAuthorizationService,
       {} as import('../../modules/kill-switch/kill-switch.service').KillSwitchService,
       {} as import('../../modules/meta-write-validation/meta-write-validation.service').MetaWriteValidationService,
+      {} as import('../../modules/meta-execution/meta-execution.service').MetaExecutionService,
     );
     const result = await service.listTenants(
       'Bearer integration-token-with-at-least-32-characters',

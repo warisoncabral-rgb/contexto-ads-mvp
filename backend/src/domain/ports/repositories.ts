@@ -226,6 +226,14 @@ export interface MetaWriteValidationProtocolRepository {
     tenantId: string,
     executionManifestId: string,
   ): Promise<MetaWriteValidationProtocolV1 | null>;
+  beginExecution(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1 | null>;
+  updateExecution(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1>;
 }
 
 export interface OperatorTenantMembershipRepository {

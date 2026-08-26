@@ -16,6 +16,7 @@ import { KillSwitchModule } from './modules/kill-switch/kill-switch.module';
 import { MetaWriteValidationModule } from './modules/meta-write-validation/meta-write-validation.module';
 import { OperatorAccessModule } from './modules/operator-access/operator-access.module';
 import { HealthModule } from './modules/health/health.module';
+import { MetaExecutionModule } from './modules/meta-execution/meta-execution.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { HealthModule } from './modules/health/health.module';
     MetaWriteValidationModule,
     OperatorAccessModule,
     HealthModule,
+    MetaExecutionModule,
   ],
 })
 export class AppModule {}

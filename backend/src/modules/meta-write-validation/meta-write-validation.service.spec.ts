@@ -78,6 +78,8 @@ describe('MetaWriteValidationService', () => {
         _event: AuditEvent,
       ) => protocol),
       latestForManifest: jest.fn(),
+      beginExecution: jest.fn(),
+      updateExecution: jest.fn(),
     };
     service = new MetaWriteValidationService(manifests, protocols);
   });

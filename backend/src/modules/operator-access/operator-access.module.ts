@@ -18,6 +18,7 @@ import { MetaOAuthModule } from '../meta-oauth/meta-oauth.module';
 import { OperatorMetaController } from './operator-meta.controller';
 import { ReadinessModule } from '../readiness/readiness.module';
 import { CapabilityRegistryModule } from '../capability-registry/capability-registry.module';
+import { MetaExecutionModule } from '../meta-execution/meta-execution.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { CapabilityRegistryModule } from '../capability-registry/capability-regi
     MetaOAuthModule,
     ReadinessModule,
     CapabilityRegistryModule,
+    MetaExecutionModule,
   ],
   controllers: [OperatorAccessController, OperatorMetaController],
   providers: [OperatorAccessService],

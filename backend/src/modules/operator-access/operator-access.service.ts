@@ -51,6 +51,7 @@ import { ExecutionManifestService } from '../execution-manifest/execution-manife
 import { ExecutionAuthorizationService } from '../execution-authorization/execution-authorization.service';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
 import { MetaWriteValidationService } from '../meta-write-validation/meta-write-validation.service';
+import { MetaExecutionService } from '../meta-execution/meta-execution.service';
 import { KillSwitchStatus } from '../../domain/contracts/kill-switch';
 import { OperatorCampaignTimelineV1, OperatorTimelineItemV1 } from '../../domain/contracts/operator-timeline';
 import { OperatorPortfolioItemV1, OperatorPortfolioV1 } from '../../domain/contracts/operator-portfolio';
@@ -76,6 +77,10 @@ const TIMELINE_COPY: Record<string, Pick<OperatorTimelineItemV1, 'category' | 't
   kill_switch_engaged: { category: 'safety', title: 'Kill Switch acionado', detail: 'As escritas foram bloqueadas explicitamente.' },
   kill_switch_released: { category: 'safety', title: 'Kill Switch liberado', detail: 'A trava foi liberada, sem autorizar escrita por si só.' },
   meta_write_validation_protocol_prepared: { category: 'safety', title: 'Protocolo real preparado', detail: 'As onze evidências externas foram definidas, ainda não coletadas.' },
+  meta_write_execution_started: { category: 'executor', title: 'Criação pausada iniciada', detail: 'O executor iniciou o manifesto autorizado com entrega bloqueada.' },
+  meta_write_operation_succeeded: { category: 'executor', title: 'Operação Meta comprovada', detail: 'Um objeto externo foi criado e reconciliado em estado seguro.' },
+  meta_write_validation_succeeded: { category: 'executor', title: 'Executor real validado', detail: 'Todos os objetos foram criados uma vez, observados pausados e reconciliados.' },
+  meta_write_validation_failed: { category: 'safety', title: 'Execução interrompida', detail: 'O fluxo parou dependências e acionou a trava da campanha para reconciliação.' },
 };
 
 const PERMISSIONS: Record<OperatorRole, OperatorPermission[]> = {
@@ -128,6 +133,7 @@ export class OperatorAccessService {
     private readonly executionAuthorizations: ExecutionAuthorizationService,
     private readonly killSwitch: KillSwitchService,
     private readonly metaWriteValidation: MetaWriteValidationService,
+    private readonly metaExecution: MetaExecutionService,
   ) {}
 
   async authorizeTenantConfiguration(
@@ -658,6 +664,15 @@ export class OperatorAccessService {
     executionManifestId: string) {
     await this.authorizedMembership(authorizationHeader, tenantId);
     return this.metaWriteValidation.latest(tenantId, executionManifestId);
+  }
+
+  async executeMetaPausedCreation(authorizationHeader: string | undefined, tenantId: string,
+    executionAuthorizationId: string) {
+    const { operator, membership } = await this.authorizedMembership(authorizationHeader, tenantId);
+    this.assertPermission(membership.role, 'decide_execution_authorization');
+    return this.metaExecution.executePaused(
+      tenantId, executionAuthorizationId, operator.subject,
+    );
   }
 
   private async creativeReadiness(result: Awaited<ReturnType<CreativePackageService['appendVersion']>>) {

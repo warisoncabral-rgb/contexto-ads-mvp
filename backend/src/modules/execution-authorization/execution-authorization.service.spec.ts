@@ -97,6 +97,8 @@ describe('ExecutionAuthorizationService', () => {
     validationProtocols = {
       saveIdempotent: jest.fn(),
       latestForManifest: jest.fn().mockResolvedValue(null),
+      beginExecution: jest.fn(),
+      updateExecution: jest.fn(),
     };
     service = new ExecutionAuthorizationService(
       manifests, authorizations, killSwitch, validationProtocols,

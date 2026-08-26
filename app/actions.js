@@ -514,10 +514,11 @@ export async function changeExecutorControl(_previousState, formData) {
     preflight: `${tenant}/execution-authorizations/${encodeURIComponent(parsed.executionAuthorizationId)}/preflights`,
     change_switch: `${tenant}/kill-switch/${parsed.scope}`,
     prepare_protocol: `${tenant}/execution-manifests/${encodeURIComponent(parsed.executionManifestId)}/meta-write-validation-protocols`,
+    execute_paused: `${tenant}/execution-authorizations/${encodeURIComponent(parsed.executionAuthorizationId)}/execute-paused`,
   }
   const bodies = {
     prepare_manifest: parsed.approvalId ? { approvalId: parsed.approvalId } : {},
-    request_authorization: {}, approve: {}, preflight: {}, prepare_protocol: {},
+    request_authorization: {}, approve: {}, preflight: {}, prepare_protocol: {}, execute_paused: {},
     reject: { reason: parsed.reason }, revoke: { reason: parsed.reason },
     change_switch: { ...(parsed.scope === 'campaign' ? { campaignId: parsed.campaignId } : {}),
       status: parsed.status, reason: parsed.reason },
@@ -527,7 +528,7 @@ export async function changeExecutorControl(_previousState, formData) {
     response = await fetch(`${base}${routes[parsed.executorAction]}`, {
       method: 'POST', headers: { accept: 'application/json', authorization: `Bearer ${operatorToken}`, 'content-type': 'application/json' },
       body: JSON.stringify(bodies[parsed.executorAction]), cache: 'no-store',
-      signal: globalThis.AbortSignal.timeout(8000),
+      signal: globalThis.AbortSignal.timeout(parsed.executorAction === 'execute_paused' ? 65000 : 8000),
     })
   } catch { return { error: 'Não foi possível validar o executor. Nenhuma tentativa externa começou.' } }
   if ([401, 403].includes(response.status)) return { error: 'Seu papel não permite esta ação.' }
@@ -548,6 +549,18 @@ export async function changeExecutorControl(_previousState, formData) {
   }
   if (parsed.executorAction === 'prepare_protocol' && !validProtocol(result, expectedManifest)) {
     return { error: 'O protocolo retornado não preservou todas as travas.' }
+  }
+  if (parsed.executorAction === 'execute_paused') {
+    if (!validProtocol(result, expectedManifest)) {
+      return { error: 'O executor não devolveu evidências consistentes; as travas foram preservadas.' }
+    }
+    if (result.status === 'external_validation_failed') {
+      redirect(`/?tenantId=${encodeURIComponent(parsed.tenantId)}`
+        + `&executionPlanId=${encodeURIComponent(parsed.executionPlanId)}`
+        + `${parsed.approvalId ? `&approvalId=${encodeURIComponent(parsed.approvalId)}` : ''}`
+        + `&executionManifestId=${encodeURIComponent(parsed.executionManifestId)}`
+        + `&executionAuthorizationId=${encodeURIComponent(parsed.executionAuthorizationId)}`)
+    }
   }
   if (parsed.executorAction === 'change_switch'
     && (result?.tenantId !== parsed.tenantId || result?.scope !== parsed.scope

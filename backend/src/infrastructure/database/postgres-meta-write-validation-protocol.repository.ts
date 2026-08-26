@@ -56,6 +56,44 @@ implements MetaWriteValidationProtocolRepository {
     return result.rows[0]?.payload ?? null;
   }
 
+  async beginExecution(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1 | null> {
+    return this.inTransaction(async (client) => {
+      const result = await client.query<ProtocolRow>(
+        `update meta_write_validation_protocols set status = $4, payload = $5::jsonb
+        where tenant_id = $1 and meta_write_validation_protocol_id = $2
+          and protocol_hash = $3 and status = 'prepared_external_validation_required'
+        returning payload`,
+        [protocol.tenantId, protocol.metaWriteValidationProtocolId,
+          protocol.protocolHash, protocol.status, JSON.stringify(protocol)],
+      );
+      if (result.rows[0]) await insertAuditEvent(client, event);
+      return result.rows[0]?.payload ?? null;
+    });
+  }
+
+  async updateExecution(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1> {
+    return this.inTransaction(async (client) => {
+      const result = await client.query<ProtocolRow>(
+        `update meta_write_validation_protocols set status = $4, payload = $5::jsonb
+        where tenant_id = $1 and meta_write_validation_protocol_id = $2
+          and protocol_hash = $3 and status in (
+            'external_validation_running','external_validation_failed'
+          ) returning payload`,
+        [protocol.tenantId, protocol.metaWriteValidationProtocolId,
+          protocol.protocolHash, protocol.status, JSON.stringify(protocol)],
+      );
+      if (!result.rows[0]) throw new Error('Meta write execution state changed');
+      await insertAuditEvent(client, event);
+      return result.rows[0].payload;
+    });
+  }
+
   private async inTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {

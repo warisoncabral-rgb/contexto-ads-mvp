@@ -24,7 +24,11 @@ export interface MetaWriteValidationProtocolV1 {
   protocolHash: string;
   version: 1;
   mode: 'controlled_paused_creation';
-  status: 'prepared_external_validation_required';
+  status:
+    | 'prepared_external_validation_required'
+    | 'external_validation_running'
+    | 'external_validation_failed'
+    | 'external_validation_succeeded';
   preparedBy: string;
   operations: Array<{
     order: number;
@@ -46,9 +50,9 @@ export interface MetaWriteValidationProtocolV1 {
   };
   requiredEvidence: Array<{
     key: MetaWriteValidationEvidenceKey;
-    status: 'required_not_collected';
+    status: 'required_not_collected' | 'collected' | 'failed';
     source: 'real_meta_environment';
-    evidenceRefs: [];
+    evidenceRefs: string[];
   }>;
   failurePolicy: {
     ambiguousOutcome: 'stop_and_reconcile_before_retry';
@@ -64,13 +68,27 @@ export interface MetaWriteValidationProtocolV1 {
     sanitizedEvidenceComplete: true;
   };
   boundaries: {
-    protocolIsExecutionCommand: false;
-    executionRecordCreated: false;
-    externalAttemptStarted: false;
-    realMetaWriteValidated: false;
-    writeAdapterEnabled: false;
-    externalWritesAllowed: false;
-    externalWritesPerformed: false;
+    protocolIsExecutionCommand: boolean;
+    executionRecordCreated: boolean;
+    externalAttemptStarted: boolean;
+    realMetaWriteValidated: boolean;
+    writeAdapterEnabled: boolean;
+    externalWritesAllowed: boolean;
+    externalWritesPerformed: boolean;
+  };
+  execution?: {
+    executionAuthorizationId: string;
+    startedAt: string;
+    completedAt?: string;
+    operations: Array<{
+      operationKey: string;
+      objectType: SimulatedOperation['objectType'];
+      status: 'pending' | 'succeeded' | 'failed' | 'uncertain';
+      externalObjectId?: string;
+      observedStatus?: string;
+      sanitizedResponseRef?: string;
+      normalizedError?: string;
+    }>;
   };
   correlationId: string;
   preparedAt: string;

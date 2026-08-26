@@ -33,6 +33,12 @@ services:
         value: https://graph.facebook.com
       - key: META_GRAPH_API_VERSION
         value: v26.0
+      - key: META_WRITE_ADAPTER_ENABLED
+        value: "true"
+      - key: META_CITY_RADIUS_KM
+        value: "40"
+      - key: CONTEXT_ADS_PUBLIC_BASE_URL
+        value: https://contexto-ads-validation-panel.onrender.com
       - key: OPERATOR_BOOTSTRAP_SUBJECT
         value: operator:warison
       - key: OPERATOR_BOOTSTRAP_TOKEN
