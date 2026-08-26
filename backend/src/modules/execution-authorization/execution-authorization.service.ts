@@ -210,8 +210,10 @@ export class ExecutionAuthorizationService {
     const whatsappReady = bindings.filter((item) =>
       item.assetType === 'whatsapp' && item.selected).length === 1;
     const protocolReady = validationProtocol?.status === 'prepared_external_validation_required';
+    const connectionReady = Boolean(connection?.credentialRef
+      && ['connected', 'ready'].includes(connection.status));
     const targetReady = Boolean(plan && connectionId && adAccountReady
-      && connection?.status === 'ready' && connection.credentialRef
+      && connectionReady
       && pageReady && whatsappReady);
     const realMetaReady = protocolReady && targetReady;
     const adapterReady = this.writeAdapter?.enabled() === true;
@@ -274,7 +276,7 @@ export class ExecutionAuthorizationService {
             ? `O protocolo real não está preparado para iniciar (estado: ${validationProtocol?.status ?? 'missing'}).`
             : !plan || !connectionId || !adAccountReady
               ? 'O plano não possui um destino Meta executável e atual.'
-              : connection?.status !== 'ready' || !connection.credentialRef
+              : !connectionReady
                 ? `A conexão Meta não está pronta (estado: ${connection?.status ?? 'missing'}).`
                 : !pageReady || !whatsappReady
                   ? 'A Página e o WhatsApp selecionados não estão completos ou são ambíguos.'

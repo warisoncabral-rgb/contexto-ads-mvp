@@ -107,7 +107,7 @@ export class MetaExecutionService {
       throw new ConflictException('A valid Meta execution target is required');
     }
     const connection = await this.connections.findById(tenantId, connectionId);
-    if (!connection?.credentialRef || connection.status !== 'ready') {
+    if (!connection?.credentialRef || !['connected', 'ready'].includes(connection.status)) {
       throw new ConflictException('The Meta connection is not ready');
     }
     const bindings = await this.connections.listBindings(tenantId, connectionId);

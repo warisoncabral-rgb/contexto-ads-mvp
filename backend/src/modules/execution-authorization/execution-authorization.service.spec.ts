@@ -213,7 +213,7 @@ describe('ExecutionAuthorizationService', () => {
       }),
     };
     const connections = {
-      findById: jest.fn().mockResolvedValue({ status: 'ready', credentialRef: 'vault/ref' }),
+      findById: jest.fn().mockResolvedValue({ status: 'connected', credentialRef: 'vault/ref' }),
       listBindings: jest.fn().mockResolvedValue([
         { assetType: 'facebook_page', externalId: '10', selected: true },
         { assetType: 'whatsapp', externalId: '20', selected: true },
