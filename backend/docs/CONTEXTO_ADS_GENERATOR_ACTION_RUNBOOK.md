@@ -30,7 +30,7 @@ Efeitos permitidos:
 - persistir/versionar o handoff internamente;
 - criar/reusar o Campaign Context interno;
 - criar/reusar o Execution Plan;
-- criar/reusar o Creative Package;
+- criar/reusar o Creative Package inicial;
 - vincular connection/ad account somente quando o ativo informado já tiver sido descoberto e validado pelo Gerador.
 
 Efeitos proibidos nessa operação:
@@ -45,6 +45,10 @@ Efeitos proibidos nessa operação:
 ### `getCampaignPackageStatus`
 
 Retorna estado sanitizado para o Contexto Ads explicar ao usuário o estágio atual e o próximo passo.
+
+### `submitReviewedCreativePackage`
+
+Envia uma nova versão do Creative Package após a revisão humana dos textos, mídia e checklist. A chamada usa o `executionPlanId` corrente e não aprova o criativo automaticamente.
 
 ### `getLatestCreativePackage`
 
@@ -84,19 +88,23 @@ O handoff não deve ser descrito ao usuário como publicação ou ativação.
 
 O Contexto Ads pode consultar e explicar estados livremente, mas não pode transformar linguagem ambígua em aprovação.
 
-Para `approveCreativePackage` ou `decideExecutionPlanApproval` com decisão `approve`, deve existir manifestação explícita e específica do usuário sobre o objeto apresentado. A aprovação fica ligada à versão/hash exatos; qualquer alteração relevante exige nova versão e nova decisão.
+Para `submitReviewedCreativePackage`, a revisão deve ter ocorrido de fato. Para `approveCreativePackage` ou `decideExecutionPlanApproval` com decisão `approve`, deve existir manifestação explícita e específica do usuário sobre o objeto apresentado.
+
+A aprovação fica ligada à versão/hash exatos; qualquer alteração relevante exige nova versão e nova decisão.
 
 A sequência recomendada é:
 
 1. `getCampaignPackageStatus`;
-2. `getLatestCreativePackage`;
-3. apresentar o criativo ao usuário;
-4. após aprovação explícita, `approveCreativePackage`;
-5. consultar novamente o status/plano;
-6. `requestExecutionPlanApproval`;
-7. apresentar hash, teto financeiro e escopo ao usuário;
-8. após aprovação explícita, `decideExecutionPlanApproval` com `approve`;
-9. encerrar a Action V1 nesse ponto e informar que execução continua em gate separado.
+2. apresentar textos, mídia e checklist ao usuário;
+3. após a revisão, `submitReviewedCreativePackage` com o checklist real;
+4. `getLatestCreativePackage`;
+5. apresentar versão/hash do criativo;
+6. após aprovação explícita, `approveCreativePackage`;
+7. consultar novamente o status/plano;
+8. `requestExecutionPlanApproval`;
+9. apresentar hash, teto financeiro e escopo ao usuário;
+10. após aprovação explícita, `decideExecutionPlanApproval` com `approve`;
+11. encerrar a Action V1 nesse ponto e informar que execução continua em gate separado.
 
 ## Comportamento de retorno
 
@@ -126,7 +134,22 @@ A Action V1 deliberadamente NÃO expõe:
 
 Esses endpoints continuam existindo no Gerador, mas permanecem fora do contrato conversacional até a prova hospedada sem escrita ser concluída. Essa separação impede que a simples instalação da Action transforme o Contexto Ads em executor externo.
 
-## Teste de aceite sem escrita
+## Evidência E2E interna atual
+
+O workflow `Campaign Package E2E validation` valida em PostgreSQL real e API Nest real:
+
+1. handoff autenticado;
+2. persistência do Campaign Context;
+3. criação do Execution Plan;
+4. criação do Creative Package inicial em `needs_review`;
+5. submissão de Creative Package revisado;
+6. aprovação do criativo pelo hash exato;
+7. solicitação de aprovação do plano;
+8. aprovação do plano;
+9. confirmação de `approvalIsExecutionAuthorization=false`;
+10. confirmação de zero escrita Meta durante todo o fluxo.
+
+## Teste de aceite hospedado sem escrita
 
 1. Criar uma campanha completa no Contexto Ads.
 2. Gerar um `Campaign Package V1` novo.
@@ -135,10 +158,11 @@ Esses endpoints continuam existindo no Gerador, mas permanecem fora do contrato 
 5. Chamar `getCampaignPackageStatus`.
 6. Confirmar que Campaign Context, Creative Package e Execution Plan existem internamente.
 7. Confirmar que o alvo Meta só foi vinculado se a conta fornecida já estava descoberta para o tenant.
-8. Consultar a versão criativa com `getLatestCreativePackage`.
-9. Testar a trilha de aprovação apenas até o plano, sempre com decisões humanas explícitas.
-10. Confirmar `publication_authorized=false` e ausência de escrita Meta.
-11. Confirmar que nenhuma campanha, conjunto, criativo ou anúncio novo foi criado na Meta durante esse teste.
+8. Revisar o conteúdo e chamar `submitReviewedCreativePackage`.
+9. Consultar e aprovar a versão criativa exata.
+10. Solicitar e decidir a aprovação do plano.
+11. Confirmar `publication_authorized=false`, `approvalIsExecutionAuthorization=false` e ausência de escrita Meta.
+12. Confirmar que nenhuma campanha, conjunto, criativo ou anúncio novo foi criado na Meta durante esse teste.
 
 ## Gate seguinte
 
