@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import {
@@ -16,6 +17,7 @@ import {
 import { AuditEvent } from '../../domain/contracts/audit-event';
 import { CampaignContextRepository } from '../../domain/ports/repositories';
 import { CAMPAIGN_CONTEXT_REPOSITORY } from '../../infrastructure/database/database.tokens';
+import { CreativePackageService } from '../creative-package/creative-package.service';
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 import { CampaignPackageMapper } from './campaign-package.mapper';
 
@@ -25,14 +27,18 @@ export interface CampaignPackageHandoffResultV1 {
   package_hash: string;
   campaign_id: string;
   campaign_context_version: number;
+  creative_package_id: string;
+  creative_package_version: number;
+  creative_package_hash: string;
+  creative_package_status: string;
   execution_plan_id: string;
   execution_plan_hash: string;
   execution_plan_status: string;
-  creative_package_input: unknown;
   execution_target_hints: unknown;
   next_action: 'REVIEW_CREATIVE_AND_EXECUTION_PLAN';
   boundaries: {
     persisted: true;
+    creative_package_persisted: true;
     execution_plan_created: true;
     meta_write_performed: false;
     spend_authorized: false;
@@ -47,6 +53,7 @@ export class CampaignPackageHandoffService {
     @Inject(CAMPAIGN_CONTEXT_REPOSITORY)
     private readonly contexts: CampaignContextRepository,
     private readonly executionPlans: ExecutionPlanService,
+    private readonly creativePackages: CreativePackageService,
   ) {}
 
   async submit(
@@ -67,10 +74,18 @@ export class CampaignPackageHandoffService {
       prepared.generator_inputs.campaign_context,
       operatorSubject,
     );
-    const plan = await this.executionPlans.generate(
+    const basePlan = await this.executionPlans.generate(
       tenantId,
       campaignId,
       context.version,
+      operatorSubject,
+    );
+    const creativeBinding = await this.bindCreativeIdempotently(
+      tenantId,
+      campaignId,
+      basePlan.executionPlanId,
+      basePlan.planHash,
+      prepared.generator_inputs.creative_package,
       operatorSubject,
     );
 
@@ -80,20 +95,50 @@ export class CampaignPackageHandoffService {
       package_hash: prepared.package_hash,
       campaign_id: campaignId,
       campaign_context_version: context.version,
-      execution_plan_id: plan.executionPlanId,
-      execution_plan_hash: plan.planHash,
-      execution_plan_status: plan.status,
-      creative_package_input: prepared.generator_inputs.creative_package,
+      creative_package_id: creativeBinding.creativePackage.creativePackageId,
+      creative_package_version: creativeBinding.creativePackage.version,
+      creative_package_hash: creativeBinding.creativePackage.contentHash,
+      creative_package_status: creativeBinding.creativePackage.status,
+      execution_plan_id: creativeBinding.executionPlan.executionPlanId,
+      execution_plan_hash: creativeBinding.executionPlan.planHash,
+      execution_plan_status: creativeBinding.executionPlan.status,
       execution_target_hints: prepared.generator_inputs.execution_target_hints,
       next_action: 'REVIEW_CREATIVE_AND_EXECUTION_PLAN',
       boundaries: {
         persisted: true,
+        creative_package_persisted: true,
         execution_plan_created: true,
         meta_write_performed: false,
         spend_authorized: false,
         delivery_authorized: false,
       },
     };
+  }
+
+  private async bindCreativeIdempotently(
+    tenantId: string,
+    campaignId: string,
+    baseExecutionPlanId: string,
+    basePlanHash: string,
+    creativeInput: import('../../domain/contracts/creative-package').CreativePackageInputV1,
+    actor: string,
+  ) {
+    try {
+      const latest = await this.creativePackages.latest(tenantId, campaignId);
+      if (latest.sourcePlanHash === basePlanHash) {
+        const executionPlan = await this.executionPlans.latest(tenantId, campaignId);
+        return { creativePackage: latest, executionPlan };
+      }
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error;
+    }
+    return this.creativePackages.appendVersion(
+      tenantId,
+      campaignId,
+      baseExecutionPlanId,
+      creativeInput,
+      actor,
+    );
   }
 
   private async persistContextVersion(
@@ -108,7 +153,7 @@ export class CampaignPackageHandoffService {
     const existing = await this.contexts.findVersion(tenantId, campaignId, packageVersion);
     const now = new Date().toISOString();
     const facts = this.toFacts(input, now, externalPackageId, packageVersion);
-    const contentHash = this.hashFacts(facts);
+    const contentHash = this.hashFacts(facts, packageHash);
     if (existing) {
       if (existing.contentHash !== contentHash) {
         throw new ConflictException({
@@ -209,11 +254,13 @@ export class CampaignPackageHandoffService {
     };
   }
 
-  private hashFacts(facts: CampaignContextFacts): string {
+  private hashFacts(facts: CampaignContextFacts, packageHash: string): string {
     const semantic = Object.fromEntries(
       Object.entries(facts).map(([key, fact]) => [key, fact?.value]),
     );
-    return createHash('sha256').update(JSON.stringify(semantic)).digest('hex');
+    return createHash('sha256')
+      .update(JSON.stringify({ semantic, packageHash }))
+      .digest('hex');
   }
 
   private versionUuid(packageId: string, version: number): string {
