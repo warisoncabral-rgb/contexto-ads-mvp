@@ -319,6 +319,7 @@ export class MetaExecutionService {
         objective: this.string(config.objective, 'campaign.objective'),
         status: 'PAUSED',
         special_ad_categories: [],
+        is_adset_budget_sharing_enabled: false,
       } };
     }
     if (operation.objectType === 'creative') {
