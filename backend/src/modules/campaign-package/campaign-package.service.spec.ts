@@ -27,6 +27,7 @@ const validPackage = {
     {
       ad_reference: 'AD_01',
       primary_text: 'Conheça nossa linha de atacado.',
+      headline: 'Calçados no atacado',
       cta: 'WHATSAPP_MESSAGE',
       initial_message: 'Olá! Quero conhecer o atacado.',
       media_id: 'MEDIA_01',
@@ -38,7 +39,10 @@ const validPackage = {
       media_type: 'image',
       source: 'approved_asset',
       file_reference: 'asset://rosa-vip/media-01',
-      checksum: 'sha256:example',
+      checksum: `sha256:${'a'.repeat(64)}`,
+      mime_type: 'image/jpeg',
+      width: 1080,
+      height: 1350,
     },
   ],
   strategy_status: 'COMPLETE',
@@ -49,7 +53,7 @@ const validPackage = {
 describe('CampaignPackageService', () => {
   const service = new CampaignPackageService();
 
-  it('accepts a complete V1 package without authorizing external effects', () => {
+  it('accepts a complete executable V1 package without authorizing external effects', () => {
     const result = service.validate(validPackage);
 
     expect(result.validation_status).toBe('VALID');
@@ -77,6 +81,30 @@ describe('CampaignPackageService', () => {
 
     expect(result.validation_status).toBe('INVALID');
     expect(result.blocking_reasons).toContain('ads[0].media_id does not reference an existing media item');
+  });
+
+  it('rejects media metadata that cannot be consumed by the validated creative core', () => {
+    const result = service.validate({
+      ...validPackage,
+      media: [{ ...validPackage.media[0], checksum: 'unknown', width: 0 }],
+    });
+
+    expect(result.validation_status).toBe('INVALID');
+    expect(result.blocking_reasons).toContain('media[0].checksum must be SHA-256');
+    expect(result.missing_fields).toContain('media[0].width');
+  });
+
+  it('requires the WhatsApp copy fields used by the current Generator creative package', () => {
+    const result = service.validate({
+      ...validPackage,
+      ads: [{ ...validPackage.ads[0], headline: '', initial_message: '' }],
+    });
+
+    expect(result.validation_status).toBe('INVALID');
+    expect(result.missing_fields).toEqual(expect.arrayContaining([
+      'ads[0].headline',
+      'ads[0].initial_message',
+    ]));
   });
 
   it('keeps Meta assets as warnings at submission time because they may be resolved by the Generator', () => {
