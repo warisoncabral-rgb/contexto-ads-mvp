@@ -1,0 +1,68 @@
+name: Campaign Package Hosted Candidate validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Candidate API base URL including /v1
+        required: true
+        default: https://contexto-ads-validation-api.onrender.com/v1
+      tenant_id:
+        description: Tenant UUID used for the authenticated no-write proof
+        required: true
+        default: 22222222-2222-4222-8222-222222222222
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-no-write:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CONTEXT_ADS_API_BASE_URL: ${{ inputs.base_url }}
+      CONTEXT_ADS_TENANT_ID: ${{ inputs.tenant_id }}
+      CONTEXT_ADS_OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_HOSTED_OPERATOR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Require hosted operator secret
+        run: |
+          if [ -z "$CONTEXT_ADS_OPERATOR_TOKEN" ]; then
+            echo "Repository secret CONTEXT_ADS_HOSTED_OPERATOR_TOKEN is required."
+            exit 2
+          fi
+      - name: Build unique no-write Campaign Package
+        run: |
+          node --input-type=module <<'NODE' > /tmp/campaign-package.json
+          import { randomUUID } from 'node:crypto';
+          import { readFile } from 'node:fs/promises';
+          const input = JSON.parse(await readFile('docs/campaign-package-v1.example.json', 'utf8'));
+          input.package_id = randomUUID();
+          input.created_at = new Date().toISOString();
+          delete input.ad_account_id;
+          delete input.facebook_page_id;
+          delete input.instagram_account_id;
+          delete input.whatsapp_asset_id;
+          console.log(JSON.stringify(input));
+          NODE
+      - name: Run hosted authenticated handoff smoke
+        run: |
+          export CAMPAIGN_PACKAGE_JSON="$(cat /tmp/campaign-package.json)"
+          npm run smoke:campaign-package
+      - name: Run hosted reviewed creative and plan approval smoke
+        run: |
+          export CAMPAIGN_PACKAGE_JSON="$(cat /tmp/campaign-package.json)"
+          npm run smoke:campaign-package-approval
+      - name: Confirm no Meta execution endpoint was called
+        run: |
+          echo "Hosted candidate proof completed through plan approval only."
+          echo "Manifest, execution authorization, preflight and execute-paused are intentionally out of scope."
