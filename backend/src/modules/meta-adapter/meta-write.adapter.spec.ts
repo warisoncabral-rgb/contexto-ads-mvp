@@ -6,6 +6,7 @@ describe('MetaWriteAdapter', () => {
   it('enables only the exact hosted validation environment when the blueprint flag is absent', () => {
     const adapter = new MetaWriteAdapter(
       new ConfigService({
+        META_WRITE_ADAPTER_ENABLED: 'false',
         NODE_ENV: 'production',
         BOOTSTRAP_TENANT_ID: '22222222-2222-4222-8222-222222222222',
         OPERATOR_BOOTSTRAP_SUBJECT: 'operator:warison',

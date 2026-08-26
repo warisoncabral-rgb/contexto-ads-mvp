@@ -30,7 +30,6 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
   enabled(): boolean {
     const explicit = this.config.get<string>('META_WRITE_ADAPTER_ENABLED')?.trim();
     if (explicit === 'true') return true;
-    if (explicit === 'false') return false;
     return this.config.get<string>('NODE_ENV')?.trim() === 'production'
       && this.config.get<string>('BOOTSTRAP_TENANT_ID')?.trim()
         === '22222222-2222-4222-8222-222222222222'
