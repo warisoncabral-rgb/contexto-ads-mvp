@@ -71,6 +71,10 @@ jobs:
         run: |
           export CAMPAIGN_PACKAGE_JSON="$(cat docs/campaign-package-v1.example.json)"
           npm run smoke:campaign-package
+      - name: Run reviewed creative and plan approval smoke
+        run: |
+          export CAMPAIGN_PACKAGE_JSON="$(cat docs/campaign-package-v1.example.json)"
+          npm run smoke:campaign-package-approval
       - name: Stop API
         if: always()
         run: |
