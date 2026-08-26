@@ -41,7 +41,9 @@ paths:
     get:
       operationId: getCampaignPackageStatus
       summary: Get the current Generator status for a submitted package
-      description: Returns sanitized state for conversational use. Raw technical logs and secrets are not returned.
+      description: >-
+        Returns sanitized state for conversational use, including the current exact-plan approval
+        when one exists. Raw technical logs and secrets are not returned.
       parameters:
         - $ref: '#/components/parameters/TenantId'
         - $ref: '#/components/parameters/PackageId'
@@ -391,5 +393,22 @@ components:
             - type: object
             - type: 'null'
         execution_plan: { type: object }
-        next_action: { type: string, enum: [REVIEW_AND_APPROVE_CREATIVE_PACKAGE, RESOLVE_META_TARGET, REVIEW_AND_APPROVE_EXECUTION_PLAN] }
-        boundaries: { type: object }
+        plan_approval:
+          oneOf:
+            - type: object
+              properties:
+                approval_id: { type: string, format: uuid }
+                status: { type: string, enum: [pending, approved] }
+                approved_plan_hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+                expires_at: { type: string, format: date-time }
+            - type: 'null'
+        next_action:
+          type: string
+          enum: [REVIEW_AND_APPROVE_CREATIVE_PACKAGE, RESOLVE_META_TARGET, REQUEST_EXECUTION_PLAN_APPROVAL, DECIDE_EXECUTION_PLAN_APPROVAL, EXECUTION_GATE_SEPARATE]
+        boundaries:
+          type: object
+          properties:
+            publication_authorized: { type: boolean, const: false }
+            external_writes_allowed: { type: boolean, const: false }
+            external_writes_performed: { type: boolean }
+            plan_approval_is_execution_authorization: { type: boolean, const: false }
