@@ -3,6 +3,20 @@ import { CredentialVaultPort } from '../../domain/ports/credential-vault.port';
 import { MetaWriteAdapter } from './meta-write.adapter';
 
 describe('MetaWriteAdapter', () => {
+  it('enables only the exact hosted validation environment when the blueprint flag is absent', () => {
+    const adapter = new MetaWriteAdapter(
+      new ConfigService({
+        NODE_ENV: 'production',
+        BOOTSTRAP_TENANT_ID: '22222222-2222-4222-8222-222222222222',
+        CONTEXT_ADS_PUBLIC_BASE_URL:
+          'https://contexto-ads-validation-panel.onrender.com',
+      }),
+      { getSecret: jest.fn() } as never,
+    );
+
+    expect(adapter.enabled()).toBe(true);
+  });
+
   const vault = {
     getSecret: jest.fn().mockResolvedValue(JSON.stringify({
       version: 1, provider: 'meta', accessToken: 'secret-access-token',
