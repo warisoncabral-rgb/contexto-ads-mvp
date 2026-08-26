@@ -6,7 +6,7 @@ on:
       base_url:
         description: Candidate API base URL including /v1
         required: true
-        default: https://contexto-ads-validation-api.onrender.com/v1
+        default: https://contexto-ads-integration-candidate-api.onrender.com/v1
       tenant_id:
         description: Tenant UUID used for the authenticated no-write proof
         required: true
@@ -64,5 +64,6 @@ jobs:
           npm run smoke:campaign-package-approval
       - name: Confirm no Meta execution endpoint was called
         run: |
-          echo "Hosted candidate proof completed through plan approval only."
+          echo "Hosted candidate proof completed through approved plan state only."
+          echo "If the isolated candidate has no Meta target, RESOLVE_META_TARGET is the expected terminal state."
           echo "Manifest, execution authorization, preflight and execute-paused are intentionally out of scope."
