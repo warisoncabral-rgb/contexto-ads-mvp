@@ -132,12 +132,24 @@ if (approvalDecision.boundaries?.approvalIsExecutionAuthorization !== false
 const finalStatus = await request(
   `/operator/tenants/${tenantId}/campaign-packages/v1/${campaignPackage.package_id}/status`,
 );
+const acceptedNextActions = new Set(['EXECUTION_GATE_SEPARATE', 'RESOLVE_META_TARGET']);
 if (finalStatus.plan_approval?.status !== 'approved'
-  || finalStatus.next_action !== 'EXECUTION_GATE_SEPARATE'
+  || !acceptedNextActions.has(finalStatus.next_action)
   || finalStatus.boundaries?.plan_approval_is_execution_authorization !== false
   || finalStatus.boundaries?.external_writes_allowed !== false
   || finalStatus.boundaries?.external_writes_performed !== false) {
-  console.error('Package status did not stop at the separate execution gate.');
+  console.error('Package status after plan approval is inconsistent with safe execution boundaries.');
+  process.exit(1);
+}
+
+if (finalStatus.next_action === 'EXECUTION_GATE_SEPARATE'
+  && finalStatus.execution_plan?.target_binding_status !== 'BOUND') {
+  console.error('Execution gate was reached without a bound Meta target.');
+  process.exit(1);
+}
+if (finalStatus.next_action === 'RESOLVE_META_TARGET'
+  && finalStatus.execution_plan?.target_binding_status !== 'PENDING_RESOLUTION') {
+  console.error('Meta target resolution was requested even though target binding is not pending.');
   process.exit(1);
 }
 
@@ -150,6 +162,7 @@ console.log(JSON.stringify({
   approval_id: approvalId,
   approval_status: approvalDecision.approval.status,
   package_next_action: finalStatus.next_action,
+  target_binding_status: finalStatus.execution_plan?.target_binding_status,
   approval_is_execution_authorization: false,
   external_meta_write_attempted: false,
 }, null, 2));
