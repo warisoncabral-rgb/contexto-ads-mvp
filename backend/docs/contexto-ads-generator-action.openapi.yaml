@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads -> Generator Integration V1
+  version: 1.0.0
+  description: >-
+    Action contract for the Contexto Ads GPT to hand off a completed Campaign Package V1
+    to the Generator backend and read the resulting internal status. Submission never
+    authorizes Meta delivery or spend by itself.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/tenants/{tenantId}/campaign-packages/v1/submit:
+    post:
+      operationId: submitCampaignPackage
+      summary: Submit a completed Campaign Package V1 to the Generator
+      description: >-
+        Validates, persists and versions the handoff, creates/reuses the existing internal
+        Campaign Context, Execution Plan and Creative Package, and binds the Meta target only
+        when a validated ad account reference is supplied. This operation performs no Meta write.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignPackageV1'
+      responses:
+        '201':
+          description: Handoff accepted internally
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandoffResultV1'
+        '400':
+          description: Malformed request
+        '401':
+          description: Authentication or tenant access denied
+        '409':
+          description: Invalid package, version conflict or unresolved internal precondition
+  /operator/tenants/{tenantId}/campaign-packages/v1/{packageId}/status:
+    get:
+      operationId: getCampaignPackageStatus
+      summary: Get the current Generator status for a submitted package
+      description: >-
+        Returns a sanitized structured status for conversational use by Contexto Ads.
+        Raw technical logs and secrets are not returned.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current internal status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageStatusV1'
+        '401':
+          description: Authentication or tenant access denied
+        '404':
+          description: Package handoff not found
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    CampaignPackageV1:
+      type: object
+      additionalProperties: false
+      required:
+        - package_id
+        - package_version
+        - created_at
+        - source
+        - client_id
+        - business_name
+        - business_description
+        - offer_name
+        - offer_description
+        - offer_type
+        - campaign_objective
+        - conversion_destination
+        - campaign_goal_description
+        - audience_description
+        - locations
+        - budget_type
+        - budget_amount
+        - currency
+        - duration_days
+        - ads
+        - media
+        - strategy_status
+        - handoff_status
+        - meta_connection_id
+      properties:
+        package_id: { type: string, format: uuid }
+        package_version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        source: { type: string, const: contexto_ads }
+        client_id: { type: string, minLength: 1 }
+        business_name: { type: string, minLength: 1 }
+        business_description: { type: string, minLength: 1 }
+        offer_name: { type: string, minLength: 1 }
+        offer_description: { type: string, minLength: 1 }
+        offer_type:
+          type: string
+          enum: [product, service, catalog, promotion, lead_generation]
+        commercial_conditions: {}
+        campaign_objective: { type: string, const: LEADS }
+        conversion_destination: { type: string, const: WHATSAPP }
+        campaign_goal_description: { type: string, minLength: 1 }
+        audience_description: { type: string, minLength: 1 }
+        locations:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [city, country]
+            properties:
+              city: { type: string, minLength: 1 }
+              state: { type: string }
+              country: { type: string, minLength: 1 }
+              radius_km: { type: number, exclusiveMinimum: 0 }
+              include: { type: boolean }
+        age_min: { type: integer, minimum: 18, maximum: 65 }
+        age_max: { type: integer, minimum: 18, maximum: 65 }
+        gender: { type: string, enum: [all, male, female] }
+        targeting_notes: {}
+        budget_type: { type: string, enum: [DAILY, LIFETIME] }
+        budget_amount: { type: number, exclusiveMinimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        duration_days: { type: integer, minimum: 1, maximum: 365 }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+        ads:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: object
+            required: [ad_reference, primary_text, headline, cta, initial_message, media_id]
+            properties:
+              ad_reference: { type: string, minLength: 1 }
+              primary_text: { type: string, minLength: 1 }
+              headline: { type: string, minLength: 1 }
+              description: { type: string }
+              cta: { type: string, const: WHATSAPP_MESSAGE }
+              initial_message: { type: string, minLength: 1 }
+              media_id: { type: string, minLength: 1 }
+        media:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [media_id, media_type, source, file_reference, checksum, mime_type, width, height]
+            properties:
+              media_id: { type: string, minLength: 1 }
+              media_type: { type: string, const: image }
+              source: { type: string, minLength: 1 }
+              file_reference: { type: string, minLength: 1 }
+              checksum: { type: string, pattern: '^(sha256:)?[0-9a-fA-F]{64}$' }
+              mime_type: { type: string, enum: [image/jpeg, image/png] }
+              width: { type: integer, minimum: 1 }
+              height: { type: integer, minimum: 1 }
+        constraints: {}
+        strategy_notes: {}
+        strategy_status: { type: string, const: COMPLETE }
+        handoff_status: { type: string, const: READY_FOR_GENERATOR }
+        ad_account_id: { type: string }
+        facebook_page_id: { type: string }
+        instagram_account_id: { type: string }
+        whatsapp_asset_id: { type: string }
+        meta_connection_id: { type: string, format: uuid }
+    HandoffResultV1:
+      type: object
+      required:
+        - package_id
+        - package_version
+        - package_hash
+        - campaign_id
+        - campaign_context_version
+        - creative_package_id
+        - creative_package_version
+        - creative_package_hash
+        - creative_package_status
+        - execution_plan_id
+        - execution_plan_hash
+        - execution_plan_status
+        - target_binding_status
+        - next_action
+        - boundaries
+      properties:
+        package_id: { type: string, format: uuid }
+        package_version: { type: integer }
+        package_hash: { type: string }
+        campaign_id: { type: string, format: uuid }
+        campaign_context_version: { type: integer }
+        creative_package_id: { type: string, format: uuid }
+        creative_package_version: { type: integer }
+        creative_package_hash: { type: string }
+        creative_package_status: { type: string }
+        execution_plan_id: { type: string, format: uuid }
+        execution_plan_hash: { type: string }
+        execution_plan_status: { type: string }
+        target_binding_status: { type: string, enum: [BOUND, PENDING_RESOLUTION] }
+        execution_target_hints: { type: object }
+        next_action: { type: string }
+        boundaries:
+          type: object
+          properties:
+            persisted: { type: boolean, const: true }
+            creative_package_persisted: { type: boolean, const: true }
+            execution_plan_created: { type: boolean, const: true }
+            meta_write_performed: { type: boolean, const: false }
+            spend_authorized: { type: boolean, const: false }
+            delivery_authorized: { type: boolean, const: false }
+    PackageStatusV1:
+      type: object
+      properties:
+        package_id: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+        context: { type: object }
+        creative:
+          oneOf:
+            - type: object
+            - type: 'null'
+        execution_plan: { type: object }
+        next_action:
+          type: string
+          enum:
+            - REVIEW_AND_APPROVE_CREATIVE_PACKAGE
+            - RESOLVE_META_TARGET
+            - REVIEW_AND_APPROVE_EXECUTION_PLAN
+        boundaries: { type: object }
