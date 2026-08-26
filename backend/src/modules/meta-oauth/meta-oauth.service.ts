@@ -25,7 +25,12 @@ import { CREDENTIAL_VAULT } from '../../infrastructure/vault/credential-vault.to
 import { META_OAUTH_TOKEN_EXCHANGE } from './meta-oauth.tokens';
 
 const OAUTH_ATTEMPT_TTL_MS = 10 * 60 * 1000;
-const META_OAUTH_SCOPES = ['public_profile', 'ads_read', 'pages_show_list'] as const;
+const META_OAUTH_SCOPES = [
+  'public_profile',
+  'ads_read',
+  'pages_show_list',
+  'pages_read_engagement',
+] as const;
 const META_EXECUTION_OAUTH_SCOPES = [...META_OAUTH_SCOPES, 'ads_management'] as const;
 const META_AUTHORIZATION_ORIGIN = 'https://www.facebook.com';
 
