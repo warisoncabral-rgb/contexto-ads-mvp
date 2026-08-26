@@ -23,6 +23,8 @@ export interface MetaWriteValidationProtocolV1 {
   manifestHash: string;
   protocolHash: string;
   version: 1;
+  attempt: number;
+  replacesProtocolId?: string;
   mode: 'controlled_paused_creation';
   status:
     | 'prepared_external_validation_required'

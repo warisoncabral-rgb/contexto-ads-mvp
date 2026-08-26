@@ -88,6 +88,7 @@ describe('MetaWriteValidationService', () => {
     const result = await service.prepare(tenantId, manifestId, 'operator-1');
 
     expect(result.status).toBe('prepared_external_validation_required');
+    expect(result.attempt).toBe(1);
     expect(result.limits).toEqual({
       exactOperationCount: 1,
       allowedActions: ['create_campaign'],
@@ -132,6 +133,45 @@ describe('MetaWriteValidationService', () => {
     await expect(service.prepare(tenantId, manifestId, 'operator-1'))
       .rejects.toBeInstanceOf(ConflictException);
     expect(protocols.saveIdempotent).not.toHaveBeenCalled();
+  });
+
+  it('prepares a new manual attempt only after a zero-write failure', async () => {
+    const previous = await service.prepare(tenantId, manifestId, 'operator-1');
+    protocols.latestForManifest.mockResolvedValueOnce({
+      ...previous,
+      status: 'external_validation_failed',
+      boundaries: { ...previous.boundaries, externalAttemptStarted: true },
+      execution: {
+        executionAuthorizationId: '77777777-7777-4777-8777-777777777777',
+        startedAt: '2026-08-24T15:10:00.000Z',
+        completedAt: '2026-08-24T15:10:01.000Z',
+        operations: [{
+          operationKey: 'operation:campaign',
+          objectType: 'campaign',
+          status: 'failed',
+          normalizedError: 'VALIDATION',
+        }],
+      },
+    });
+
+    const retried = await service.prepare(tenantId, manifestId, 'operator-2');
+
+    expect(retried.attempt).toBe(2);
+    expect(retried.replacesProtocolId).toBe(previous.metaWriteValidationProtocolId);
+    expect(retried.protocolHash).not.toBe(previous.protocolHash);
+    expect(retried.boundaries.externalAttemptStarted).toBe(false);
+  });
+
+  it('blocks a new protocol while any external object needs reconciliation', async () => {
+    const previous = await service.prepare(tenantId, manifestId, 'operator-1');
+    protocols.latestForManifest.mockResolvedValueOnce({
+      ...previous,
+      status: 'external_validation_failed',
+      boundaries: { ...previous.boundaries, externalWritesPerformed: true },
+    });
+
+    await expect(service.prepare(tenantId, manifestId, 'operator-2'))
+      .rejects.toBeInstanceOf(ConflictException);
   });
 
   it('isolates lookup by tenant and validates inputs', async () => {

@@ -74,6 +74,9 @@ export default function ExecutorPreflightPanel({ plan, role, approvalResult, res
   const protocolReady = result.protocol?.status === 'prepared_external_validation_required'
   const switchesReleased = result.killSwitch?.tenant.status === 'released'
     && result.killSwitch?.campaign.status === 'released'
+  const canPrepareReconciledAttempt = result.protocol?.status === 'external_validation_failed'
+    && result.protocol.boundaries?.externalWritesPerformed === false
+    && result.killSwitch?.campaign.status === 'engaged'
   return <section className="panel executor-panel">
     <div className="section-heading"><div><span className="eyebrow">Validação do executor</span><h3>Preflight antes de qualquer tentativa</h3></div><span className="status-pill status-blocked">Gate fechado</span></div>
     <p className="executor-boundary">Esta central prepara e diagnostica. Mesmo com autorização humana, nenhuma publicação, ativação, entrega ou escrita externa é iniciada.</p>
@@ -95,6 +98,7 @@ export default function ExecutorPreflightPanel({ plan, role, approvalResult, res
         {authorization.status === 'approved' && <><div className="safety-controls"><div><span>Kill Switch tenant</span><strong>{result.killSwitch?.tenant.status ?? 'missing'}</strong></div><div><span>Kill Switch campanha</span><strong>{result.killSwitch?.campaign.status ?? 'missing'}</strong></div><div><span>Protocolo real</span><strong>{result.protocol ? 'Preparado' : 'Ausente'}</strong></div></div>
           {canDecide && <><div className="executor-decisions">{['tenant', 'campaign'].map((scope) => { const current = result.killSwitch?.[scope]?.status; const desired = current === 'released' ? 'engaged' : 'released'; return <ControlForm key={scope} plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="change_switch" label={`${desired === 'released' ? 'Liberar' : 'Acionar'} trava ${scope === 'tenant' ? 'do cliente' : 'da campanha'}`}><input type="hidden" name="scope" value={scope} /><input type="hidden" name="status" value={desired} /><input name="reason" required minLength="3" placeholder="Motivo da mudança" /></ControlForm> })}</div>{!result.protocol && <ControlForm plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="prepare_protocol" label="Preparar protocolo controlado" />}</>}
           {canPrepare && result.protocol?.status !== 'external_validation_succeeded' && <ControlForm plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="preflight" label="Executar diagnóstico fail-closed" />}
+          {canDecide && canPrepareReconciledAttempt && <ControlForm plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="prepare_protocol" label="Preparar nova prova após reconciliação" />}
           {canDecide && protocolReady && switchesReleased && <ControlForm plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="execute_paused" label="Criar objetos pausados na Meta" />}
           {result.protocol?.status === 'external_validation_succeeded' && <p className="readonly-note">Executor real validado: objetos criados e reconciliados em estado pausado.</p>}
           {result.protocol?.status === 'external_validation_failed' && <p className="form-error">A execução foi interrompida e a trava da campanha foi acionada para reconciliação.</p>}

@@ -58,6 +58,16 @@ export class MetaWriteValidationService {
       || latest.manifestHash !== manifest.manifestHash) {
       throw new ConflictException('Only the latest execution manifest can be validated');
     }
+    const previous = await this.protocols.latestForManifest(tenantId, executionManifestId);
+    if (previous && previous.status !== 'external_validation_failed') return previous;
+    if (previous?.boundaries.externalWritesPerformed
+      || previous?.execution?.operations.some((operation) => operation.externalObjectId)) {
+      throw new ConflictException(
+        'External objects must be reconciled before preparing another validation attempt',
+      );
+    }
+    const attempt = previous ? (previous.attempt ?? 1) + 1 : 1;
+    const replacesProtocolId = previous?.metaWriteValidationProtocolId;
 
     const operations = manifest.operations.map((operation) => ({
       order: operation.order,
@@ -109,6 +119,8 @@ export class MetaWriteValidationService {
     };
     const semantic = {
       purpose: 'meta_write_validation_protocol_v1',
+      attempt,
+      ...(replacesProtocolId ? { replacesProtocolId } : {}),
       tenantId,
       campaignId: manifest.campaignId,
       executionPlanId: manifest.executionPlanId,
@@ -135,6 +147,8 @@ export class MetaWriteValidationService {
       manifestHash: manifest.manifestHash,
       protocolHash: this.hash(semantic),
       version: 1,
+      attempt,
+      ...(replacesProtocolId ? { replacesProtocolId } : {}),
       mode: 'controlled_paused_creation',
       status: 'prepared_external_validation_required',
       preparedBy: actor,
