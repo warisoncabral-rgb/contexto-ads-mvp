@@ -1,13 +1,21 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { CampaignContextRepository } from '../../domain/ports/repositories';
-import { CAMPAIGN_CONTEXT_REPOSITORY } from '../../infrastructure/database/database.tokens';
+import {
+  ApprovalRepository,
+  CampaignContextRepository,
+} from '../../domain/ports/repositories';
+import {
+  APPROVAL_REPOSITORY,
+  CAMPAIGN_CONTEXT_REPOSITORY,
+} from '../../infrastructure/database/database.tokens';
 import { CreativePackageService } from '../creative-package/creative-package.service';
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 
 export type CampaignPackageNextActionV1 =
   | 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE'
   | 'RESOLVE_META_TARGET'
-  | 'REVIEW_AND_APPROVE_EXECUTION_PLAN';
+  | 'REQUEST_EXECUTION_PLAN_APPROVAL'
+  | 'DECIDE_EXECUTION_PLAN_APPROVAL'
+  | 'EXECUTION_GATE_SEPARATE';
 
 @Injectable()
 export class CampaignPackageStatusService {
@@ -16,6 +24,8 @@ export class CampaignPackageStatusService {
     private readonly contexts: CampaignContextRepository,
     private readonly executionPlans: ExecutionPlanService,
     private readonly creativePackages: CreativePackageService,
+    @Inject(APPROVAL_REPOSITORY)
+    private readonly approvals: ApprovalRepository,
   ) {}
 
   async get(tenantId: unknown, packageId: unknown) {
@@ -34,11 +44,20 @@ export class CampaignPackageStatusService {
       if (!(error instanceof NotFoundException)) throw error;
     }
     const targetBound = Boolean(plan.meta.connectionId && plan.meta.adAccountId);
+    const approval = await this.approvals.findCurrentForPlan(
+      tenantId,
+      plan.executionPlanId,
+      plan.planHash,
+    );
     const nextAction: CampaignPackageNextActionV1 = !creative || creative.status !== 'approved'
       ? 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE'
       : !targetBound
         ? 'RESOLVE_META_TARGET'
-        : 'REVIEW_AND_APPROVE_EXECUTION_PLAN';
+        : approval?.status === 'approved'
+          ? 'EXECUTION_GATE_SEPARATE'
+          : approval?.status === 'pending'
+            ? 'DECIDE_EXECUTION_PLAN_APPROVAL'
+            : 'REQUEST_EXECUTION_PLAN_APPROVAL';
 
     return {
       package_id: packageId,
@@ -63,11 +82,18 @@ export class CampaignPackageStatusService {
         maximum_planned_spend_minor: plan.financials.maximumPlannedSpendMinor,
         currency: plan.financials.currency,
       },
+      plan_approval: approval ? {
+        approval_id: approval.approvalId,
+        status: approval.status,
+        approved_plan_hash: approval.approvedPlanHash,
+        expires_at: approval.expiresAt,
+      } : null,
       next_action: nextAction,
       boundaries: {
         publication_authorized: false,
         external_writes_allowed: false,
         external_writes_performed: plan.externalEffects.writesPerformed,
+        plan_approval_is_execution_authorization: false,
       },
     };
   }
