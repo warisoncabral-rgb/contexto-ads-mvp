@@ -20,3 +20,5 @@ export interface MetaAssetBinding {
   selected: boolean;
   observedAt: string;
 }
+
+export type MetaAssetSelection = Pick<MetaAssetBinding, 'assetType' | 'externalId'>;

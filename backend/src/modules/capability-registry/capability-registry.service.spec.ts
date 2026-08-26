@@ -123,6 +123,50 @@ describe('CapabilityRegistryService', () => {
     expect(capabilities.replaceForConnection).not.toHaveBeenCalled();
   });
 
+  it('collects a complete execution-readiness snapshot without performing writes', async () => {
+    meta.validateCapabilities.mockResolvedValueOnce({
+      success: true,
+      data: [{
+        capability: 'CREATE_CAMPAIGN',
+        available: false,
+        requiredPermissions: ['ads_management'],
+        grantedPermissions: [],
+        apiVersion: 'v26.0',
+        reason: 'permission_missing',
+      }, {
+        capability: 'CLICK_TO_WHATSAPP',
+        available: false,
+        requiredPermissions: ['ads_management'],
+        grantedPermissions: ['ads_management'],
+        apiVersion: 'v26.0',
+        assetScope: 'act_123',
+        reason: 'asset_missing',
+      }],
+      observedAt: '2026-08-24T02:00:00.000Z',
+      retryable: false,
+    });
+
+    await service.validateForExecution(tenantId, connectionId);
+
+    expect(meta.validateCapabilities).toHaveBeenCalledWith(
+      tenantId,
+      credentialRef,
+      [],
+      ['DISCOVER_ASSETS', 'READ_AD_ACCOUNT', 'CREATE_CAMPAIGN', 'CREATE_ADSET',
+        'CREATE_CREATIVE', 'CREATE_AD', 'CLICK_TO_WHATSAPP'],
+    );
+    expect(capabilities.replaceForConnection).toHaveBeenCalledWith(
+      tenantId,
+      connectionId,
+      expect.arrayContaining([
+        expect.objectContaining({ capabilityType: 'CREATE_CAMPAIGN',
+          restrictions: ['missing_permission:ads_management'] }),
+        expect.objectContaining({ capabilityType: 'CLICK_TO_WHATSAPP',
+          restrictions: ['missing_selected_facebook_page_or_whatsapp'] }),
+      ]),
+    );
+  });
+
   it('blocks capability validation before OAuth has connected the account', async () => {
     connections.getConnection.mockResolvedValueOnce({
       ...connected,

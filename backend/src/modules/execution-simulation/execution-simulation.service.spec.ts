@@ -316,6 +316,43 @@ describe('ExecutionSimulationService', () => {
     expect(connections.getConnection).not.toHaveBeenCalled();
   });
 
+  it('explains when the current token lacks ads_management without changing permissions', async () => {
+    plans.findById.mockResolvedValueOnce(boundPlan);
+    plans.latest.mockResolvedValueOnce(boundPlan);
+    capabilities.list.mockResolvedValueOnce(
+      boundPlan.meta.requiredCapabilities.map((capabilityType, index): CapabilityRecord => ({
+        capabilityId: `88888888-8888-4888-8888-88888888888${index}`,
+        tenantId,
+        connectionId,
+        capabilityType,
+        assetScope: adAccountId,
+        requiredPermissions: ['ads_management'],
+        grantedPermissions: [],
+        status: 'permission_missing',
+        validationSource: 'meta_api',
+        restrictions: ['missing_permission:ads_management'],
+        validatedAt: '2026-08-24T12:00:00.000Z',
+      })),
+    );
+
+    const result = await service.simulate(
+      tenantId,
+      campaignId,
+      boundPlan.executionPlanId,
+      approvalId,
+    );
+    const check = result.checks.find((value) => value.key === 'write_capabilities');
+
+    expect(check).toEqual(expect.objectContaining({
+      status: 'blocked',
+      nextAction: expect.stringContaining('não concedeu ads_management'),
+      evidenceRefs: expect.arrayContaining([
+        'capability:88888888-8888-4888-8888-888888888880',
+      ]),
+    }));
+    expect(result.externalEffects).toEqual({ writesAllowed: false, writesPerformed: false });
+  });
+
   it('becomes ready only when target, capabilities, approval and creative all pass', async () => {
     const creativePackageId = '99999999-9999-4999-8999-999999999999';
     const creativeContentHash = 'c'.repeat(64);

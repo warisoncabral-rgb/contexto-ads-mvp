@@ -77,7 +77,15 @@ describe('MetaReadonlyAdapter', () => {
       if (input.pathname.endsWith('/adaccounts')) {
         return json({ data: [{ id: 'act_456', name: 'Secondary ads' }] });
       }
-      return json({ data: [{ id: '789', name: 'Main page' }] });
+      if (input.pathname.endsWith('/accounts')) {
+        return json({ data: [{ id: '789', name: 'Main page' }] });
+      }
+      return json({
+        id: '789',
+        name: 'Main page',
+        has_whatsapp_number: true,
+        whatsapp_number: '+55 83 99999-0000',
+      });
     });
 
     const result = await adapter.discoverAssets(credentialRef, tenantId);
@@ -88,12 +96,113 @@ describe('MetaReadonlyAdapter', () => {
         { assetType: 'ad_account', externalId: 'act_123', displayName: 'Primary ads' },
         { assetType: 'ad_account', externalId: 'act_456', displayName: 'Secondary ads' },
         { assetType: 'facebook_page', externalId: '789', displayName: 'Main page' },
+        { assetType: 'whatsapp', externalId: '5583999990000',
+          displayName: 'WhatsApp · Main page' },
       ],
     }));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     const cursorRequest = (fetchMock.mock.calls as Array<[URL]>).find(([url]) =>
       url.searchParams.get('after') === 'cursor-1');
     expect(cursorRequest).toBeDefined();
+  });
+
+  it('uses an ephemeral Page token to discover the linked WhatsApp number', async () => {
+    const pageAccessToken = 'page-only-access-token-123456';
+    fetchMock.mockImplementation(async (input: URL, init?: RequestInit) => {
+      if (input.pathname.endsWith('/adaccounts')) return json({ data: [] });
+      if (input.pathname.endsWith('/businesses')) {
+        return json({ error: { code: 200 } }, 403);
+      }
+      if (input.pathname.endsWith('/accounts')) {
+        expect(input.searchParams.get('fields')).toBe('id,name,access_token');
+        return json({ data: [{
+          id: '789',
+          name: 'Main page',
+          access_token: pageAccessToken,
+        }] });
+      }
+      expect((init?.headers as Record<string, string>).authorization)
+        .toBe(`Bearer ${pageAccessToken}`);
+      expect(input.searchParams.get('appsecret_proof')).toBe(
+        createHmac('sha256', appSecret).update(pageAccessToken).digest('hex'),
+      );
+      return json({
+        id: '789',
+        name: 'Main page',
+        has_whatsapp_number: true,
+        whatsapp_number: '+55 83 99999-0000',
+      });
+    });
+
+    await expect(adapter.discoverAssets(credentialRef, tenantId)).resolves.toEqual(
+      expect.objectContaining({
+        success: true,
+        data: [
+          { assetType: 'facebook_page', externalId: '789', displayName: 'Main page' },
+          { assetType: 'whatsapp', externalId: '5583999990000',
+            displayName: 'WhatsApp · Main page' },
+        ],
+      }),
+    );
+  });
+
+  it('discovers owned WhatsApp numbers through the business portfolio', async () => {
+    fetchMock.mockImplementation(async (input: URL) => {
+      if (input.pathname.endsWith('/adaccounts') || input.pathname.endsWith('/accounts')) {
+        return json({ data: [] });
+      }
+      if (input.pathname.endsWith('/businesses')) {
+        return json({ data: [{ id: '181822913144307', name: 'Rosa VIP' }] });
+      }
+      if (input.pathname.endsWith('/owned_whatsapp_business_accounts')) {
+        return json({ data: [{ id: '1002133529311219', name: 'Rosa VIP WhatsApp' }] });
+      }
+      if (input.pathname.endsWith('/phone_numbers')) {
+        expect(input.searchParams.get('fields'))
+          .toBe('id,display_phone_number,verified_name');
+        return json({ data: [{
+          id: '123456789012345',
+          display_phone_number: '+55 83 99999-0000',
+          verified_name: 'Warison Representante Rosavip',
+        }] });
+      }
+      return json({ data: [] });
+    });
+
+    await expect(adapter.discoverAssets(credentialRef, tenantId)).resolves.toEqual(
+      expect.objectContaining({
+        success: true,
+        data: [{
+          assetType: 'whatsapp',
+          externalId: '5583999990000',
+          displayName: 'Warison Representante Rosavip',
+        }],
+      }),
+    );
+  });
+
+  it('falls back to pages promotable by the discovered ad account', async () => {
+    fetchMock.mockImplementation(async (input: URL) => {
+      if (input.pathname.endsWith('/adaccounts')) {
+        return json({ data: [{ id: 'act_123', name: 'Primary ads' }] });
+      }
+      if (input.pathname.endsWith('/accounts')) return json({ data: [] });
+      if (input.pathname.endsWith('/promote_pages')) {
+        return json({ data: [{ id: '789', name: 'Promotable page' }] });
+      }
+      return json({ id: '789', name: 'Promotable page', has_whatsapp_number: false });
+    });
+
+    await expect(adapter.discoverAssets(credentialRef, tenantId)).resolves.toEqual(
+      expect.objectContaining({
+        success: true,
+        data: expect.arrayContaining([
+          { assetType: 'facebook_page', externalId: '789', displayName: 'Promotable page' },
+        ]),
+      }),
+    );
+    expect((fetchMock.mock.calls as Array<[URL]>).some(([url]) =>
+      url.pathname.endsWith('/act_123/promote_pages'))).toBe(true);
   });
 
   it('fails closed instead of persisting partial discovery', async () => {
@@ -225,6 +334,85 @@ describe('MetaReadonlyAdapter', () => {
         available: false,
         reason: 'asset_missing',
       })],
+    }));
+  });
+
+  it('validates execution capabilities using permission and selected asset evidence only', async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: [
+      { permission: 'ads_management', status: 'granted' },
+    ] }));
+    const bindings = [
+      {
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'ad_account' as const,
+        externalId: 'act_123',
+        selected: true,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      },
+      {
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'facebook_page' as const,
+        externalId: '456',
+        selected: true,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      },
+      {
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'whatsapp' as const,
+        externalId: '789',
+        selected: true,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      },
+    ];
+
+    const result = await adapter.validateCapabilities(
+      tenantId,
+      credentialRef,
+      bindings,
+      ['CREATE_CAMPAIGN', 'CREATE_ADSET', 'CREATE_CREATIVE', 'CREATE_AD',
+        'CLICK_TO_WHATSAPP'],
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      data: expect.arrayContaining([
+        expect.objectContaining({ capability: 'CREATE_CAMPAIGN', available: true,
+          assetScope: 'act_123', requiredPermissions: ['ads_management'] }),
+        expect.objectContaining({ capability: 'CLICK_TO_WHATSAPP', available: true,
+          assetScope: 'act_123', requiredPermissions: ['ads_management'] }),
+      ]),
+    }));
+  });
+
+  it('keeps Click-to-WhatsApp unavailable without selected page and WhatsApp assets', async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: [
+      { permission: 'ads_management', status: 'granted' },
+    ] }));
+
+    const result = await adapter.validateCapabilities(
+      tenantId,
+      credentialRef,
+      [{
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        assetType: 'ad_account',
+        externalId: 'act_123',
+        selected: true,
+        observedAt: '2026-08-24T01:00:00.000Z',
+      }],
+      ['CREATE_CAMPAIGN', 'CLICK_TO_WHATSAPP'],
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      data: [
+        expect.objectContaining({ capability: 'CREATE_CAMPAIGN', available: true }),
+        expect.objectContaining({ capability: 'CLICK_TO_WHATSAPP', available: false,
+          reason: 'asset_missing' }),
+      ],
     }));
   });
 

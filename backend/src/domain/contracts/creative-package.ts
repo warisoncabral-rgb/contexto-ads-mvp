@@ -10,6 +10,7 @@ export interface CreativeCopyV1 {
   primaryText: string;
   headline: string;
   description?: string;
+  whatsappMessage?: string;
   callToAction: CreativeCallToAction;
 }
 

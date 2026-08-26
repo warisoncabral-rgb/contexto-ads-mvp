@@ -73,6 +73,7 @@ describe('CreativePackageService', () => {
       primaryText: 'Produto premium com entrega por rota planejada.',
       headline: 'Conheça a coleção',
       description: 'Atendimento pelo WhatsApp.',
+      whatsappMessage: 'Olá! Gostaria de conhecer os modelos disponíveis no atacado.',
       callToAction: 'SEND_WHATSAPP_MESSAGE',
     }],
     claims: [{
@@ -174,6 +175,9 @@ describe('CreativePackageService', () => {
       expect.objectContaining({
         copyStatus: 'requires_review',
         creativeContentHash: result.creativePackage.contentHash,
+        copies: [expect.objectContaining({
+          whatsappMessage: input.copies[0].whatsappMessage,
+        })],
       }),
     );
     expect(approvals.invalidateForCampaignExceptHash).toHaveBeenCalledWith(
@@ -252,6 +256,16 @@ describe('CreativePackageService', () => {
     )).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('requires an initial message for every WhatsApp creative', async () => {
+    const invalid = {
+      ...input,
+      copies: [{ ...input.copies[0], whatsappMessage: undefined }],
+    };
+    await expect(service.appendVersion(
+      tenantId, campaignId, executionPlanId, invalid, 'warison',
+    )).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('requires an immutable digest for every media asset', async () => {
     const invalid = {
       ...input,
@@ -260,6 +274,69 @@ describe('CreativePackageService', () => {
     await expect(service.appendVersion(
       tenantId, campaignId, executionPlanId, invalid, 'warison',
     )).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('expands three paired variants into three paused ads', async () => {
+    const completePlan: ExecutionPlanV1 = {
+      ...sourcePlan,
+      objectsToCreate: [{
+        internalObjectId: `${campaignId}:campaign`, type: 'campaign', dependsOn: [],
+        logicalConfig: { lifecycleStatus: 'PAUSED' },
+      }, {
+        internalObjectId: `${campaignId}:ad_set`, type: 'ad_set',
+        dependsOn: [`${campaignId}:campaign`],
+        logicalConfig: { lifecycleStatus: 'PAUSED' },
+      }, {
+        internalObjectId: `${campaignId}:creative`, type: 'creative', dependsOn: [],
+        logicalConfig: { copyStatus: 'requires_generation_and_approval' },
+      }, {
+        internalObjectId: `${campaignId}:ad`, type: 'ad',
+        dependsOn: [`${campaignId}:ad_set`, `${campaignId}:creative`],
+        logicalConfig: { lifecycleStatus: 'PAUSED' },
+      }],
+    };
+    plans.findById.mockResolvedValueOnce(completePlan);
+    plans.latest.mockResolvedValueOnce(completePlan);
+    const variants = {
+      ...input,
+      copies: [1, 2, 3].map((number) => ({
+        ...input.copies[0], copyId: `copy-${number}`, headline: `Variação ${number}`,
+      })),
+      assets: [1, 2, 3].map((number) => ({
+        ...input.assets[0], assetId: `asset-${number}`, sha256: `${number}`.repeat(64),
+      })),
+    };
+
+    const result = await service.appendVersion(
+      tenantId, campaignId, executionPlanId, variants, 'warison',
+    );
+
+    const creatives = result.executionPlan.objectsToCreate.filter(
+      (object) => object.type === 'creative',
+    );
+    const ads = result.executionPlan.objectsToCreate.filter((object) => object.type === 'ad');
+    expect(creatives).toHaveLength(3);
+    expect(ads).toHaveLength(3);
+    expect(result.executionPlan.objectsToCreate).toHaveLength(8);
+    expect(ads.every((ad) => ad.logicalConfig.lifecycleStatus === 'PAUSED')).toBe(true);
+    expect(ads.map((ad) => ad.dependsOn[1])).toEqual(
+      creatives.map((creative) => creative.internalObjectId),
+    );
+  });
+
+  it('blocks approval when copy and media variants cannot be paired exactly', async () => {
+    const mismatch = { ...input, copies: [...input.copies, {
+      ...input.copies[0], copyId: 'copy-2', headline: 'Variação 2',
+    }] };
+    const result = await service.appendVersion(
+      tenantId, campaignId, executionPlanId, mismatch, 'warison',
+    );
+    expect(result.creativePackage.validationIssues).toContain(
+      'creative_variant_pairing_mismatch',
+    );
+    await expect(service.approve(
+      tenantId, campaignId, 1, result.creativePackage.contentHash, 'warison',
+    )).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('rejects duplicate identifiers across copy, claim and asset records', async () => {

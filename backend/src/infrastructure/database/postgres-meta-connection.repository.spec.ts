@@ -66,6 +66,26 @@ describe('PostgresMetaConnectionRepository', () => {
     await expect(repository.findById('tenant-2', 'connection-1')).resolves.toBeNull();
   });
 
+  it('finds only the latest ready connection for a tenant', async () => {
+    query.mockResolvedValueOnce({ rows: [{
+      connection_id: 'connection-2', tenant_id: 'tenant-1', provider: 'meta',
+      status: 'connected', credential_ref: 'vault://credential-2',
+      last_validated_at: new Date('2026-08-25T22:00:00.000Z'),
+      created_at: new Date('2026-08-25T21:00:00.000Z'),
+      updated_at: new Date('2026-08-25T22:00:00.000Z'),
+    }] });
+
+    const result = await repository.latestReadyForTenant('tenant-1');
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(/status in \('connected', 'ready'\)[\s\S]*credential_ref is not null[\s\S]*order by updated_at desc/),
+      ['tenant-1'],
+    );
+    expect(result).toEqual(expect.objectContaining({
+      tenantId: 'tenant-1', connectionId: 'connection-2', status: 'connected',
+    }));
+  });
+
   it('marks only an authorization_pending tenant-scoped connection as connected', async () => {
     query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     await expect(repository.markConnected(
@@ -77,7 +97,24 @@ describe('PostgresMetaConnectionRepository', () => {
 
     expect(query).toHaveBeenCalledWith(
       expect.stringMatching(/credential_ref = \$3[\s\S]*status = 'connected'[\s\S]*tenant_id = \$1 and connection_id = \$2[\s\S]*status = 'authorization_pending'/),
-      ['tenant-1', 'connection-1', 'vault://credential-1', '2026-08-19T03:00:00.000Z'],
+      ['tenant-1', 'connection-1', 'vault://credential-1', '2026-08-19T03:00:00.000Z', false],
+    );
+  });
+
+  it('allows explicit credential replacement only for a connected lifecycle state', async () => {
+    query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
+
+    await expect(repository.markConnected(
+      'tenant-1',
+      'connection-1',
+      'vault://credential-2',
+      '2026-08-26T03:00:00.000Z',
+      true,
+    )).resolves.toBe(true);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(/\$5 = true[\s\S]*status in \([\s\S]*'connected'[\s\S]*'ready'/),
+      ['tenant-1', 'connection-1', 'vault://credential-2', '2026-08-26T03:00:00.000Z', true],
     );
   });
 
@@ -110,17 +147,21 @@ describe('PostgresMetaConnectionRepository', () => {
       ['tenant-1', 'connection-1'],
     ]);
     expect(clientQuery.mock.calls[2]).toEqual([
-      expect.stringContaining('delete from meta_asset_bindings'),
+      expect.stringContaining('selected = true'),
       ['tenant-1', 'connection-1'],
     ]);
     expect(clientQuery.mock.calls[3]).toEqual([
+      expect.stringContaining('delete from meta_asset_bindings'),
+      ['tenant-1', 'connection-1'],
+    ]);
+    expect(clientQuery.mock.calls[4]).toEqual([
       expect.stringContaining('insert into meta_asset_bindings'),
       [
         'tenant-1', 'connection-1', 'ad_account', 'act_123',
         'Main account', false, binding.observedAt,
       ],
     ]);
-    expect(clientQuery.mock.calls[4]).toEqual(['commit']);
+    expect(clientQuery.mock.calls[5]).toEqual(['commit']);
     expect(release).toHaveBeenCalledTimes(1);
   });
 
@@ -140,6 +181,7 @@ describe('PostgresMetaConnectionRepository', () => {
     clientQuery
       .mockResolvedValueOnce({ rows: [], rowCount: null })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 })
       .mockRejectedValueOnce(new Error('insert failed'))
       .mockResolvedValueOnce({ rows: [], rowCount: null });
@@ -180,5 +222,34 @@ describe('PostgresMetaConnectionRepository', () => {
       expect.stringContaining('where tenant_id = $1 and connection_id = $2'),
       ['tenant-1', 'connection-1'],
     );
+  });
+
+  it('selects discovered bindings atomically and returns the resulting snapshot', async () => {
+    const observedAt = new Date('2026-08-24T01:00:00.000Z');
+    clientQuery
+      .mockResolvedValueOnce({ rows: [], rowCount: null })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 2 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{
+        tenant_id: 'tenant-1', connection_id: 'connection-1',
+        asset_type: 'ad_account', external_id: 'act_123',
+        display_name: 'Main account', selected: true, observed_at: observedAt,
+      }], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: null });
+
+    await expect(repository.selectBindings('tenant-1', 'connection-1', [{
+      assetType: 'ad_account', externalId: 'act_123',
+    }])).resolves.toEqual([expect.objectContaining({
+      tenantId: 'tenant-1', connectionId: 'connection-1',
+      assetType: 'ad_account', externalId: 'act_123', selected: true,
+    })]);
+    expect(clientQuery).toHaveBeenNthCalledWith(3,
+      expect.stringContaining('set selected = false'), ['tenant-1', 'connection-1']);
+    expect(clientQuery).toHaveBeenNthCalledWith(4,
+      expect.stringContaining('set selected = true'),
+      ['tenant-1', 'connection-1', 'ad_account', 'act_123']);
+    expect(clientQuery).toHaveBeenLastCalledWith('commit');
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });

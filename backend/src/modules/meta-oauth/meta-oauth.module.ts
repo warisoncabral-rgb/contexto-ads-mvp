@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { MetaConnectionModule } from '../meta-connection/meta-connection.module';
-import { MetaOAuthController } from './meta-oauth.controller';
 import { MetaOAuthService } from './meta-oauth.service';
 import { ConfigService } from '@nestjs/config';
 import { MetaOAuthHttpAdapter } from '../../infrastructure/meta/meta-oauth-http.adapter';
@@ -11,7 +10,7 @@ import { MetaOAuthCallbackController } from './meta-oauth-callback.controller';
 
 @Module({
   imports: [DatabaseModule, MetaConnectionModule, CredentialVaultModule],
-  controllers: [MetaOAuthController, MetaOAuthCallbackController],
+  controllers: [MetaOAuthCallbackController],
   providers: [
     MetaOAuthService,
     {
@@ -20,5 +19,6 @@ import { MetaOAuthCallbackController } from './meta-oauth-callback.controller';
       useFactory: (config: ConfigService) => new MetaOAuthHttpAdapter(config),
     },
   ],
+  exports: [MetaOAuthService],
 })
 export class MetaOAuthModule {}

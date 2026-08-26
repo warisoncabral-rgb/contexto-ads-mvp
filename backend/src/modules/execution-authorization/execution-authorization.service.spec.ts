@@ -5,12 +5,15 @@ import {
   ExecutionPreflightV1,
 } from '../../domain/contracts/execution-authorization';
 import { ExecutionManifestV1 } from '../../domain/contracts/execution-manifest';
+import { MetaWriteValidationProtocolV1 } from '../../domain/contracts/meta-write-validation';
 import {
   ExecutionAuthorizationRepository,
   ExecutionManifestRepository,
+  MetaWriteValidationProtocolRepository,
 } from '../../domain/ports/repositories';
 import { ExecutionAuthorizationService } from './execution-authorization.service';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
+import { MetaWriteAdapter } from '../meta-adapter/meta-write.adapter';
 
 describe('ExecutionAuthorizationService', () => {
   const tenantId = '11111111-1111-4111-8111-111111111111';
@@ -62,6 +65,7 @@ describe('ExecutionAuthorizationService', () => {
   let authorizations: jest.Mocked<ExecutionAuthorizationRepository>;
   let service: ExecutionAuthorizationService;
   let killSwitch: jest.Mocked<KillSwitchService>;
+  let validationProtocols: jest.Mocked<MetaWriteValidationProtocolRepository>;
 
   beforeEach(() => {
     manifests = {
@@ -91,7 +95,15 @@ describe('ExecutionAuthorizationService', () => {
         evaluatedAt: '2026-08-24T13:00:00.000Z',
       }),
     } as unknown as jest.Mocked<KillSwitchService>;
-    service = new ExecutionAuthorizationService(manifests, authorizations, killSwitch);
+    validationProtocols = {
+      saveIdempotent: jest.fn(),
+      latestForManifest: jest.fn().mockResolvedValue(null),
+      beginExecution: jest.fn(),
+      updateExecution: jest.fn(),
+    };
+    service = new ExecutionAuthorizationService(
+      manifests, authorizations, killSwitch, validationProtocols,
+    );
   });
 
   it('requests a high-risk, short-lived authorization for the exact manifest', async () => {
@@ -156,11 +168,96 @@ describe('ExecutionAuthorizationService', () => {
     });
   });
 
+  it('scopes a resumed authorization to the operations in the prepared protocol', async () => {
+    validationProtocols.latestForManifest.mockResolvedValue({
+      metaWriteValidationProtocolId: '99999999-9999-4999-8999-999999999999',
+      manifestHash: manifest.manifestHash,
+      status: 'prepared_external_validation_required',
+      operations: Array.from({ length: 7 }, (_, index) => ({
+        order: index + 2,
+        operationKey: `operation:${index + 2}`,
+        objectType: 'creative',
+        action: 'create_creative',
+        requestFingerprint: 'c'.repeat(64),
+        intendedLifecycleStatus: 'PAUSED',
+      })),
+    } as MetaWriteValidationProtocolV1);
+
+    const result = await service.request(tenantId, manifestId, 'warison');
+
+    expect(result.scope).toEqual(expect.arrayContaining([
+      'operations:7',
+      'validation_protocol:99999999-9999-4999-8999-999999999999',
+    ]));
+    expect(result.scope).not.toContain(`operations:${manifest.operations.length}`);
+  });
+
   it('creates stable preflight hashes for identical gate state', async () => {
     authorizations.findById.mockResolvedValue({ ...pending, status: 'approved' });
     const first = await service.preflight(tenantId, authorizationId);
     const second = await service.preflight(tenantId, authorizationId);
     expect(second.preflightHash).toBe(first.preflightHash);
+  });
+
+  it('references a prepared protocol without treating it as real validation', async () => {
+    authorizations.findById.mockResolvedValue({ ...pending, status: 'approved' });
+    const protocolId = '99999999-9999-4999-8999-999999999999';
+    validationProtocols.latestForManifest.mockResolvedValue({
+      metaWriteValidationProtocolId: protocolId,
+    } as MetaWriteValidationProtocolV1);
+
+    const result = await service.preflight(tenantId, authorizationId);
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: 'real_meta_write_validation',
+        status: 'blocked',
+        evidenceRefs: [`meta_write_validation_protocol:${protocolId}`],
+      }),
+    ]));
+    expect(result.blockers).toContain('real_meta_write_validation');
+    expect(result.boundaries.externalAttemptStarted).toBe(false);
+  });
+
+  it('reports the hosted executor ready without starting an external attempt', async () => {
+    authorizations.findById.mockResolvedValue({ ...pending, status: 'approved' });
+    killSwitch.effective.mockResolvedValue({
+      tenantId, campaignId, writesBlocked: false, decision: 'released',
+      tenant: { known: true, status: 'released', stateId: authorizationId, version: 1 },
+      campaign: { known: true, status: 'released', stateId: manifestId, version: 1 },
+      boundaries: { externalWritesAllowed: false, externalWritesPerformed: false },
+      evaluatedAt: '2026-08-24T13:00:00.000Z',
+    });
+    validationProtocols.latestForManifest.mockResolvedValue({
+      metaWriteValidationProtocolId: '99999999-9999-4999-8999-999999999999',
+      status: 'prepared_external_validation_required',
+    } as MetaWriteValidationProtocolV1);
+    const plans = {
+      findById: jest.fn().mockResolvedValue({
+        meta: { connectionId: authorizationId, adAccountId: 'act_123' },
+      }),
+    };
+    const connections = {
+      findById: jest.fn().mockResolvedValue({ status: 'connected', credentialRef: 'vault/ref' }),
+      listBindings: jest.fn().mockResolvedValue([
+        { assetType: 'facebook_page', externalId: '10', selected: true },
+        { assetType: 'whatsapp', externalId: '20', selected: true },
+      ]),
+    };
+    const adapter = { enabled: jest.fn().mockReturnValue(true) };
+    service = new ExecutionAuthorizationService(
+      manifests, authorizations, killSwitch, validationProtocols,
+      plans as never, connections as never, adapter as unknown as MetaWriteAdapter,
+    );
+
+    const result = await service.preflight(tenantId, authorizationId);
+
+    expect(result.blockers).toEqual([]);
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'real_meta_write_validation', status: 'passed' }),
+      expect.objectContaining({ key: 'write_adapter_enabled', status: 'passed' }),
+    ]));
+    expect(result.nextAction).toContain('uma única criação controlada');
+    expect(result.boundaries.externalAttemptStarted).toBe(false);
   });
 
   it('passes both Kill Switch checks only when both states are known and released', async () => {

@@ -27,23 +27,22 @@ describe('PostgresMetaOAuthAttemptRepository', () => {
     poolQuery.mockReset();
   });
 
-  it('locks the tenant-scoped connection before replacing the active attempt', async () => {
+  it('locks the tenant-scoped connection without invalidating another active attempt', async () => {
     await repository.replaceActive(attempt);
 
     expect(query.mock.calls[1]).toEqual([
       expect.stringContaining('for update'),
       [attempt.tenantId, attempt.connectionId],
     ]);
-    expect(query.mock.calls[2]).toEqual([
-      expect.stringContaining('set invalidated_at = now()'),
-      [attempt.tenantId, attempt.connectionId],
-    ]);
+    expect(query.mock.calls.some(([sql]) =>
+      typeof sql === 'string' && sql.includes('set invalidated_at = now()'),
+    )).toBe(false);
   });
 
   it('inserts the attempt with parameterized values and commits the transaction', async () => {
     await repository.replaceActive(attempt);
 
-    expect(query.mock.calls[3]).toEqual([
+    expect(query.mock.calls[2]).toEqual([
       expect.stringContaining('insert into meta_oauth_attempts'),
       [
         attempt.attemptId,
@@ -58,14 +57,13 @@ describe('PostgresMetaOAuthAttemptRepository', () => {
       ],
     ]);
     expect(query.mock.calls[0]).toEqual(['begin']);
-    expect(query.mock.calls[4]).toEqual(['commit']);
+    expect(query.mock.calls[3]).toEqual(['commit']);
     expect(release).toHaveBeenCalledTimes(1);
   });
 
   it('rolls back and releases the client when persistence fails', async () => {
     query
       .mockResolvedValueOnce({ rows: [], rowCount: null })
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 })
       .mockRejectedValueOnce(new Error('insert failed'))
       .mockResolvedValueOnce({ rows: [], rowCount: null });

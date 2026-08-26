@@ -1,0 +1,71 @@
+databases:
+  - name: contexto-ads-validation-db
+    plan: free
+    region: virginia
+    postgresMajorVersion: "18"
+    databaseName: contexto_ads
+    user: contexto_ads
+    ipAllowList: []
+
+services:
+  - type: web
+    name: contexto-ads-validation-api
+    runtime: node
+    plan: free
+    region: virginia
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: sh -c 'export META_OAUTH_REDIRECT_URI="${META_OAUTH_REDIRECT_URI:-https://$RENDER_EXTERNAL_HOSTNAME/v1/meta/oauth/callback}"; npm run start:prod'
+    healthCheckPath: /v1/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: contexto-ads-validation-db
+          property: connectionString
+      - key: CREDENTIAL_VAULT_PROVIDER
+        value: postgres
+      - key: CREDENTIAL_VAULT_MASTER_KEY
+        generateValue: true
+      - key: META_GRAPH_BASE_URL
+        value: https://graph.facebook.com
+      - key: META_GRAPH_API_VERSION
+        value: v26.0
+      - key: META_WRITE_ADAPTER_ENABLED
+        value: "true"
+      - key: META_CITY_RADIUS_KM
+        value: "40"
+      - key: CONTEXT_ADS_PUBLIC_BASE_URL
+        value: https://contexto-ads-validation-panel.onrender.com
+      - key: OPERATOR_BOOTSTRAP_SUBJECT
+        value: operator:warison
+      - key: OPERATOR_BOOTSTRAP_TOKEN
+        generateValue: true
+      - key: BOOTSTRAP_TENANT_ID
+        value: 22222222-2222-4222-8222-222222222222
+      - key: BOOTSTRAP_TENANT_DISPLAY_NAME
+        value: Rosa VIP Calçados
+
+  - type: web
+    name: contexto-ads-validation-panel
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CONTEXT_ADS_API_BASE_URL
+        value: https://contexto-ads-validation-api.onrender.com
+      - key: CONTEXT_ADS_API_TIMEOUT_MS
+        value: "65000"
+      - key: CONTEXT_ADS_OPERATOR_TOKEN
+        fromService:
+          type: web
+          name: contexto-ads-validation-api
+          envVarKey: OPERATOR_BOOTSTRAP_TOKEN

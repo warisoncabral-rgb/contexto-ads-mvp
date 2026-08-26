@@ -55,13 +55,31 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
     const observedAt = new Date().toISOString();
     try {
       const credential = await this.getCredential(tenantId, credentialRef);
-      const [adAccounts, pages] = await Promise.all([
+      const [adAccounts, managedPages, ownedWhatsappAssets] = await Promise.all([
         this.collectEdge('/me/adaccounts', credential.accessToken),
-        this.collectEdge('/me/accounts', credential.accessToken),
+        this.collectEdge('/me/accounts', credential.accessToken, 'id,name,access_token'),
+        this.discoverOwnedWhatsapp(credential.accessToken),
       ]);
+      const adAccountAssets = adAccounts.map((item) => this.toAsset(item, 'ad_account'));
+      const promotedPages = managedPages.length === 0
+        ? (await Promise.all(adAccountAssets.map((account) => this.collectEdge(
+          `/${account.externalId}/promote_pages`, credential.accessToken,
+        )))).flat()
+        : [];
+      const pageAssets = this.uniqueAssets(
+        [...managedPages, ...promotedPages].map((item) => this.toAsset(item, 'facebook_page')),
+      );
+      const pageAccessTokens = this.pageAccessTokens(managedPages);
+      const whatsappAssets = (await Promise.all(
+        pageAssets.map((page) => this.discoverPageWhatsapp(
+          page,
+          pageAccessTokens.get(page.externalId) ?? credential.accessToken,
+        )),
+      )).flat();
       const assets: DiscoveredMetaAsset[] = [
-        ...adAccounts.map((item) => this.toAsset(item, 'ad_account')),
-        ...pages.map((item) => this.toAsset(item, 'facebook_page')),
+        ...adAccountAssets,
+        ...pageAssets,
+        ...this.uniqueAssets([...whatsappAssets, ...ownedWhatsappAssets]),
       ];
       return this.success(assets, observedAt);
     } catch (error) {
@@ -116,14 +134,18 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
     }
   }
 
-  private async collectEdge(path: string, accessToken: string): Promise<unknown[]> {
+  private async collectEdge(
+    path: string,
+    accessToken: string,
+    fields = 'id,name',
+  ): Promise<unknown[]> {
     const items: unknown[] = [];
     const seenCursors = new Set<string>();
     let after: string | undefined;
     for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber += 1) {
       const payload = await this.graphGet(
         path,
-        { fields: 'id,name', limit: '100', ...(after ? { after } : {}) },
+        { fields, limit: '100', ...(after ? { after } : {}) },
         accessToken,
       );
       if (!this.isGraphPage(payload)) throw new MetaGraphRequestError('VALIDATION', false);
@@ -161,14 +183,24 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
     granted: Set<string>,
     apiVersion: string,
   ): MetaCapabilityEvidence[] {
+    const writeCapabilities: MetaCapabilityType[] = [
+      'CREATE_CAMPAIGN', 'CREATE_ADSET', 'CREATE_CREATIVE', 'CREATE_AD',
+      'MANAGE_AD_STATUS',
+    ];
     const requiredPermissions = capability === 'DISCOVER_ASSETS'
       ? ['ads_read', 'pages_show_list']
-      : capability === 'READ_AD_ACCOUNT'
+      : capability === 'READ_AD_ACCOUNT' || capability === 'READ_INSIGHTS'
         ? ['ads_read']
-        : [];
+        : writeCapabilities.includes(capability) || capability === 'CLICK_TO_WHATSAPP'
+          ? ['ads_management']
+          : [];
     const grantedPermissions = requiredPermissions.filter((permission) => granted.has(permission));
 
-    if (!['DISCOVER_ASSETS', 'READ_AD_ACCOUNT'].includes(capability)) {
+    const supported = [
+      'DISCOVER_ASSETS', 'READ_AD_ACCOUNT', 'READ_INSIGHTS',
+      ...writeCapabilities, 'CLICK_TO_WHATSAPP',
+    ];
+    if (!supported.includes(capability)) {
       return [{
         capability,
         available: false,
@@ -210,6 +242,23 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
         apiVersion,
         reason: 'asset_missing',
       }];
+    }
+    if (capability === 'CLICK_TO_WHATSAPP') {
+      const selectedPage = assetBindings.some((binding) =>
+        binding.assetType === 'facebook_page' && binding.selected);
+      const selectedWhatsApp = assetBindings.some((binding) =>
+        binding.assetType === 'whatsapp' && binding.selected);
+      if (!selectedPage || !selectedWhatsApp) {
+        return adAccounts.map((binding) => ({
+          capability,
+          available: false,
+          requiredPermissions,
+          grantedPermissions,
+          apiVersion,
+          assetScope: binding.externalId,
+          reason: 'asset_missing',
+        }));
+      }
     }
     return adAccounts.map((binding) => ({
       capability,
@@ -350,6 +399,101 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
       externalId: value.id,
       ...(typeof value.name === 'string' ? { displayName: value.name.slice(0, 255) } : {}),
     } as const;
+  }
+
+  private uniqueAssets<T extends DiscoveredMetaAsset>(assets: T[]): T[] {
+    const seen = new Set<string>();
+    return assets.filter((asset) => {
+      const key = `${asset.assetType}:${asset.externalId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private pageAccessTokens(values: unknown[]): Map<string, string> {
+    const tokens = new Map<string, string>();
+    for (const value of values) {
+      if (!this.isObject(value) || !this.isDigits(value.id)
+        || typeof value.access_token !== 'string'
+        || value.access_token.length < 16 || value.access_token.length > 4096) continue;
+      tokens.set(value.id, value.access_token);
+    }
+    return tokens;
+  }
+
+  private async discoverOwnedWhatsapp(accessToken: string): Promise<DiscoveredMetaAsset[]> {
+    try {
+      const businesses = await this.collectEdge('/me/businesses', accessToken);
+      const wabas = (await Promise.all(businesses.map((business) => {
+        if (!this.isObject(business) || !this.isDigits(business.id)) {
+          throw new MetaGraphRequestError('VALIDATION', false);
+        }
+        return this.collectEdge(
+          `/${business.id}/owned_whatsapp_business_accounts`,
+          accessToken,
+        );
+      }))).flat();
+      const phones = (await Promise.all(wabas.map((waba) => {
+        if (!this.isObject(waba) || !this.isDigits(waba.id)) {
+          throw new MetaGraphRequestError('VALIDATION', false);
+        }
+        return this.collectEdge(
+          `/${waba.id}/phone_numbers`,
+          accessToken,
+          'id,display_phone_number,verified_name',
+        );
+      }))).flat();
+      return this.uniqueAssets(phones.flatMap((phone) => this.toWhatsappAsset(phone)));
+    } catch (error) {
+      if (error instanceof MetaGraphRequestError && !error.retryable) return [];
+      throw error;
+    }
+  }
+
+  private toWhatsappAsset(value: unknown): DiscoveredMetaAsset[] {
+    if (!this.isObject(value) || !this.isDigits(value.id)
+      || typeof value.display_phone_number !== 'string'
+      || (value.verified_name !== undefined && typeof value.verified_name !== 'string')) {
+      throw new MetaGraphRequestError('VALIDATION', false);
+    }
+    const phoneNumber = value.display_phone_number.replace(/\D/g, '');
+    if (!/^\d{8,15}$/.test(phoneNumber)) return [];
+    const name = typeof value.verified_name === 'string'
+      ? value.verified_name
+      : `WhatsApp ${phoneNumber.slice(-4)}`;
+    return [{
+      assetType: 'whatsapp',
+      externalId: phoneNumber,
+      displayName: name.slice(0, 255),
+    }];
+  }
+
+  private async discoverPageWhatsapp(
+    page: DiscoveredMetaAsset,
+    accessToken: string,
+  ): Promise<DiscoveredMetaAsset[]> {
+    try {
+      const payload = await this.graphGet(
+        `/${page.externalId}`,
+        { fields: 'id,name,has_whatsapp_number,whatsapp_number' },
+        accessToken,
+      );
+      if (!this.isObject(payload) || payload.id !== page.externalId
+        || payload.has_whatsapp_number !== true || typeof payload.whatsapp_number !== 'string') {
+        return [];
+      }
+      const phoneNumber = payload.whatsapp_number.replace(/\D/g, '');
+      if (!/^\d{8,15}$/.test(phoneNumber)) return [];
+      return [{
+        assetType: 'whatsapp',
+        externalId: phoneNumber,
+        displayName: `WhatsApp · ${page.displayName ?? page.externalId}`.slice(0, 255),
+      }];
+    } catch (error) {
+      if (error instanceof MetaGraphRequestError && !error.retryable) return [];
+      throw error;
+    }
   }
 
   private isGraphPage(value: unknown): value is GraphPage {

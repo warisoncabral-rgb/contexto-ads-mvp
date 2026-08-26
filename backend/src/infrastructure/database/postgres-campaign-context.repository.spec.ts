@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { CampaignContextPackageV1 } from '../../domain/contracts/campaign-context';
 import { PostgresCampaignContextRepository } from './postgres-campaign-context.repository';
+import { AuditEvent } from '../../domain/contracts/audit-event';
 
 describe('PostgresCampaignContextRepository', () => {
   const context: CampaignContextPackageV1 = {
@@ -30,6 +31,19 @@ describe('PostgresCampaignContextRepository', () => {
     query: poolQuery,
   } as unknown as Pool;
   const repository = new PostgresCampaignContextRepository(pool);
+  const event: AuditEvent = {
+    auditEventId: '44444444-4444-4444-8444-444444444444',
+    tenantId: context.tenantId,
+    correlationId: '55555555-5555-4555-8555-555555555555',
+    actorType: 'user',
+    actorId: 'operator:warison',
+    eventType: 'operator_campaign_context_created',
+    objectType: 'campaign_context_package',
+    objectId: context.packageId,
+    newState: { status: context.status },
+    result: 'success',
+    createdAt: context.createdAt,
+  };
 
   beforeEach(() => {
     clientQuery.mockReset();
@@ -49,6 +63,20 @@ describe('PostgresCampaignContextRepository', () => {
       'commit',
     ]);
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('commits a context write and its audit evidence atomically', async () => {
+    clientQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+
+    await repository.create(context, event);
+
+    expect(clientQuery.mock.calls.map(([sql]) => sql)).toEqual([
+      'begin',
+      expect.stringContaining('insert into campaigns'),
+      expect.stringContaining('insert into campaign_context_versions'),
+      expect.stringContaining('insert into audit_events'),
+      'commit',
+    ]);
   });
 
   it('serializes concurrent version allocation by locking the campaign row', async () => {
@@ -125,6 +153,28 @@ describe('PostgresCampaignContextRepository', () => {
     expect(poolQuery).toHaveBeenCalledWith(
       expect.stringContaining('and version = $3'),
       [context.tenantId, context.campaignId, context.version],
+    );
+  });
+
+  it('lists only the latest context per campaign in tenant scope', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [{
+      package_id: context.packageId,
+      tenant_id: context.tenantId,
+      campaign_id: context.campaignId,
+      version: context.version,
+      schema_version: context.schemaVersion,
+      status: context.status,
+      facts: context.facts,
+      inferences: context.inferences,
+      validation_issues: context.validationIssues,
+      content_hash: context.contentHash,
+      created_at: new Date(context.createdAt),
+    }] });
+
+    await expect(repository.listLatestForTenant(context.tenantId)).resolves.toEqual([context]);
+    expect(poolQuery).toHaveBeenCalledWith(
+      expect.stringMatching(/distinct on \(campaign_id\)[\s\S]*where tenant_id = \$1/),
+      [context.tenantId],
     );
   });
 

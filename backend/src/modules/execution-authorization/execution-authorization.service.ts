@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { AuditEvent } from '../../domain/contracts/audit-event';
@@ -16,12 +17,19 @@ import { ExecutionManifestV1 } from '../../domain/contracts/execution-manifest';
 import {
   ExecutionAuthorizationRepository,
   ExecutionManifestRepository,
+  ExecutionPlanRepository,
+  MetaConnectionRepository,
+  MetaWriteValidationProtocolRepository,
 } from '../../domain/ports/repositories';
 import {
   EXECUTION_AUTHORIZATION_REPOSITORY,
   EXECUTION_MANIFEST_REPOSITORY,
+  EXECUTION_PLAN_REPOSITORY,
+  META_CONNECTION_REPOSITORY,
+  META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
 } from '../../infrastructure/database/database.tokens';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
+import { MetaWriteAdapter } from '../meta-adapter/meta-write.adapter';
 
 const AUTHORIZATION_VALIDITY_MS = 15 * 60 * 1000;
 
@@ -33,6 +41,13 @@ export class ExecutionAuthorizationService {
     @Inject(EXECUTION_AUTHORIZATION_REPOSITORY)
     private readonly authorizations: ExecutionAuthorizationRepository,
     private readonly killSwitch: KillSwitchService,
+    @Inject(META_WRITE_VALIDATION_PROTOCOL_REPOSITORY)
+    private readonly validationProtocols: MetaWriteValidationProtocolRepository,
+    @Optional() @Inject(EXECUTION_PLAN_REPOSITORY)
+    private readonly plans?: ExecutionPlanRepository,
+    @Optional() @Inject(META_CONNECTION_REPOSITORY)
+    private readonly connections?: MetaConnectionRepository,
+    @Optional() private readonly writeAdapter?: MetaWriteAdapter,
   ) {}
 
   async request(
@@ -44,6 +59,14 @@ export class ExecutionAuthorizationService {
     this.assertUuid(executionManifestId, 'executionManifestId');
     const actor = this.assertActor(requestedBy, 'requestedBy');
     const manifest = await this.currentManifest(tenantId, executionManifestId);
+    const preparedProtocol = await this.validationProtocols.latestForManifest(
+      tenantId, executionManifestId,
+    );
+    const protocolCurrent = preparedProtocol?.status === 'prepared_external_validation_required'
+      && preparedProtocol.manifestHash === manifest.manifestHash;
+    const authorizedOperationCount = protocolCurrent
+      ? preparedProtocol.operations.length
+      : manifest.operations.length;
     const now = new Date();
     const authorization: ExecutionAuthorizationV1 = {
       executionAuthorizationId: randomUUID(),
@@ -61,7 +84,10 @@ export class ExecutionAuthorizationService {
         `plan_hash:${manifest.planHash}`,
         `execution_manifest:${manifest.executionManifestId}`,
         `manifest_hash:${manifest.manifestHash}`,
-        `operations:${manifest.operations.length}`,
+        `operations:${authorizedOperationCount}`,
+        ...(protocolCurrent
+          ? [`validation_protocol:${preparedProtocol.metaWriteValidationProtocolId}`]
+          : []),
         'intended_lifecycle_status:PAUSED',
         'external_write_currently_allowed:false',
       ],
@@ -179,6 +205,29 @@ export class ExecutionAuthorizationService {
     const effectiveKillSwitch = await this.killSwitch.effective(
       tenantId, manifest.campaignId,
     );
+    const validationProtocol = await this.validationProtocols.latestForManifest(
+      tenantId, manifest.executionManifestId,
+    );
+    const plan = await this.plans?.findById(tenantId, manifest.executionPlanId);
+    const connectionId = plan?.meta.connectionId;
+    const adAccountReady = typeof plan?.meta.adAccountId === 'string'
+      && /^act_\d+$/.test(plan.meta.adAccountId);
+    const connection = connectionId
+      ? await this.connections?.findById(tenantId, connectionId) : undefined;
+    const bindings = connectionId
+      ? await this.connections?.listBindings(tenantId, connectionId) ?? [] : [];
+    const pageReady = bindings.filter((item) =>
+      item.assetType === 'facebook_page' && item.selected).length === 1;
+    const whatsappReady = bindings.filter((item) =>
+      item.assetType === 'whatsapp' && item.selected).length === 1;
+    const protocolReady = validationProtocol?.status === 'prepared_external_validation_required';
+    const connectionReady = Boolean(connection?.credentialRef
+      && ['connected', 'ready'].includes(connection.status));
+    const targetReady = Boolean(plan && connectionId && adAccountReady
+      && connectionReady
+      && pageReady && whatsappReady);
+    const realMetaReady = protocolReady && targetReady;
+    const adapterReady = this.writeAdapter?.enabled() === true;
     const tenantKillSwitchPassed = effectiveKillSwitch.tenant.known
       && effectiveKillSwitch.tenant.status === 'released';
     const campaignKillSwitchPassed = effectiveKillSwitch.campaign.known
@@ -228,12 +277,28 @@ export class ExecutionAuthorizationService {
             : 'O Kill Switch da campanha não possui estado; o padrão é bloquear.',
       },
       {
-        key: 'real_meta_write_validation', status: 'blocked', evidenceRefs: [],
-        meaning: 'A escrita controlada ainda não foi validada em ambiente Meta real.',
+        key: 'real_meta_write_validation', status: realMetaReady ? 'passed' : 'blocked',
+        evidenceRefs: validationProtocol
+          ? [`meta_write_validation_protocol:${validationProtocol.metaWriteValidationProtocolId}`]
+          : [],
+        meaning: realMetaReady
+          ? 'O protocolo, a conta de anúncios, a conexão, a Página e o WhatsApp estão prontos para a prova controlada.'
+          : !protocolReady
+            ? `O protocolo real não está preparado para iniciar (estado: ${validationProtocol?.status ?? 'missing'}).`
+            : !plan || !connectionId || !adAccountReady
+              ? 'O plano não possui um destino Meta executável e atual.'
+              : !connectionReady
+                ? `A conexão Meta não está pronta (estado: ${connection?.status ?? 'missing'}).`
+                : !pageReady || !whatsappReady
+                  ? 'A Página e o WhatsApp selecionados não estão completos ou são ambíguos.'
+                  : 'O destino Meta real não pôde ser comprovado.',
       },
       {
-        key: 'write_adapter_enabled', status: 'blocked', evidenceRefs: [],
-        meaning: 'Não existe adapter de escrita habilitado.',
+        key: 'write_adapter_enabled', status: adapterReady ? 'passed' : 'blocked',
+        evidenceRefs: adapterReady ? ['runtime:meta_write_adapter_enabled'] : [],
+        meaning: adapterReady
+          ? 'O adapter de escrita está habilitado no ambiente hospedado controlado.'
+          : 'O adapter de escrita não está habilitado neste ambiente.',
       },
     ];
     const blockers = checks.filter((check) => check.status === 'blocked')
@@ -273,7 +338,9 @@ export class ExecutionAuthorizationService {
       status: 'blocked_before_attempt',
       checks,
       blockers,
-      nextAction: this.nextAction(blockers[0]),
+      nextAction: blockers.length
+        ? this.nextAction(blockers[0])
+        : 'Executar uma única criação controlada, mantendo todos os objetos em PAUSED.',
       boundaries,
       generatedAt,
     };

@@ -1,0 +1,36 @@
+{
+  "campaign": "Rosa VIP — atacado Recife e Natal",
+  "purpose": "internal_test_creative_package",
+  "format": "meta_feed_4_5",
+  "generatedAt": "2026-08-25",
+  "humanVisualFidelityReview": "pending",
+  "assets": [
+    {
+      "variant": 1,
+      "file": "rosa-vip-variedade-atacado.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1080,
+      "height": 1350,
+      "sha256": "c6d9decf298b2defbfa02192c3bc3038e134457fc4c3d7a3a9212a742a0b2864",
+      "alt": "Seleção de sapatilha, mule, papete e sandália de salto bloco em expositores claros"
+    },
+    {
+      "variant": 2,
+      "file": "rosa-vip-mix-revenda.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1080,
+      "height": 1350,
+      "sha256": "135ff4c678c25e0d75895716dbc82c2686622645b39360541baf71e91a3bf884",
+      "alt": "Mix de papete, mule, mocassim e rasteirinha dourada em expositores claros"
+    },
+    {
+      "variant": 3,
+      "file": "rosa-vip-salto-bloco.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1080,
+      "height": 1350,
+      "sha256": "6ef5403a788621ca3b63658f5c1dc44def125a442690c2ffee63a8f37d92fec0",
+      "alt": "Três pares de sandálias de salto bloco nas cores preta, branca e caramelo"
+    }
+  ]
+}

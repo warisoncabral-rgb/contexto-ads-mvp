@@ -7,6 +7,7 @@ export interface MetaAdapterResult<T> {
   observedAt: string;
   retryable: boolean;
   normalizedError?: 'AUTH_PERMISSION' | 'VALIDATION' | 'FINANCIAL' | 'PLATFORM_POLICY' | 'MEDIA' | 'TRANSIENT_API' | 'UNKNOWN';
+  diagnosticCode?: string;
   requestReference?: string;
 }
 

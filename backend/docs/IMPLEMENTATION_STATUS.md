@@ -60,17 +60,57 @@
 - Ausência de estado em qualquer escopo bloqueia fail-closed; switch do tenant acionado prevalece sobre toda campanha.
 - Solicitações concorrentes para o mesmo estado retornam uma única versão e não duplicam auditoria.
 - O preflight usa evidências exatas dos dois switches; mesmo ambos liberados, validação Meta e adapter continuam bloqueando a tentativa.
+- Protocolo de validação controlada imutável e tenant-scoped, vinculado ao manifesto e hashes exatos.
+- O protocolo limita o primeiro teste ao conjunto exato de operações pausadas, proíbe ativação, entrega, aumento de orçamento, concorrência e retry automático.
+- Onze evidências reais são obrigatórias, incluindo permissão, fingerprints, respostas sanitizadas, IDs externos, estado pausado observado, reconciliação e entrega zero.
+- Preparar o protocolo gera auditoria atômica e evidencia o preflight, mas não valida escrita, não cria `ExecutionRecord` e não habilita o adapter.
+- Contrato de identidade do operador independente de provedor e adapter bootstrap sem dependência cloud, configurado somente por sujeito e digest SHA-256.
+- Perfis de tenant e memberships persistentes com papéis `owner`, `operator` e `viewer`; somente dois estados ativos produzem acesso.
+- Endpoint de seleção retorna apenas tenants associados ao sujeito autenticado, deriva permissões do papel e audita cada leitura antes de responder.
+- Autenticação ausente, credencial inválida, tenant suspenso, membership revogada ou falha de auditoria bloqueiam fail-closed.
+- Central Operacional integrada ao acesso autenticado com credencial exclusiva do servidor, nunca exposta ao navegador.
+- Seleção de cliente deriva somente das memberships retornadas pelo backend; UUID manual deixou de ser necessário.
+- Endpoint tenant-scoped retorna o plano mais recente de cada campanha somente após revalidar a membership e audita a leitura.
+- A interface valida o contrato e recusa respostas cruzadas entre tenants, credenciais rejeitadas ou fronteiras externas inconsistentes.
+- A decisão operacional exibida usa rota autenticada de ponta a ponta; conhecer UUIDs não permite contornar a membership.
+- Fluxo guiado permite criar rascunhos de campanha, salvar progresso parcial e retomar pela versão mais recente.
+- A Central Operacional localiza a conta de anúncios previamente selecionada no snapshot Meta e a vincula ao plano sem digitação de IDs, sem expor o cofre e sem qualquer escrita externa.
+- O vínculo do alvo gera um novo plano imutável e torna conexão/conta visíveis no resumo autenticado; respostas cruzadas, seleção ausente ou múltipla são recusadas fail-closed.
+- Planos recém-gerados podem calcular sua primeira decisão de prontidão explicitamente, sem solicitar aprovação e sem depender de uma decisão anterior para abrir a Central Operacional.
+- A primeira campanha Rosa VIP possui preset rastreável de contexto e três rascunhos de copy para WhatsApp, incluindo mensagem inicial aprovada; referências e hashes de mídia continuam obrigatórios.
+- Lacunas do contexto viram tarefas em linguagem operacional; fatos ausentes continuam sem inferência automática.
+- Criação e atualização de contexto exigem `manage_campaign_preparation`; papel `viewer` permanece estritamente leitura.
+- Versão do contexto e auditoria do operador são persistidas atomicamente na mesma transação PostgreSQL.
+- Endpoints públicos de contexto foram retirados; seleção, leitura e gravação passam pelo limite autenticado do operador.
+- Contexto completo recebe uma revisão explícita de fatos e teto financeiro antes da geração do plano lógico.
+- Geração de plano exige membership e permissão de preparação; a rota pública anterior foi removida.
+- Plano idempotente e auditoria de geração são persistidos atomicamente, sem duplicar evidência em repetição concorrente.
+- A interface recusa plano cruzado, versão diferente, objetos ativos ou qualquer alegação de escrita externa.
+- Resultado apresentado permanece `draft`, A0, com aprovação humana obrigatória, riscos bloqueantes e objetos `PAUSED`.
+- Manifesto, autorização curta, preflight, Kill Switch e protocolo de validação de escrita agora são acessíveis somente pela fachada autenticada do operador.
+- A identidade usada em solicitações e decisões do executor é derivada do token server-side; campos de autoria enviados pelo cliente foram eliminados dessas rotas.
+- Operadores podem preparar e solicitar validação, proprietários decidem autorizações e controlam switches/protocolos, e viewers permanecem somente leitura.
+- As rotas internas públicas do controle de execução foram removidas; conhecer UUIDs não contorna membership nem isolamento por tenant.
+- Linha do tempo operacional tenant-scoped consolida somente eventos críticos realmente persistidos e vinculados aos objetos da campanha.
+- A resposta de histórico é sanitizada por contrato: não expõe ator identificável, estados JSON brutos, erros internos ou credenciais.
+- Marcos de contexto, plano, criativo, aprovação, prontidão, executor e segurança são traduzidos para linguagem operacional sem inferir publicação ou entrega.
 
-## Próximo bloco interno sem dependência externa
-1. Preparar o contrato de validação controlada do adapter, ainda sem implementar escrita real.
-2. Definir evidências mínimas e limites para um primeiro teste de criação pausada na Meta.
-3. Manter o adapter ausente até ambiente real, autorização curta e todos os gates comprovados.
+## Bloco interno de validação controlada concluído
+1. O contrato do primeiro teste de criação pausada está persistido e auditável.
+2. Evidências mínimas, limites e políticas de falha estão definidos em código.
+3. O adapter permanece ausente até ambiente real, autorização curta e todos os gates comprovados.
+
+## Próximo bloco interno de produto
+1. Cadastrar e aprovar o primeiro pacote criativo real da Rosa VIP com três referências de mídia e digests verificáveis.
+2. Concluir a descoberta/vinculação da Página, Instagram e WhatsApp exigidos pelo destino, sem ampliar permissões silenciosamente.
+3. Preparar o manifesto e o protocolo controlado da primeira campanha, mantendo toda escrita Meta desligada até o gate humano e a validação real.
 
 ## Próximos itens que dependem de ambiente real
 1. Criar o app Meta real, registrar o redirect OAuth e habilitar `ads_read` e `pages_show_list`.
 2. Validar permissões e App Review aplicáveis ao caso multi-cliente.
 3. Guardar a chave mestra do cofre nas configurações protegidas da hospedagem.
 4. Acionar o smoke test automatizado e guardar o relatório de aprovação.
+5. Executar o protocolo de criação controlada com todos os objetos em `PAUSED`, coletar as onze evidências e reconciliar o estado observado antes de qualquer retry.
 
 ## Evolução opcional do cofre
 O PostgreSQL criptografado desbloqueia o MVP sem Google Cloud. A porta

@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'backend/**'
+      - 'render.yaml'
       - '.github/workflows/backend-postgres.yml'
   push:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'render.yaml'
       - '.github/workflows/backend-postgres.yml'
 
 permissions:
@@ -39,6 +41,7 @@ jobs:
 
     env:
       TEST_DATABASE_URL: postgresql://contexto_ads:contexto_ads@localhost:5432/contexto_ads_test
+      DATABASE_URL: postgresql://contexto_ads:contexto_ads@localhost:5432/contexto_ads_test
 
     steps:
       - uses: actions/checkout@v4
@@ -48,5 +51,6 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      - run: npm run migrate
       - run: npm test
       - run: npm run build

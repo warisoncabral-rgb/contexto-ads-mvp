@@ -1,0 +1,1 @@
+export const OPERATOR_IDENTITY = Symbol('OPERATOR_IDENTITY');

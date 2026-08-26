@@ -1,4 +1,8 @@
-import { MetaConnection, MetaAssetBinding } from '../contracts/meta-connection';
+import {
+  MetaConnection,
+  MetaAssetBinding,
+  MetaAssetSelection,
+} from '../contracts/meta-connection';
 import { CapabilityRecord } from '../contracts/capability';
 import { AuditEvent } from '../contracts/audit-event';
 import { ReadinessSnapshot, ReadOnlySmokeTestReport } from '../contracts/readiness';
@@ -25,22 +29,34 @@ import {
   KillSwitchStateV1,
   UnversionedKillSwitchStateV1,
 } from '../contracts/kill-switch';
+import { MetaWriteValidationProtocolV1 } from '../contracts/meta-write-validation';
+import { OperatorTenantMembershipV1 } from '../contracts/operator-access';
+import { OperatorWorkItemV1, OperatorWorkQueueSnapshotV1 } from '../contracts/operator-work-queue';
 
 export interface MetaConnectionRepository {
   save(connection: MetaConnection): Promise<void>;
   findById(tenantId: string, connectionId: string): Promise<MetaConnection | null>;
+  latestReadyForTenant(tenantId: string): Promise<MetaConnection | null>;
   replaceBindings(
     tenantId: string,
     connectionId: string,
     bindings: MetaAssetBinding[],
   ): Promise<void>;
   listBindings(tenantId: string, connectionId: string): Promise<MetaAssetBinding[]>;
+  selectBindings(
+    tenantId: string,
+    connectionId: string,
+    selections: MetaAssetSelection[],
+  ): Promise<MetaAssetBinding[]>;
 }
 export interface CapabilityRepository {
   replaceForConnection(tenantId: string, connectionId: string, capabilities: CapabilityRecord[]): Promise<void>;
   listForConnection(tenantId: string, connectionId: string): Promise<CapabilityRecord[]>;
 }
 export interface AuditRepository { append(event: AuditEvent): Promise<void>; }
+export interface AuditTimelineRepository {
+  listForCampaign(tenantId: string, campaignId: string, limit: number): Promise<AuditEvent[]>;
+}
 export interface ReadinessRepository {
   save(snapshot: ReadinessSnapshot): Promise<void>;
   latestForConnection(tenantId: string, connectionId: string): Promise<ReadinessSnapshot | null>;
@@ -54,9 +70,10 @@ export interface SmokeTestReportRepository {
 }
 
 export interface CampaignContextRepository {
-  create(context: CampaignContextPackageV1): Promise<void>;
+  create(context: CampaignContextPackageV1, event?: AuditEvent): Promise<void>;
   appendNext(
     context: UnversionedCampaignContextPackageV1,
+    event?: AuditEvent,
   ): Promise<CampaignContextPackageV1 | null>;
   latest(
     tenantId: string,
@@ -69,9 +86,18 @@ export interface CampaignContextRepository {
   ): Promise<CampaignContextPackageV1 | null>;
 }
 
+export interface OperatorCampaignContextSelectionRepository {
+  listLatestForTenant(tenantId: string): Promise<CampaignContextPackageV1[]>;
+}
+
 export interface ExecutionPlanRepository {
-  saveIdempotent(plan: ExecutionPlanV1): Promise<ExecutionPlanV1>;
+  saveIdempotent(plan: ExecutionPlanV1, event?: AuditEvent): Promise<ExecutionPlanV1>;
   latest(tenantId: string, campaignId: string): Promise<ExecutionPlanV1 | null>;
+  findById(tenantId: string, executionPlanId: string): Promise<ExecutionPlanV1 | null>;
+}
+
+export interface OperatorPlanSelectionRepository {
+  listLatestForTenant(tenantId: string): Promise<ExecutionPlanV1[]>;
   findById(tenantId: string, executionPlanId: string): Promise<ExecutionPlanV1 | null>;
 }
 
@@ -191,6 +217,34 @@ export interface KillSwitchRepository {
   ): Promise<KillSwitchStateV1 | null>;
 }
 
+export interface MetaWriteValidationProtocolRepository {
+  saveIdempotent(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1>;
+  latestForManifest(
+    tenantId: string,
+    executionManifestId: string,
+  ): Promise<MetaWriteValidationProtocolV1 | null>;
+  beginExecution(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1 | null>;
+  updateExecution(
+    protocol: MetaWriteValidationProtocolV1,
+    event: AuditEvent,
+  ): Promise<MetaWriteValidationProtocolV1>;
+}
+
+export interface OperatorTenantMembershipRepository {
+  listActiveForSubject(operatorSubject: string): Promise<OperatorTenantMembershipV1[]>;
+}
+
+export interface OperatorWorkQueueSnapshotRepository {
+  saveDaily(snapshot: OperatorWorkQueueSnapshotV1, items: OperatorWorkItemV1[]):
+    Promise<OperatorWorkQueueSnapshotV1>;
+}
+
 export interface CreativePackageRepository {
   appendNext(
     creativePackage: UnversionedCreativePackageV1,
@@ -236,16 +290,17 @@ export interface MetaOAuthAttemptStore {
 }
 
 export interface MetaConnectionStore
-  extends Pick<MetaConnectionRepository, 'save' | 'findById'> {
+  extends Pick<MetaConnectionRepository, 'save' | 'findById' | 'latestReadyForTenant'> {
   markConnected(
     tenantId: string,
     connectionId: string,
     credentialRef: string,
     updatedAt: string,
+    reauthorization?: boolean,
   ): Promise<boolean>;
 }
 
 export type MetaAssetBindingStore = Pick<
   MetaConnectionRepository,
-  'replaceBindings' | 'listBindings'
+  'replaceBindings' | 'listBindings' | 'selectBindings'
 >;
