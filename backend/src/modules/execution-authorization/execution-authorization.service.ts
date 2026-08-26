@@ -59,6 +59,14 @@ export class ExecutionAuthorizationService {
     this.assertUuid(executionManifestId, 'executionManifestId');
     const actor = this.assertActor(requestedBy, 'requestedBy');
     const manifest = await this.currentManifest(tenantId, executionManifestId);
+    const preparedProtocol = await this.validationProtocols.latestForManifest(
+      tenantId, executionManifestId,
+    );
+    const protocolCurrent = preparedProtocol?.status === 'prepared_external_validation_required'
+      && preparedProtocol.manifestHash === manifest.manifestHash;
+    const authorizedOperationCount = protocolCurrent
+      ? preparedProtocol.operations.length
+      : manifest.operations.length;
     const now = new Date();
     const authorization: ExecutionAuthorizationV1 = {
       executionAuthorizationId: randomUUID(),
@@ -76,7 +84,10 @@ export class ExecutionAuthorizationService {
         `plan_hash:${manifest.planHash}`,
         `execution_manifest:${manifest.executionManifestId}`,
         `manifest_hash:${manifest.manifestHash}`,
-        `operations:${manifest.operations.length}`,
+        `operations:${authorizedOperationCount}`,
+        ...(protocolCurrent
+          ? [`validation_protocol:${preparedProtocol.metaWriteValidationProtocolId}`]
+          : []),
         'intended_lifecycle_status:PAUSED',
         'external_write_currently_allowed:false',
       ],

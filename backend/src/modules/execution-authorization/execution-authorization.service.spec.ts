@@ -168,6 +168,30 @@ describe('ExecutionAuthorizationService', () => {
     });
   });
 
+  it('scopes a resumed authorization to the operations in the prepared protocol', async () => {
+    validationProtocols.latestForManifest.mockResolvedValue({
+      metaWriteValidationProtocolId: '99999999-9999-4999-8999-999999999999',
+      manifestHash: manifest.manifestHash,
+      status: 'prepared_external_validation_required',
+      operations: Array.from({ length: 7 }, (_, index) => ({
+        order: index + 2,
+        operationKey: `operation:${index + 2}`,
+        objectType: 'creative',
+        action: 'create_creative',
+        requestFingerprint: 'c'.repeat(64),
+        intendedLifecycleStatus: 'PAUSED',
+      })),
+    } as MetaWriteValidationProtocolV1);
+
+    const result = await service.request(tenantId, manifestId, 'warison');
+
+    expect(result.scope).toEqual(expect.arrayContaining([
+      'operations:7',
+      'validation_protocol:99999999-9999-4999-8999-999999999999',
+    ]));
+    expect(result.scope).not.toContain(`operations:${manifest.operations.length}`);
+  });
+
   it('creates stable preflight hashes for identical gate state', async () => {
     authorizations.findById.mockResolvedValue({ ...pending, status: 'approved' });
     const first = await service.preflight(tenantId, authorizationId);
