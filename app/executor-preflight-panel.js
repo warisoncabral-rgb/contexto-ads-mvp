@@ -72,7 +72,9 @@ export default function ExecutorPreflightPanel({ plan, role, approvalResult, res
       : canValidateCapabilities
         ? <><p className="readonly-note">A aprovação está concluída. Falta comprovar as permissões e os ativos exigidos.</p>
           {needsAdsManagement
-            ? <PermissionAuthorizationForm plan={plan} />
+            ? <><PermissionAuthorizationForm plan={plan} />
+              <p className="readonly-note">Se a autorização já foi concluída na Meta, atualize agora as evidências antes de solicitar novamente.</p>
+              <CapabilityValidationForm plan={plan} approvalId={approvalId} /></>
             : <CapabilityValidationForm plan={plan} approvalId={approvalId} />}</>
         : <p className="readonly-note">A aprovação válida e todos os controles de prontidão são necessários antes de preparar o manifesto.</p>}</div>}
     {manifest && <><div className="executor-facts"><div><span>Manifesto</span><strong>{manifest.manifestHash.slice(0, 12)}…</strong></div><div><span>Operações</span><strong>{manifest.operations.length}</strong></div><div><span>Estado pretendido</span><strong>PAUSED</strong></div><div><span>Executável</span><strong>Não</strong></div></div>
