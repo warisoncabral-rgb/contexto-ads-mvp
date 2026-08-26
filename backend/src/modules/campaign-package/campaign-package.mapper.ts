@@ -67,8 +67,8 @@ export class CampaignPackageMapper {
     const copies = pkg.ads.map((ad) => ({
       copyId: ad.ad_reference,
       primaryText: ad.primary_text,
-      headline: ad.headline ?? '',
-      description: ad.description,
+      headline: ad.headline,
+      ...(ad.description === undefined ? {} : { description: ad.description }),
       whatsappMessage: ad.initial_message,
       callToAction: 'SEND_WHATSAPP_MESSAGE' as const,
     }));
@@ -78,9 +78,9 @@ export class CampaignPackageMapper {
         assetId: media.media_id,
         storageRef: media.file_reference,
         sha256: this.normalizeChecksum(media.checksum),
-        mimeType: 'image/jpeg' as const,
-        width: 0,
-        height: 0,
+        mimeType: media.mime_type,
+        width: media.width,
+        height: media.height,
       };
     });
     const creativePackage: CreativePackageInputV1 = {
@@ -121,8 +121,7 @@ export class CampaignPackageMapper {
     };
   }
 
-  private normalizeChecksum(checksum?: string): string {
-    if (!checksum) return '';
+  private normalizeChecksum(checksum: string): string {
     return checksum.startsWith('sha256:') ? checksum.slice(7) : checksum;
   }
 }
