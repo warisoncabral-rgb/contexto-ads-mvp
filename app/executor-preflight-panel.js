@@ -25,6 +25,13 @@ function PreflightResult({ value }) {
     <p><strong>Próxima ação:</strong> {value.nextAction}</p></div>
 }
 
+const normalizedErrorLabels = {
+  AUTH_PERMISSION: 'Autorização ou permissão recusada pela Meta',
+  VALIDATION: 'Requisição recusada pela validação da Meta',
+  TRANSIENT_API: 'Falha transitória da API da Meta',
+  UNKNOWN: 'Falha não classificada pela Meta',
+}
+
 function CapabilityValidationForm({ plan, approvalId }) {
   const [state, formAction, pending] = useActionState(
     validateMetaExecutionCapabilities,
@@ -81,7 +88,7 @@ export default function ExecutorPreflightPanel({ plan, role, approvalResult, res
             : <CapabilityValidationForm plan={plan} approvalId={approvalId} />}</>
         : <p className="readonly-note">A aprovação válida e todos os controles de prontidão são necessários antes de preparar o manifesto.</p>}</div>}
     {manifest && <><div className="executor-facts"><div><span>Manifesto</span><strong>{manifest.manifestHash.slice(0, 12)}…</strong></div><div><span>Operações</span><strong>{manifest.operations.length}</strong></div><div><span>Estado pretendido</span><strong>PAUSED</strong></div><div><span>Executável</span><strong>Não</strong></div></div>
-      <div className="operation-list">{manifest.operations.map((operation) => { const observed = result.protocol?.execution?.operations?.find((item) => item.operationKey === operation.operationKey); return <div key={operation.operationKey}><span>{operation.order}</span><strong>{operation.action} · {operation.objectType}</strong><small>{observed ? `${observed.status}${observed.externalObjectId ? ` · Meta ${observed.externalObjectId}` : ''}` : 'Não iniciada · execução bloqueada'}</small></div> })}</div>
+      <div className="operation-list">{manifest.operations.map((operation) => { const observed = result.protocol?.execution?.operations?.find((item) => item.operationKey === operation.operationKey); const normalizedError = observed?.normalizedError ? normalizedErrorLabels[observed.normalizedError] ?? observed.normalizedError : ''; return <div key={operation.operationKey}><span>{operation.order}</span><strong>{operation.action} · {operation.objectType}</strong><small>{observed ? `${observed.status}${observed.externalObjectId ? ` · Meta ${observed.externalObjectId}` : ''}${normalizedError ? ` · ${normalizedError}` : ''}` : 'Não iniciada · execução bloqueada'}</small></div> })}</div>
       {!authorization && canPrepare && <ControlForm plan={plan} manifest={manifest} approvalId={approvalId} action="request_authorization" label="Solicitar autorização curta" />}
       {authorization && <div className="authorization-box"><div><span>Autorização específica</span><strong>{labels[authorization.status]}</strong><small>Expira em {new Date(authorization.expiresAt).toLocaleString('pt-BR')}</small></div>
         {authorization.status === 'pending' && canDecide && <div className="executor-decisions"><ControlForm plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="approve" label="Aprovar criação pausada" /><ControlForm plan={plan} manifest={manifest} authorization={authorization} approvalId={approvalId} action="reject" label="Rejeitar"><input name="reason" required minLength="3" placeholder="Motivo objetivo" /></ControlForm></div>}
