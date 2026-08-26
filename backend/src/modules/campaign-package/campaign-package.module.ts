@@ -7,6 +7,7 @@ import { CampaignPackageController } from './campaign-package.controller';
 import { CampaignPackageHandoffService } from './campaign-package-handoff.service';
 import { CampaignPackageMapper } from './campaign-package.mapper';
 import { CampaignPackageService } from './campaign-package.service';
+import { CampaignPackageStatusService } from './campaign-package-status.service';
 
 @Module({
   imports: [
@@ -16,7 +17,17 @@ import { CampaignPackageService } from './campaign-package.service';
     ExecutionSimulationModule,
   ],
   controllers: [CampaignPackageController],
-  providers: [CampaignPackageService, CampaignPackageMapper, CampaignPackageHandoffService],
-  exports: [CampaignPackageService, CampaignPackageMapper, CampaignPackageHandoffService],
+  providers: [
+    CampaignPackageService,
+    CampaignPackageMapper,
+    CampaignPackageHandoffService,
+    CampaignPackageStatusService,
+  ],
+  exports: [
+    CampaignPackageService,
+    CampaignPackageMapper,
+    CampaignPackageHandoffService,
+    CampaignPackageStatusService,
+  ],
 })
 export class CampaignPackageModule {}
