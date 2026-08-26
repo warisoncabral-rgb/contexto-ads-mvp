@@ -326,7 +326,8 @@ export class MetaExecutionService {
       const asset = this.record(config.asset, 'creative.asset');
       const phone = whatsappId.replace(/\D/g, '');
       const message = this.string(copy.whatsappMessage, 'creative.whatsappMessage');
-      const publicBase = this.config.get<string>('CONTEXT_ADS_PUBLIC_BASE_URL')?.trim() ?? '';
+      const publicBase = this.config.get<string>('CONTEXT_ADS_PUBLIC_BASE_URL')?.trim()
+        || 'https://contexto-ads-validation-panel.onrender.com';
       const storageRef = this.string(asset.storageRef, 'creative.storageRef');
       const picture = /^https:\/\//.test(storageRef)
         ? storageRef

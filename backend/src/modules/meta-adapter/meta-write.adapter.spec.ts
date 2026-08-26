@@ -8,8 +8,7 @@ describe('MetaWriteAdapter', () => {
       new ConfigService({
         NODE_ENV: 'production',
         BOOTSTRAP_TENANT_ID: '22222222-2222-4222-8222-222222222222',
-        CONTEXT_ADS_PUBLIC_BASE_URL:
-          'https://contexto-ads-validation-panel.onrender.com',
+        OPERATOR_BOOTSTRAP_SUBJECT: 'operator:warison',
       }),
       { getSecret: jest.fn() } as never,
     );

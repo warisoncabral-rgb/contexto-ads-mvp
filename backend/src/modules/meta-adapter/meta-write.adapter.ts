@@ -34,8 +34,8 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
     return this.config.get<string>('NODE_ENV')?.trim() === 'production'
       && this.config.get<string>('BOOTSTRAP_TENANT_ID')?.trim()
         === '22222222-2222-4222-8222-222222222222'
-      && this.config.get<string>('CONTEXT_ADS_PUBLIC_BASE_URL')?.trim()
-        === 'https://contexto-ads-validation-panel.onrender.com';
+      && this.config.get<string>('OPERATOR_BOOTSTRAP_SUBJECT')?.trim()
+        === 'operator:warison';
   }
 
   async create(
