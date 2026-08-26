@@ -11,7 +11,12 @@ const labels = {
   ad_account_read: 'Leitura da conta de anúncios',
 }
 
-export default function MetaValidationPanel({ tenantId, connectionId, needsPageAuthorization }) {
+export default function MetaValidationPanel({
+  tenantId,
+  connectionId,
+  needsPageAuthorization,
+  needsWhatsappAuthorization,
+}) {
   const router = useRouter()
   const [state, action, pending] = useActionState(runMetaReadOnlyValidation, {
     error: '',
@@ -49,11 +54,12 @@ export default function MetaValidationPanel({ tenantId, connectionId, needsPageA
       </p>}
       <small>Nenhuma escrita externa foi autorizada ou executada.</small>
     </div>}
-    {needsPageAuthorization && <form action={requestMetaAdsManagement} className="executor-action-form">
+    {(needsPageAuthorization || needsWhatsappAuthorization)
+      && <form action={requestMetaAdsManagement} className="executor-action-form">
       <input type="hidden" name="tenantId" value={tenantId} />
       <input type="hidden" name="connectionId" value={connectionId} />
-      <p className="readonly-note">A conta está válida, mas a Página ainda não apareceu no inventário autorizado. Atualize a autorização para comprovar a leitura da Página, sem publicar ou ativar anúncios.</p>
-      <button>Atualizar autorização de Página na Meta</button>
+      <p className="readonly-note">A conta está válida, mas ainda falta comprovar um ativo da Página ou do WhatsApp Business. Atualize a autorização para concluir o inventário, sem publicar ou ativar anúncios.</p>
+      <button>Atualizar autorização de ativos na Meta</button>
     </form>}
   </section>
 }

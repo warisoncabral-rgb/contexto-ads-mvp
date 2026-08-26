@@ -33,7 +33,9 @@ export default async function MetaValidationPage({ searchParams }) {
       {validScope
         ? <MetaValidationPanel tenantId={tenantId} connectionId={connectionId}
           needsPageAuthorization={assetState.kind === 'ready'
-            && !assetState.assets.some((asset) => asset.assetType === 'facebook_page')} />
+            && !assetState.assets.some((asset) => asset.assetType === 'facebook_page')}
+          needsWhatsappAuthorization={assetState.kind === 'ready'
+            && !assetState.assets.some((asset) => asset.assetType === 'whatsapp')} />
         : <section className="panel integration-card"><h2>Validação indisponível</h2><p className="form-error">A empresa ou a conexão não correspondem ao seu acesso autorizado.</p></section>}
       {validScope && assetState.kind === 'ready'
         ? <MetaAssetSelectionPanel tenantId={tenantId} connectionId={connectionId} assets={assetState.assets} />
