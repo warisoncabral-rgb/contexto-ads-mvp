@@ -83,13 +83,17 @@ implements MetaConnectionStore, MetaAssetBindingStore {
     connectionId: string,
     credentialRef: string,
     updatedAt: string,
+    reauthorization = false,
   ): Promise<boolean> {
     const result = await this.pool.query(
       `update meta_connections
       set credential_ref = $3, status = 'connected', updated_at = $4
       where tenant_id = $1 and connection_id = $2
-        and status = 'authorization_pending'`,
-      [tenantId, connectionId, credentialRef, updatedAt],
+        and (($5 = false and status = 'authorization_pending')
+          or ($5 = true and status in (
+            'connected', 'ready', 'permission_incomplete', 'reauth_required'
+          )))`,
+      [tenantId, connectionId, credentialRef, updatedAt, reauthorization],
     );
 
     return result.rowCount === 1;

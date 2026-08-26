@@ -288,6 +288,7 @@ export interface MetaConnectionStore
     connectionId: string,
     credentialRef: string,
     updatedAt: string,
+    reauthorization?: boolean,
   ): Promise<boolean>;
 }
 

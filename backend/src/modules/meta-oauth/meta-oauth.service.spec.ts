@@ -121,6 +121,32 @@ describe('MetaOAuthService', () => {
       .toBe('http://localhost:3000/v1/meta/oauth/callback');
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('scope')).toBe('public_profile,ads_read,pages_show_list');
+    expect(url.searchParams.has('auth_type')).toBe(false);
+  });
+
+  it('starts an explicit ads_management rerequest on the existing connection', async () => {
+    connections.getConnection.mockResolvedValueOnce({
+      ...connection,
+      status: 'connected',
+      credentialRef: 'vault://current-credential',
+    });
+
+    const result = await service.startExecutionAuthorization(tenantId, connectionId);
+    const url = new URL(result.authorizationUrl);
+
+    expect(url.searchParams.get('scope')).toBe(
+      'public_profile,ads_read,pages_show_list,ads_management',
+    );
+    expect(url.searchParams.get('auth_type')).toBe('rerequest');
+    expect(saved[0].requestedScopes).toEqual([
+      'public_profile', 'ads_read', 'pages_show_list', 'ads_management',
+    ]);
+  });
+
+  it('refuses permission expansion without an existing connected credential', async () => {
+    await expect(service.startExecutionAuthorization(tenantId, connectionId)).rejects
+      .toBeInstanceOf(ConflictException);
+    expect(attempts.replaceActive).not.toHaveBeenCalled();
   });
 
   it('persists only the SHA-256 digest of the generated state', async () => {
@@ -349,11 +375,29 @@ describe('MetaOAuthService', () => {
       connectionId,
       'vault://credential-1',
       expect.any(String),
+      false,
     );
     expect(JSON.stringify(connectionStore.markConnected.mock.calls)).not
       .toContain('secret-access-token');
     expect(result).toEqual({ status: 'connected', connectionId });
     expect(JSON.stringify(result)).not.toContain('secret-access-token');
+  });
+
+  it('finalizes an ads_management rerequest on the same connection', async () => {
+    attempts.consumeActive.mockResolvedValueOnce({
+      ...consumedAttempt,
+      requestedScopes: [...consumedAttempt.requestedScopes, 'ads_management'],
+    });
+
+    await service.callback({ state: validState, code: 'code-1' });
+
+    expect(connectionStore.markConnected).toHaveBeenCalledWith(
+      tenantId,
+      connectionId,
+      'vault://credential-1',
+      expect.any(String),
+      true,
+    );
   });
 
   it('does not update the connection when Vault persistence fails', async () => {

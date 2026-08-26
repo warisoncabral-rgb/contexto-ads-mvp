@@ -1,7 +1,8 @@
 'use client'
 
 import { useActionState } from 'react'
-import { changeExecutorControl, validateMetaExecutionCapabilities } from './actions'
+import { changeExecutorControl, requestMetaAdsManagement,
+  validateMetaExecutionCapabilities } from './actions'
 
 function ControlForm({ plan, manifest, authorization, approvalId = '', action, label, children }) {
   const [state, formAction, pending] = useActionState(changeExecutorControl, { error: '' })
@@ -40,6 +41,15 @@ function CapabilityValidationForm({ plan, approvalId }) {
   </form>
 }
 
+function PermissionAuthorizationForm({ plan }) {
+  return <form action={requestMetaAdsManagement} className="executor-action-form">
+    <input type="hidden" name="tenantId" value={plan.tenantId} />
+    <input type="hidden" name="connectionId" value={plan.connectionId} />
+    <p className="readonly-note">A Meta solicitará somente a permissão adicional autorizada. Isso não publica, ativa nem inicia gasto.</p>
+    <button>Autorizar ads_management na Meta</button>
+  </form>
+}
+
 export default function ExecutorPreflightPanel({ plan, role, approvalResult, result, decision }) {
   const manifest = result.kind === 'ready' ? result.manifest : null
   const authorization = result.kind === 'ready' ? result.authorization : null
@@ -51,6 +61,8 @@ export default function ExecutorPreflightPanel({ plan, role, approvalResult, res
   const canValidateCapabilities = canOperate && approvedPlan && !readinessReady
     && Boolean(plan.connectionId)
     && decision.blockers.some((blocker) => blocker.code === 'write_capabilities')
+  const needsAdsManagement = canValidateCapabilities && decision.blockers.some((blocker) =>
+    blocker.code === 'write_capabilities' && blocker.nextAction?.includes('ads_management'))
   const labels = { pending: 'Aguardando proprietário', approved: 'Aprovada por 15 minutos', rejected: 'Rejeitada', revoked: 'Revogada', expired: 'Expirada', invalidated: 'Invalidada' }
   return <section className="panel executor-panel">
     <div className="section-heading"><div><span className="eyebrow">Validação do executor</span><h3>Preflight antes de qualquer tentativa</h3></div><span className="status-pill status-blocked">Gate fechado</span></div>
@@ -58,7 +70,10 @@ export default function ExecutorPreflightPanel({ plan, role, approvalResult, res
     {!manifest && <div className="executor-empty"><p>O manifesto transforma o plano aprovado em operações ordenadas, pausadas e idempotentes.</p>{canPrepare && approvedPlan
       ? <ControlForm plan={plan} approvalId={approvalId} action="prepare_manifest" label="Preparar manifesto do plano" />
       : canValidateCapabilities
-        ? <><p className="readonly-note">A aprovação está concluída. Falta apenas conferir as permissões e os ativos exigidos usando consultas sem escrita.</p><CapabilityValidationForm plan={plan} approvalId={approvalId} /></>
+        ? <><p className="readonly-note">A aprovação está concluída. Falta comprovar as permissões e os ativos exigidos.</p>
+          {needsAdsManagement
+            ? <PermissionAuthorizationForm plan={plan} />
+            : <CapabilityValidationForm plan={plan} approvalId={approvalId} />}</>
         : <p className="readonly-note">A aprovação válida e todos os controles de prontidão são necessários antes de preparar o manifesto.</p>}</div>}
     {manifest && <><div className="executor-facts"><div><span>Manifesto</span><strong>{manifest.manifestHash.slice(0, 12)}…</strong></div><div><span>Operações</span><strong>{manifest.operations.length}</strong></div><div><span>Estado pretendido</span><strong>PAUSED</strong></div><div><span>Executável</span><strong>Não</strong></div></div>
       <div className="operation-list">{manifest.operations.map((operation) => <div key={operation.operationKey}><span>{operation.order}</span><strong>{operation.action} · {operation.objectType}</strong><small>Não iniciada · execução bloqueada</small></div>)}</div>

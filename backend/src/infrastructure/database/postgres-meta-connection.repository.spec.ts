@@ -97,7 +97,24 @@ describe('PostgresMetaConnectionRepository', () => {
 
     expect(query).toHaveBeenCalledWith(
       expect.stringMatching(/credential_ref = \$3[\s\S]*status = 'connected'[\s\S]*tenant_id = \$1 and connection_id = \$2[\s\S]*status = 'authorization_pending'/),
-      ['tenant-1', 'connection-1', 'vault://credential-1', '2026-08-19T03:00:00.000Z'],
+      ['tenant-1', 'connection-1', 'vault://credential-1', '2026-08-19T03:00:00.000Z', false],
+    );
+  });
+
+  it('allows explicit credential replacement only for a connected lifecycle state', async () => {
+    query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
+
+    await expect(repository.markConnected(
+      'tenant-1',
+      'connection-1',
+      'vault://credential-2',
+      '2026-08-26T03:00:00.000Z',
+      true,
+    )).resolves.toBe(true);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(/\$5 = true[\s\S]*status in \([\s\S]*'connected'[\s\S]*'ready'/),
+      ['tenant-1', 'connection-1', 'vault://credential-2', '2026-08-26T03:00:00.000Z', true],
     );
   });
 

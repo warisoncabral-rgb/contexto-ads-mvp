@@ -75,6 +75,19 @@ envia o token somente no header `Authorization` e assina chamadas com
 `appsecret_proof`. O OAuth solicita apenas `public_profile`, `ads_read` e
 `pages_show_list` nesta etapa.
 
+### Ampliação explícita para `ads_management`
+`POST /v1/operator/tenants/:tenantId/meta/connections/:connectionId/request-ads-management`
+exige autenticação e membership com permissão `configure_tenant`. A rota somente
+fica disponível para uma conexão já autorizada e inicia um reconsentimento da
+Meta na mesma conexão, com `auth_type=rerequest` e o escopo adicional fixo
+`ads_management`. O cliente não pode escolher escopos, callback ou parâmetros.
+
+Essa autorização apenas troca a credencial criptografada usada nas provas de
+capacidade. Ela não autoriza publicação, não habilita o adapter de escrita, não
+ativa objetos e não inicia gasto. A campanha e todos os objetos planejados
+permanecem `PAUSED`; as demais travas de manifesto, autorização curta, preflight
+e Kill Switch continuam independentes e obrigatórias.
+
 ### `GET /v1/operator/tenants/:tenantId/meta/connections/:connectionId/assets`
 Lista somente os ativos persistidos para o tenant e a conexão informados.
 

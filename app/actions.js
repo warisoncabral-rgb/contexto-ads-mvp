@@ -81,6 +81,55 @@ export async function startMetaAuthorization(formData) {
   redirect(authorizationUrl.toString())
 }
 
+export async function requestMetaAdsManagement(formData) {
+  const tenantId = String(formData.get('tenantId') ?? '').trim()
+  const connectionId = String(formData.get('connectionId') ?? '').trim()
+  if (!UUID.test(tenantId) || !UUID.test(connectionId)) redirect('/?error=scope')
+  const apiBaseUrl = process.env.CONTEXT_ADS_API_BASE_URL
+  const operatorToken = process.env.CONTEXT_ADS_OPERATOR_TOKEN
+  if (!apiBaseUrl || !operatorToken) redirect('/?error=configuration')
+
+  let response
+  try {
+    response = await fetch(
+      `${apiBaseUrl.replace(/\/$/, '')}/v1/operator/tenants/${encodeURIComponent(tenantId)}`
+        + `/meta/connections/${encodeURIComponent(connectionId)}/request-ads-management`,
+      {
+        method: 'POST',
+        headers: { accept: 'application/json', authorization: `Bearer ${operatorToken}` },
+        cache: 'no-store',
+        signal: globalThis.AbortSignal.timeout(15000),
+      },
+    )
+  } catch {
+    redirect(`/?tenantId=${encodeURIComponent(tenantId)}&error=backend`)
+  }
+  if ([401, 403].includes(response.status)) {
+    redirect(`/?tenantId=${encodeURIComponent(tenantId)}&error=access`)
+  }
+  if (!response.ok) redirect(`/?tenantId=${encodeURIComponent(tenantId)}&error=oauth`)
+
+  let result
+  try { result = await response.json() } catch {
+    redirect(`/?tenantId=${encodeURIComponent(tenantId)}&error=response`)
+  }
+  let authorizationUrl
+  try { authorizationUrl = new URL(result.authorizationUrl) } catch {
+    redirect(`/?tenantId=${encodeURIComponent(tenantId)}&error=response`)
+  }
+  if (authorizationUrl.protocol !== 'https:'
+    || authorizationUrl.hostname !== 'www.facebook.com'
+    || !/^\/v\d+\.\d+\/dialog\/oauth$/.test(authorizationUrl.pathname)
+    || result.connectionId !== connectionId
+    || result.boundaries?.requestedPermission !== 'ads_management'
+    || result.boundaries?.publicationAuthorized !== false
+    || result.boundaries?.externalWritesAllowed !== false
+    || result.boundaries?.externalWritesPerformed !== false) {
+    redirect(`/?tenantId=${encodeURIComponent(tenantId)}&error=response`)
+  }
+  redirect(authorizationUrl.toString())
+}
+
 export async function runMetaReadOnlyValidation(_previousState, formData) {
   const parsed = parseMetaValidationInput(formData)
   if (!parsed.ok) return { error: 'A conexão informada é inválida.', report: null }

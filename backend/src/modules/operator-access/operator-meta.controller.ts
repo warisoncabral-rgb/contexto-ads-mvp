@@ -36,6 +36,27 @@ export class OperatorMetaController {
     };
   }
 
+  @Post('connections/:connectionId/request-ads-management')
+  async requestAdsManagement(
+    @Param('tenantId') tenantId: string,
+    @Param('connectionId') connectionId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    await this.access.authorizeTenantConfiguration(authorization, tenantId);
+    const oauth = await this.oauth.startExecutionAuthorization(tenantId, connectionId);
+    return {
+      connectionId: oauth.connectionId,
+      authorizationUrl: oauth.authorizationUrl,
+      expiresAt: oauth.expiresAt,
+      boundaries: {
+        requestedPermission: 'ads_management' as const,
+        publicationAuthorized: false as const,
+        externalWritesAllowed: false as const,
+        externalWritesPerformed: false as const,
+      },
+    };
+  }
+
   @Get('connections/:connectionId/assets')
   async listAssets(
     @Param('tenantId') tenantId: string,

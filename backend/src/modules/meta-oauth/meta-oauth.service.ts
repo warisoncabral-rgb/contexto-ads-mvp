@@ -26,6 +26,7 @@ import { META_OAUTH_TOKEN_EXCHANGE } from './meta-oauth.tokens';
 
 const OAUTH_ATTEMPT_TTL_MS = 10 * 60 * 1000;
 const META_OAUTH_SCOPES = ['public_profile', 'ads_read', 'pages_show_list'] as const;
+const META_EXECUTION_OAUTH_SCOPES = [...META_OAUTH_SCOPES, 'ads_management'] as const;
 const META_AUTHORIZATION_ORIGIN = 'https://www.facebook.com';
 
 export interface MetaOAuthCallbackInput {
@@ -55,6 +56,24 @@ export class MetaOAuthService {
       throw new ConflictException('Meta connection is not awaiting authorization');
     }
 
+    return this.startAttempt(connection, META_OAUTH_SCOPES, false);
+  }
+
+  async startExecutionAuthorization(tenantId: string, connectionId: string) {
+    const connection = await this.connections.getConnection(tenantId, connectionId);
+    if (!['connected', 'ready', 'permission_incomplete', 'reauth_required']
+      .includes(connection.status) || !connection.credentialRef) {
+      throw new ConflictException('Meta connection is not ready for permission expansion');
+    }
+
+    return this.startAttempt(connection, META_EXECUTION_OAUTH_SCOPES, true);
+  }
+
+  private async startAttempt(
+    connection: Awaited<ReturnType<MetaConnectionService['getConnection']>>,
+    scopes: readonly string[],
+    rerequest: boolean,
+  ) {
     const oauth = this.getValidatedConfiguration();
     const state = randomBytes(32).toString('base64url');
     const now = new Date();
@@ -64,7 +83,7 @@ export class MetaOAuthService {
       tenantId: connection.tenantId,
       connectionId: connection.connectionId,
       stateHash: createHash('sha256').update(state).digest('hex'),
-      requestedScopes: [...META_OAUTH_SCOPES],
+      requestedScopes: [...scopes],
       createdAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
     };
@@ -79,7 +98,8 @@ export class MetaOAuthService {
     authorizationUrl.searchParams.set('redirect_uri', oauth.redirectUri);
     authorizationUrl.searchParams.set('response_type', 'code');
     authorizationUrl.searchParams.set('state', state);
-    authorizationUrl.searchParams.set('scope', META_OAUTH_SCOPES.join(','));
+    authorizationUrl.searchParams.set('scope', scopes.join(','));
+    if (rerequest) authorizationUrl.searchParams.set('auth_type', 'rerequest');
 
     return {
       attemptId: attempt.attemptId,
@@ -139,6 +159,7 @@ export class MetaOAuthService {
         attempt.connectionId,
         credentialRef,
         obtainedAt.toISOString(),
+        attempt.requestedScopes.includes('ads_management'),
       );
     } catch {
       await this.compensateCredential(attempt, credentialRef);

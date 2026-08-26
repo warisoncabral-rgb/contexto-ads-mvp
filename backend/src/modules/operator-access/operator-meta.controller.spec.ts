@@ -11,7 +11,7 @@ describe('OperatorMetaController', () => {
   let access: { authorizeTenantConfiguration: jest.Mock };
   let connections: { beginConnection: jest.Mock; getConnection: jest.Mock;
     listAssets: jest.Mock; discoverAssets: jest.Mock; selectAssets: jest.Mock };
-  let oauth: { start: jest.Mock };
+  let oauth: { start: jest.Mock; startExecutionAuthorization: jest.Mock };
   let capabilities: { validateReadOnly: jest.Mock };
   let readiness: { runReadOnlySmokeTest: jest.Mock; latestReadOnlySmokeTest: jest.Mock };
   let controller: OperatorMetaController;
@@ -23,10 +23,17 @@ describe('OperatorMetaController', () => {
       getConnection: jest.fn(), listAssets: jest.fn(), discoverAssets: jest.fn(),
       selectAssets: jest.fn(),
     };
-    oauth = { start: jest.fn().mockResolvedValue({
-      authorizationUrl: 'https://www.facebook.com/v26.0/dialog/oauth?state=safe',
-      expiresAt: '2026-08-24T20:10:00.000Z',
-    }) };
+    oauth = {
+      start: jest.fn().mockResolvedValue({
+        authorizationUrl: 'https://www.facebook.com/v26.0/dialog/oauth?state=safe',
+        expiresAt: '2026-08-24T20:10:00.000Z',
+      }),
+      startExecutionAuthorization: jest.fn().mockResolvedValue({
+        connectionId,
+        authorizationUrl: 'https://www.facebook.com/v26.0/dialog/oauth?state=safe',
+        expiresAt: '2026-08-26T20:10:00.000Z',
+      }),
+    };
     capabilities = { validateReadOnly: jest.fn() };
     readiness = { runReadOnlySmokeTest: jest.fn(), latestReadOnlySmokeTest: jest.fn() };
     controller = new OperatorMetaController(
@@ -36,6 +43,27 @@ describe('OperatorMetaController', () => {
       capabilities as unknown as CapabilityRegistryService,
       readiness as unknown as ReadinessService,
     );
+  });
+
+  it('requests ads_management only after tenant configuration authorization', async () => {
+    const result = await controller.requestAdsManagement(
+      tenantId,
+      connectionId,
+      'Bearer secret',
+    );
+
+    expect(access.authorizeTenantConfiguration).toHaveBeenCalledWith(
+      'Bearer secret', tenantId,
+    );
+    expect(access.authorizeTenantConfiguration.mock.invocationCallOrder[0])
+      .toBeLessThan(oauth.startExecutionAuthorization.mock.invocationCallOrder[0]);
+    expect(oauth.startExecutionAuthorization).toHaveBeenCalledWith(tenantId, connectionId);
+    expect(result.boundaries).toEqual({
+      requestedPermission: 'ads_management',
+      publicationAuthorized: false,
+      externalWritesAllowed: false,
+      externalWritesPerformed: false,
+    });
   });
 
   it('authorizes membership before creating the OAuth attempt', async () => {
