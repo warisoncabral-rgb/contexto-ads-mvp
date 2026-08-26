@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { CampaignPackageHandoffService } from './campaign-package-handoff.service';
 import { CampaignPackageMapper } from './campaign-package.mapper';
 import { CampaignPackageService } from './campaign-package.service';
@@ -47,45 +48,72 @@ const packageV1 = {
 };
 
 describe('CampaignPackageHandoffService', () => {
-  it('persists the first package version once and creates an internal plan without external effects', async () => {
-    let stored: any = null;
+  it('persists context, creative package and derived plan once for a repeated identical package', async () => {
+    let storedContext: any = null;
+    let storedCreative: any = null;
+    const basePlan = {
+      executionPlanId: '44444444-4444-4444-8444-444444444444',
+      planHash: 'b'.repeat(64),
+      status: 'draft',
+    };
+    const derivedPlan = {
+      executionPlanId: '55555555-5555-4555-8555-555555555555',
+      planHash: 'c'.repeat(64),
+      status: 'draft',
+    };
     const contexts = {
       findVersion: jest.fn(async (_tenant: string, _campaign: string, version: number) =>
-        stored?.version === version ? stored : null),
-      latest: jest.fn(async () => stored),
-      create: jest.fn(async (context: any) => { stored = context; }),
+        storedContext?.version === version ? storedContext : null),
+      latest: jest.fn(async () => storedContext),
+      create: jest.fn(async (context: any) => { storedContext = context; }),
       appendNext: jest.fn(),
     };
     const executionPlans = {
-      generate: jest.fn(async (_tenant: string, campaignId: string, version: number) => ({
-        executionPlanId: '44444444-4444-4444-8444-444444444444',
-        planHash: 'b'.repeat(64),
-        status: 'draft',
-        campaignId,
-        campaignPackageVersion: version,
-      })),
+      generate: jest.fn(async () => basePlan),
+      latest: jest.fn(async () => derivedPlan),
+    };
+    const creativePackages = {
+      latest: jest.fn(async () => {
+        if (!storedCreative) throw new NotFoundException('Creative package not found');
+        return storedCreative;
+      }),
+      appendVersion: jest.fn(async () => {
+        storedCreative = {
+          creativePackageId: '66666666-6666-4666-8666-666666666666',
+          version: 1,
+          contentHash: 'd'.repeat(64),
+          status: 'needs_review',
+          sourcePlanHash: basePlan.planHash,
+        };
+        return { creativePackage: storedCreative, executionPlan: derivedPlan };
+      }),
     };
     const service = new CampaignPackageHandoffService(
       new CampaignPackageMapper(new CampaignPackageService()),
       contexts as any,
       executionPlans as any,
+      creativePackages as any,
     );
 
     const first = await service.submit(tenantId, packageV1, 'owner:test');
     const second = await service.submit(tenantId, packageV1, 'owner:test');
 
     expect(contexts.create).toHaveBeenCalledTimes(1);
+    expect(creativePackages.appendVersion).toHaveBeenCalledTimes(1);
     expect(first.campaign_id).toBe(packageV1.package_id);
     expect(first.campaign_context_version).toBe(1);
-    expect(first.execution_plan_id).toBe('44444444-4444-4444-8444-444444444444');
+    expect(first.creative_package_status).toBe('needs_review');
+    expect(first.execution_plan_id).toBe(derivedPlan.executionPlanId);
     expect(first.boundaries).toEqual({
       persisted: true,
+      creative_package_persisted: true,
       execution_plan_created: true,
       meta_write_performed: false,
       spend_authorized: false,
       delivery_authorized: false,
     });
     expect(second.package_hash).toBe(first.package_hash);
+    expect(second.creative_package_id).toBe(first.creative_package_id);
   });
 
   it('rejects a version gap before changing internal state', async () => {
@@ -95,11 +123,13 @@ describe('CampaignPackageHandoffService', () => {
       create: jest.fn(),
       appendNext: jest.fn(),
     };
-    const executionPlans = { generate: jest.fn() };
+    const executionPlans = { generate: jest.fn(), latest: jest.fn() };
+    const creativePackages = { latest: jest.fn(), appendVersion: jest.fn() };
     const service = new CampaignPackageHandoffService(
       new CampaignPackageMapper(new CampaignPackageService()),
       contexts as any,
       executionPlans as any,
+      creativePackages as any,
     );
 
     await expect(service.submit(
@@ -111,6 +141,41 @@ describe('CampaignPackageHandoffService', () => {
     }) });
     expect(contexts.create).not.toHaveBeenCalled();
     expect(contexts.appendNext).not.toHaveBeenCalled();
+    expect(executionPlans.generate).not.toHaveBeenCalled();
+    expect(creativePackages.appendVersion).not.toHaveBeenCalled();
+  });
+
+  it('rejects changed creative content under the same external package version', async () => {
+    let storedContext: any = null;
+    const contexts = {
+      findVersion: jest.fn(async () => storedContext),
+      latest: jest.fn(async () => storedContext),
+      create: jest.fn(),
+      appendNext: jest.fn(),
+    };
+    const executionPlans = { generate: jest.fn(), latest: jest.fn() };
+    const creativePackages = { latest: jest.fn(), appendVersion: jest.fn() };
+    const service = new CampaignPackageHandoffService(
+      new CampaignPackageMapper(new CampaignPackageService()),
+      contexts as any,
+      executionPlans as any,
+      creativePackages as any,
+    );
+
+    const mapper = new CampaignPackageMapper(new CampaignPackageService());
+    const prepared = mapper.prepare(packageV1);
+    storedContext = {
+      version: 1,
+      contentHash: '0'.repeat(64),
+    };
+
+    await expect(service.submit(tenantId, {
+      ...packageV1,
+      ads: [{ ...packageV1.ads[0], primary_text: 'Texto alterado sem nova versão.' }],
+    }, 'owner:test')).rejects.toMatchObject({ response: expect.objectContaining({
+      code: 'campaign_package_version_conflict',
+    }) });
+    expect(prepared.package_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(executionPlans.generate).not.toHaveBeenCalled();
   });
 });
