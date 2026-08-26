@@ -129,6 +129,18 @@ if (approvalDecision.boundaries?.approvalIsExecutionAuthorization !== false
   process.exit(1);
 }
 
+const finalStatus = await request(
+  `/operator/tenants/${tenantId}/campaign-packages/v1/${campaignPackage.package_id}/status`,
+);
+if (finalStatus.plan_approval?.status !== 'approved'
+  || finalStatus.next_action !== 'EXECUTION_GATE_SEPARATE'
+  || finalStatus.boundaries?.plan_approval_is_execution_authorization !== false
+  || finalStatus.boundaries?.external_writes_allowed !== false
+  || finalStatus.boundaries?.external_writes_performed !== false) {
+  console.error('Package status did not stop at the separate execution gate.');
+  process.exit(1);
+}
+
 console.log(JSON.stringify({
   approval_smoke_status: 'PASSED',
   campaign_id: handoff.campaign_id,
@@ -137,6 +149,7 @@ console.log(JSON.stringify({
   execution_plan_id: currentPlan.executionPlanId,
   approval_id: approvalId,
   approval_status: approvalDecision.approval.status,
+  package_next_action: finalStatus.next_action,
   approval_is_execution_authorization: false,
   external_meta_write_attempted: false,
 }, null, 2));
