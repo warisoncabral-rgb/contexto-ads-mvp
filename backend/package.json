@@ -12,7 +12,8 @@
     "migrate": "node scripts/run-migrations.mjs",
     "test": "jest --runInBand",
     "lint": "eslint . --max-warnings=0",
-    "smoke:campaign-package": "node scripts/smoke-campaign-package-handoff.mjs"
+    "smoke:campaign-package": "node scripts/smoke-campaign-package-handoff.mjs",
+    "smoke:campaign-package-approval": "node scripts/smoke-campaign-package-approval.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.1",
