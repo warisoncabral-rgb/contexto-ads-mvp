@@ -36,7 +36,9 @@ describe('MetaOAuthService', () => {
     tenantId,
     connectionId,
     stateHash: createHash('sha256').update(validState).digest('hex'),
-    requestedScopes: ['public_profile', 'ads_read', 'pages_show_list'],
+    requestedScopes: [
+      'public_profile', 'ads_read', 'pages_show_list', 'pages_read_engagement',
+    ],
     createdAt: '2026-08-19T02:00:00.000Z',
     expiresAt: '2026-08-19T02:10:00.000Z',
     consumedAt: '2026-08-19T02:01:00.000Z',
@@ -120,7 +122,9 @@ describe('MetaOAuthService', () => {
     expect(url.searchParams.get('redirect_uri'))
       .toBe('http://localhost:3000/v1/meta/oauth/callback');
     expect(url.searchParams.get('response_type')).toBe('code');
-    expect(url.searchParams.get('scope')).toBe('public_profile,ads_read,pages_show_list');
+    expect(url.searchParams.get('scope')).toBe(
+      'public_profile,ads_read,pages_show_list,pages_read_engagement',
+    );
     expect(url.searchParams.has('auth_type')).toBe(false);
   });
 
@@ -135,11 +139,12 @@ describe('MetaOAuthService', () => {
     const url = new URL(result.authorizationUrl);
 
     expect(url.searchParams.get('scope')).toBe(
-      'public_profile,ads_read,pages_show_list,ads_management',
+      'public_profile,ads_read,pages_show_list,pages_read_engagement,ads_management',
     );
     expect(url.searchParams.get('auth_type')).toBe('rerequest');
     expect(saved[0].requestedScopes).toEqual([
-      'public_profile', 'ads_read', 'pages_show_list', 'ads_management',
+      'public_profile', 'ads_read', 'pages_show_list', 'pages_read_engagement',
+      'ads_management',
     ]);
   });
 
