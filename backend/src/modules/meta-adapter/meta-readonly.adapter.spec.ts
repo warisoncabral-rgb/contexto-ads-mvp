@@ -106,6 +106,43 @@ describe('MetaReadonlyAdapter', () => {
     expect(cursorRequest).toBeDefined();
   });
 
+  it('uses an ephemeral Page token to discover the linked WhatsApp number', async () => {
+    const pageAccessToken = 'page-only-access-token-123456';
+    fetchMock.mockImplementation(async (input: URL, init?: RequestInit) => {
+      if (input.pathname.endsWith('/adaccounts')) return json({ data: [] });
+      if (input.pathname.endsWith('/accounts')) {
+        expect(input.searchParams.get('fields')).toBe('id,name,access_token');
+        return json({ data: [{
+          id: '789',
+          name: 'Main page',
+          access_token: pageAccessToken,
+        }] });
+      }
+      expect((init?.headers as Record<string, string>).authorization)
+        .toBe(`Bearer ${pageAccessToken}`);
+      expect(input.searchParams.get('appsecret_proof')).toBe(
+        createHmac('sha256', appSecret).update(pageAccessToken).digest('hex'),
+      );
+      return json({
+        id: '789',
+        name: 'Main page',
+        has_whatsapp_number: true,
+        whatsapp_number: '+55 83 99999-0000',
+      });
+    });
+
+    await expect(adapter.discoverAssets(credentialRef, tenantId)).resolves.toEqual(
+      expect.objectContaining({
+        success: true,
+        data: [
+          { assetType: 'facebook_page', externalId: '789', displayName: 'Main page' },
+          { assetType: 'whatsapp', externalId: '5583999990000',
+            displayName: 'WhatsApp · Main page' },
+        ],
+      }),
+    );
+  });
+
   it('falls back to pages promotable by the discovered ad account', async () => {
     fetchMock.mockImplementation(async (input: URL) => {
       if (input.pathname.endsWith('/adaccounts')) {

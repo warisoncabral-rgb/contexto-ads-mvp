@@ -57,7 +57,7 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
       const credential = await this.getCredential(tenantId, credentialRef);
       const [adAccounts, managedPages] = await Promise.all([
         this.collectEdge('/me/adaccounts', credential.accessToken),
-        this.collectEdge('/me/accounts', credential.accessToken),
+        this.collectEdge('/me/accounts', credential.accessToken, 'id,name,access_token'),
       ]);
       const adAccountAssets = adAccounts.map((item) => this.toAsset(item, 'ad_account'));
       const promotedPages = managedPages.length === 0
@@ -68,8 +68,13 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
       const pageAssets = this.uniqueAssets(
         [...managedPages, ...promotedPages].map((item) => this.toAsset(item, 'facebook_page')),
       );
-      const whatsappAssets = (await Promise.all(pageAssets.map((page) =>
-        this.discoverPageWhatsapp(page, credential.accessToken)))).flat();
+      const pageAccessTokens = this.pageAccessTokens(managedPages);
+      const whatsappAssets = (await Promise.all(
+        pageAssets.map((page) => this.discoverPageWhatsapp(
+          page,
+          pageAccessTokens.get(page.externalId) ?? credential.accessToken,
+        )),
+      )).flat();
       const assets: DiscoveredMetaAsset[] = [
         ...adAccountAssets,
         ...pageAssets,
@@ -128,14 +133,18 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
     }
   }
 
-  private async collectEdge(path: string, accessToken: string): Promise<unknown[]> {
+  private async collectEdge(
+    path: string,
+    accessToken: string,
+    fields = 'id,name',
+  ): Promise<unknown[]> {
     const items: unknown[] = [];
     const seenCursors = new Set<string>();
     let after: string | undefined;
     for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber += 1) {
       const payload = await this.graphGet(
         path,
-        { fields: 'id,name', limit: '100', ...(after ? { after } : {}) },
+        { fields, limit: '100', ...(after ? { after } : {}) },
         accessToken,
       );
       if (!this.isGraphPage(payload)) throw new MetaGraphRequestError('VALIDATION', false);
@@ -399,6 +408,17 @@ export class MetaReadonlyAdapter implements MetaAdapterPort {
       seen.add(key);
       return true;
     });
+  }
+
+  private pageAccessTokens(values: unknown[]): Map<string, string> {
+    const tokens = new Map<string, string>();
+    for (const value of values) {
+      if (!this.isObject(value) || !this.isDigits(value.id)
+        || typeof value.access_token !== 'string'
+        || value.access_token.length < 16 || value.access_token.length > 4096) continue;
+      tokens.set(value.id, value.access_token);
+    }
+    return tokens;
   }
 
   private async discoverPageWhatsapp(
