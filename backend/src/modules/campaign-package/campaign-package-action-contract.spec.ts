@@ -7,10 +7,11 @@ describe('Contexto Ads Generator Action contract', () => {
     'utf8',
   );
 
-  it('targets the hosted API and exposes handoff, status and safe human approval operations', () => {
+  it('targets the hosted API and exposes handoff, review and safe human approval operations', () => {
     expect(contract).toContain('https://contexto-ads-validation-api.onrender.com/v1');
     expect(contract).toContain('operationId: submitCampaignPackage');
     expect(contract).toContain('operationId: getCampaignPackageStatus');
+    expect(contract).toContain('operationId: submitReviewedCreativePackage');
     expect(contract).toContain('operationId: getLatestCreativePackage');
     expect(contract).toContain('operationId: approveCreativePackage');
     expect(contract).toContain('operationId: requestExecutionPlanApproval');
@@ -32,6 +33,8 @@ describe('Contexto Ads Generator Action contract', () => {
     expect(contract).toContain('required: [media_id, media_type, source, file_reference, checksum, mime_type, width, height]');
     expect(contract).toContain("checksum: { type: string, pattern: '^(sha256:)?[0-9a-fA-F]{64}$' }");
     expect(contract).toContain('mime_type: { type: string, enum: [image/jpeg, image/png] }');
+    expect(contract).toContain('sha256: { type: string, pattern:');
+    expect(contract).toContain('reviewChecklist:');
   });
 
   it('does not expose high-risk Meta execution operations before the hosted no-write proof', () => {
