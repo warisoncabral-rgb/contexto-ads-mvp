@@ -5,6 +5,7 @@ import { ReadinessModule } from './modules/readiness/readiness.module';
 import { MetaOAuthModule } from './modules/meta-oauth/meta-oauth.module';
 import { CapabilityRegistryModule } from './modules/capability-registry/capability-registry.module';
 import { CampaignContextModule } from './modules/campaign-context/campaign-context.module';
+import { CampaignPackageModule } from './modules/campaign-package/campaign-package.module';
 import { ExecutionPlanModule } from './modules/execution-plan/execution-plan.module';
 import { ApprovalModule } from './modules/approval/approval.module';
 import { ExecutionSimulationModule } from './modules/execution-simulation/execution-simulation.module';
@@ -26,6 +27,7 @@ import { MetaExecutionModule } from './modules/meta-execution/meta-execution.mod
     MetaOAuthModule,
     CapabilityRegistryModule,
     CampaignContextModule,
+    CampaignPackageModule,
     ExecutionPlanModule,
     ApprovalModule,
     ExecutionSimulationModule,
