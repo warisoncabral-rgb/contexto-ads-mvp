@@ -7,6 +7,7 @@ export type CampaignPackageObjective = 'LEADS';
 export type ConversionDestination = 'WHATSAPP';
 export type AdCallToAction = 'WHATSAPP_MESSAGE';
 export type MediaType = 'image';
+export type ImageMimeType = 'image/jpeg' | 'image/png';
 
 export interface CampaignPackageLocationV1 {
   city: string;
@@ -19,10 +20,10 @@ export interface CampaignPackageLocationV1 {
 export interface CampaignPackageAdV1 {
   ad_reference: string;
   primary_text: string;
-  headline?: string;
+  headline: string;
   description?: string;
   cta: AdCallToAction;
-  initial_message?: string;
+  initial_message: string;
   media_id: string;
 }
 
@@ -31,7 +32,10 @@ export interface CampaignPackageMediaV1 {
   media_type: MediaType;
   source: string;
   file_reference: string;
-  checksum?: string;
+  checksum: string;
+  mime_type: ImageMimeType;
+  width: number;
+  height: number;
 }
 
 export interface CampaignPackageV1 {
