@@ -47,5 +47,13 @@ describe('Contexto Ads Generator Action contract', () => {
   it('states that plan approval is not execution authorization', () => {
     expect(contract).toContain('approved plan is not an execution authorization');
     expect(contract).toContain('Requesting approval does not execute the plan');
+    expect(contract).toContain('plan_approval_is_execution_authorization: { type: boolean, const: false }');
+  });
+
+  it('stops conversational orchestration at the separate execution gate after approval', () => {
+    expect(contract).toContain('REQUEST_EXECUTION_PLAN_APPROVAL');
+    expect(contract).toContain('DECIDE_EXECUTION_PLAN_APPROVAL');
+    expect(contract).toContain('EXECUTION_GATE_SEPARATE');
+    expect(contract).toContain('plan_approval:');
   });
 });
