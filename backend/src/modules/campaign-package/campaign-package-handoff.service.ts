@@ -6,7 +6,9 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  CampaignBudget,
   CampaignContextFacts,
+  CampaignContextInput,
   CampaignContextPackageV1,
   SourcedCampaignFact,
   UnversionedCampaignContextPackageV1,
@@ -97,22 +99,22 @@ export class CampaignPackageHandoffService {
   private async persistContextVersion(
     tenantId: string,
     campaignId: string,
-    packageId: string,
+    externalPackageId: string,
     packageVersion: number,
     packageHash: string,
-    input: import('../../domain/contracts/campaign-context').CampaignContextInput,
+    input: CampaignContextInput,
     actor: string,
   ): Promise<CampaignContextPackageV1> {
     const existing = await this.contexts.findVersion(tenantId, campaignId, packageVersion);
     const now = new Date().toISOString();
-    const facts = this.toFacts(input, now, packageId, packageVersion);
+    const facts = this.toFacts(input, now, externalPackageId, packageVersion);
     const contentHash = this.hashFacts(facts);
     if (existing) {
       if (existing.contentHash !== contentHash) {
         throw new ConflictException({
           code: 'campaign_package_version_conflict',
           message: 'The same package version was already submitted with different content',
-          packageId,
+          packageId: externalPackageId,
           packageVersion,
         });
       }
@@ -120,6 +122,7 @@ export class CampaignPackageHandoffService {
     }
 
     const latest = await this.contexts.latest(tenantId, campaignId);
+    const internalPackageId = this.versionUuid(externalPackageId, packageVersion);
     if (packageVersion === 1) {
       if (latest) {
         throw new ConflictException({
@@ -128,7 +131,7 @@ export class CampaignPackageHandoffService {
         });
       }
       const context: CampaignContextPackageV1 = {
-        packageId,
+        packageId: internalPackageId,
         tenantId,
         campaignId,
         version: 1,
@@ -142,7 +145,7 @@ export class CampaignPackageHandoffService {
       };
       await this.contexts.create(
         context,
-        this.event(context, actor, packageHash, now),
+        this.event(context, actor, packageHash, externalPackageId, packageVersion, now),
       );
       return context;
     }
@@ -157,7 +160,7 @@ export class CampaignPackageHandoffService {
     }
 
     const draft: UnversionedCampaignContextPackageV1 = {
-      packageId,
+      packageId: internalPackageId,
       tenantId,
       campaignId,
       schemaVersion: '1.0',
@@ -170,7 +173,7 @@ export class CampaignPackageHandoffService {
     };
     const appended = await this.contexts.appendNext(
       draft,
-      this.event(draft, actor, packageHash, now),
+      this.event(draft, actor, packageHash, externalPackageId, packageVersion, now),
     );
     if (!appended || appended.version !== packageVersion) {
       throw new ConflictException({
@@ -182,7 +185,7 @@ export class CampaignPackageHandoffService {
   }
 
   private toFacts(
-    input: import('../../domain/contracts/campaign-context').CampaignContextInput,
+    input: CampaignContextInput,
     now: string,
     packageId: string,
     version: number,
@@ -201,7 +204,7 @@ export class CampaignPackageHandoffService {
       audience: sourced(input.audience as string),
       destination: sourced(input.destination as 'whatsapp'),
       geography: sourced(input.geography as string),
-      budget: sourced(input.budget as import('../../domain/contracts/campaign-context').CampaignBudget),
+      budget: sourced(input.budget as CampaignBudget),
       durationDays: sourced(input.durationDays as number),
     };
   }
@@ -213,10 +216,21 @@ export class CampaignPackageHandoffService {
     return createHash('sha256').update(JSON.stringify(semantic)).digest('hex');
   }
 
+  private versionUuid(packageId: string, version: number): string {
+    const hex = createHash('sha256').update(`${packageId}:v${version}`).digest('hex').slice(0, 32);
+    const chars = hex.split('');
+    chars[12] = '4';
+    chars[16] = ['8', '9', 'a', 'b'][parseInt(chars[16], 16) % 4];
+    const normalized = chars.join('');
+    return `${normalized.slice(0, 8)}-${normalized.slice(8, 12)}-${normalized.slice(12, 16)}-${normalized.slice(16, 20)}-${normalized.slice(20)}`;
+  }
+
   private event(
     context: UnversionedCampaignContextPackageV1,
     actor: string,
     packageHash: string,
+    externalPackageId: string,
+    packageVersion: number,
     createdAt: string,
   ): AuditEvent {
     return {
@@ -230,6 +244,8 @@ export class CampaignPackageHandoffService {
       objectId: context.packageId,
       newState: {
         campaignId: context.campaignId,
+        externalPackageId,
+        externalPackageVersion: packageVersion,
         packageHash,
         contentHash: context.contentHash,
         publicationAuthorized: false,
