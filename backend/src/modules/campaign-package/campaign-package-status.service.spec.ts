@@ -3,7 +3,11 @@ import { CampaignPackageStatusService } from './campaign-package-status.service'
 const tenantId = '22222222-2222-4222-8222-222222222222';
 const packageId = '11111111-1111-4111-8111-111111111111';
 
-function build(overrides?: { creativeStatus?: 'needs_review' | 'approved'; targetBound?: boolean }) {
+function build(overrides?: {
+  creativeStatus?: 'needs_review' | 'approved';
+  targetBound?: boolean;
+  approvalStatus?: 'pending' | 'approved' | null;
+}) {
   const context = {
     packageId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     version: 1,
@@ -26,10 +30,17 @@ function build(overrides?: { creativeStatus?: 'needs_review' | 'approved'; targe
     financials: { maximumPlannedSpendMinor: 7000, currency: 'BRL' },
     externalEffects: { writesAllowed: false, writesPerformed: false },
   };
+  const approval = overrides?.approvalStatus ? {
+    approvalId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    status: overrides.approvalStatus,
+    approvedPlanHash: plan.planHash,
+    expiresAt: '2026-08-27T21:00:00.000Z',
+  } : null;
   const service = new CampaignPackageStatusService(
     { latest: jest.fn(async () => context) } as any,
     { latest: jest.fn(async () => plan) } as any,
     { latest: jest.fn(async () => creative) } as any,
+    { findCurrentForPlan: jest.fn(async () => approval) } as any,
   );
   return { service };
 }
@@ -47,14 +58,41 @@ describe('CampaignPackageStatusService', () => {
       publication_authorized: false,
       external_writes_allowed: false,
       external_writes_performed: false,
+      plan_approval_is_execution_authorization: false,
     });
   });
 
-  it('moves next action to plan review after creative approval and target binding', async () => {
+  it('asks to request plan approval after creative approval and target binding', async () => {
     const { service } = build({ creativeStatus: 'approved', targetBound: true });
     const result = await service.get(tenantId, packageId);
 
-    expect(result.next_action).toBe('REVIEW_AND_APPROVE_EXECUTION_PLAN');
+    expect(result.next_action).toBe('REQUEST_EXECUTION_PLAN_APPROVAL');
     expect(result.execution_plan.target_binding_status).toBe('BOUND');
+    expect(result.plan_approval).toBeNull();
+  });
+
+  it('surfaces a pending exact-plan approval for a human decision', async () => {
+    const { service } = build({
+      creativeStatus: 'approved',
+      targetBound: true,
+      approvalStatus: 'pending',
+    });
+    const result = await service.get(tenantId, packageId);
+
+    expect(result.next_action).toBe('DECIDE_EXECUTION_PLAN_APPROVAL');
+    expect(result.plan_approval?.status).toBe('pending');
+  });
+
+  it('stops the V1 Action at the separate execution gate after plan approval', async () => {
+    const { service } = build({
+      creativeStatus: 'approved',
+      targetBound: true,
+      approvalStatus: 'approved',
+    });
+    const result = await service.get(tenantId, packageId);
+
+    expect(result.next_action).toBe('EXECUTION_GATE_SEPARATE');
+    expect(result.plan_approval?.status).toBe('approved');
+    expect(result.boundaries.plan_approval_is_execution_authorization).toBe(false);
   });
 });
