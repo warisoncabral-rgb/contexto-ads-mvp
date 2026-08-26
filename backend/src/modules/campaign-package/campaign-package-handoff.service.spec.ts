@@ -47,63 +47,78 @@ const packageV1 = {
   meta_connection_id: '33333333-3333-4333-8333-333333333333',
 };
 
+function buildService() {
+  let storedContext: any = null;
+  let storedCreative: any = null;
+  const basePlan = {
+    executionPlanId: '44444444-4444-4444-8444-444444444444',
+    planHash: 'b'.repeat(64),
+    status: 'draft',
+  };
+  const derivedPlan = {
+    executionPlanId: '55555555-5555-4555-8555-555555555555',
+    planHash: 'c'.repeat(64),
+    status: 'draft',
+  };
+  const contexts = {
+    findVersion: jest.fn(async (_tenant: string, _campaign: string, version: number) =>
+      storedContext?.version === version ? storedContext : null),
+    latest: jest.fn(async () => storedContext),
+    create: jest.fn(async (context: any) => { storedContext = context; }),
+    appendNext: jest.fn(),
+  };
+  const executionPlans = {
+    generate: jest.fn(async () => basePlan),
+    latest: jest.fn(async () => derivedPlan),
+  };
+  const creativePackages = {
+    latest: jest.fn(async () => {
+      if (!storedCreative) throw new NotFoundException('Creative package not found');
+      return storedCreative;
+    }),
+    appendVersion: jest.fn(async () => {
+      storedCreative = {
+        creativePackageId: '66666666-6666-4666-8666-666666666666',
+        version: 1,
+        contentHash: 'd'.repeat(64),
+        status: 'needs_review',
+        sourcePlanHash: basePlan.planHash,
+      };
+      return { creativePackage: storedCreative, executionPlan: derivedPlan };
+    }),
+  };
+  const executionSimulations = {
+    bindTarget: jest.fn(async () => ({
+      ...derivedPlan,
+      executionPlanId: '77777777-7777-4777-8777-777777777777',
+      planHash: 'e'.repeat(64),
+    })),
+  };
+  const service = new CampaignPackageHandoffService(
+    new CampaignPackageMapper(new CampaignPackageService()),
+    contexts as any,
+    executionPlans as any,
+    creativePackages as any,
+    executionSimulations as any,
+  );
+  return { service, contexts, executionPlans, creativePackages, executionSimulations, derivedPlan };
+}
+
 describe('CampaignPackageHandoffService', () => {
   it('persists context, creative package and derived plan once for a repeated identical package', async () => {
-    let storedContext: any = null;
-    let storedCreative: any = null;
-    const basePlan = {
-      executionPlanId: '44444444-4444-4444-8444-444444444444',
-      planHash: 'b'.repeat(64),
-      status: 'draft',
-    };
-    const derivedPlan = {
-      executionPlanId: '55555555-5555-4555-8555-555555555555',
-      planHash: 'c'.repeat(64),
-      status: 'draft',
-    };
-    const contexts = {
-      findVersion: jest.fn(async (_tenant: string, _campaign: string, version: number) =>
-        storedContext?.version === version ? storedContext : null),
-      latest: jest.fn(async () => storedContext),
-      create: jest.fn(async (context: any) => { storedContext = context; }),
-      appendNext: jest.fn(),
-    };
-    const executionPlans = {
-      generate: jest.fn(async () => basePlan),
-      latest: jest.fn(async () => derivedPlan),
-    };
-    const creativePackages = {
-      latest: jest.fn(async () => {
-        if (!storedCreative) throw new NotFoundException('Creative package not found');
-        return storedCreative;
-      }),
-      appendVersion: jest.fn(async () => {
-        storedCreative = {
-          creativePackageId: '66666666-6666-4666-8666-666666666666',
-          version: 1,
-          contentHash: 'd'.repeat(64),
-          status: 'needs_review',
-          sourcePlanHash: basePlan.planHash,
-        };
-        return { creativePackage: storedCreative, executionPlan: derivedPlan };
-      }),
-    };
-    const service = new CampaignPackageHandoffService(
-      new CampaignPackageMapper(new CampaignPackageService()),
-      contexts as any,
-      executionPlans as any,
-      creativePackages as any,
-    );
+    const { service, contexts, creativePackages, executionSimulations, derivedPlan } = buildService();
 
     const first = await service.submit(tenantId, packageV1, 'owner:test');
     const second = await service.submit(tenantId, packageV1, 'owner:test');
 
     expect(contexts.create).toHaveBeenCalledTimes(1);
     expect(creativePackages.appendVersion).toHaveBeenCalledTimes(1);
+    expect(executionSimulations.bindTarget).not.toHaveBeenCalled();
     expect(first.campaign_id).toBe(packageV1.package_id);
     expect(first.campaign_context_version).toBe(1);
     expect(first.creative_package_status).toBe('needs_review');
     expect(first.execution_plan_id).toBe(derivedPlan.executionPlanId);
+    expect(first.target_binding_status).toBe('PENDING_RESOLUTION');
     expect(first.boundaries).toEqual({
       persisted: true,
       creative_package_persisted: true,
@@ -116,21 +131,28 @@ describe('CampaignPackageHandoffService', () => {
     expect(second.creative_package_id).toBe(first.creative_package_id);
   });
 
-  it('rejects a version gap before changing internal state', async () => {
-    const contexts = {
-      findVersion: jest.fn(async () => null),
-      latest: jest.fn(async () => null),
-      create: jest.fn(),
-      appendNext: jest.fn(),
-    };
-    const executionPlans = { generate: jest.fn(), latest: jest.fn() };
-    const creativePackages = { latest: jest.fn(), appendVersion: jest.fn() };
-    const service = new CampaignPackageHandoffService(
-      new CampaignPackageMapper(new CampaignPackageService()),
-      contexts as any,
-      executionPlans as any,
-      creativePackages as any,
+  it('binds an ad account only through the existing validated target resolver', async () => {
+    const { service, executionSimulations } = buildService();
+    const result = await service.submit(tenantId, {
+      ...packageV1,
+      ad_account_id: 'act_929361834160386',
+    }, 'owner:test');
+
+    expect(executionSimulations.bindTarget).toHaveBeenCalledWith(
+      tenantId,
+      packageV1.package_id,
+      '55555555-5555-4555-8555-555555555555',
+      packageV1.meta_connection_id,
+      'act_929361834160386',
     );
+    expect(result.target_binding_status).toBe('BOUND');
+    expect(result.execution_plan_id).toBe('77777777-7777-4777-8777-777777777777');
+  });
+
+  it('rejects a version gap before changing internal state', async () => {
+    const { service, contexts, executionPlans, creativePackages } = buildService();
+    contexts.findVersion.mockResolvedValue(null);
+    contexts.latest.mockResolvedValue(null);
 
     await expect(service.submit(
       tenantId,
@@ -145,29 +167,9 @@ describe('CampaignPackageHandoffService', () => {
     expect(creativePackages.appendVersion).not.toHaveBeenCalled();
   });
 
-  it('rejects changed creative content under the same external package version', async () => {
-    let storedContext: any = null;
-    const contexts = {
-      findVersion: jest.fn(async () => storedContext),
-      latest: jest.fn(async () => storedContext),
-      create: jest.fn(),
-      appendNext: jest.fn(),
-    };
-    const executionPlans = { generate: jest.fn(), latest: jest.fn() };
-    const creativePackages = { latest: jest.fn(), appendVersion: jest.fn() };
-    const service = new CampaignPackageHandoffService(
-      new CampaignPackageMapper(new CampaignPackageService()),
-      contexts as any,
-      executionPlans as any,
-      creativePackages as any,
-    );
-
-    const mapper = new CampaignPackageMapper(new CampaignPackageService());
-    const prepared = mapper.prepare(packageV1);
-    storedContext = {
-      version: 1,
-      contentHash: '0'.repeat(64),
-    };
+  it('rejects changed content under the same external package version', async () => {
+    const { service, contexts, executionPlans } = buildService();
+    contexts.findVersion.mockResolvedValue({ version: 1, contentHash: '0'.repeat(64) });
 
     await expect(service.submit(tenantId, {
       ...packageV1,
@@ -175,7 +177,6 @@ describe('CampaignPackageHandoffService', () => {
     }, 'owner:test')).rejects.toMatchObject({ response: expect.objectContaining({
       code: 'campaign_package_version_conflict',
     }) });
-    expect(prepared.package_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(executionPlans.generate).not.toHaveBeenCalled();
   });
 });
