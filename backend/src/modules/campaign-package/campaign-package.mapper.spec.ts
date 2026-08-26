@@ -28,6 +28,7 @@ const validPackage = {
   ads: [{
     ad_reference: 'AD_01',
     primary_text: 'Conheça nossa linha de atacado.',
+    headline: 'Calçados no atacado',
     cta: 'WHATSAPP_MESSAGE',
     initial_message: 'Olá! Quero conhecer o atacado.',
     media_id: 'MEDIA_01',
@@ -37,7 +38,10 @@ const validPackage = {
     media_type: 'image',
     source: 'approved_asset',
     file_reference: 'asset://rosa-vip/media-01',
-    checksum: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    checksum: `sha256:${'a'.repeat(64)}`,
+    mime_type: 'image/jpeg',
+    width: 1080,
+    height: 1350,
   }],
   strategy_status: 'COMPLETE',
   handoff_status: 'READY_FOR_GENERATOR',
@@ -47,7 +51,7 @@ const validPackage = {
 describe('CampaignPackageMapper', () => {
   const mapper = new CampaignPackageMapper(new CampaignPackageService());
 
-  it('maps a valid handoff into existing generator inputs without persisting or writing', () => {
+  it('maps a valid handoff into executable generator inputs without persisting or writing', () => {
     const result = mapper.prepare(validPackage);
 
     expect(result.generator_inputs.campaign_context).toMatchObject({
@@ -58,8 +62,20 @@ describe('CampaignPackageMapper', () => {
       budget: { mode: 'daily', amountMinor: 1000, currency: 'BRL' },
       durationDays: 7,
     });
-    expect((result.generator_inputs.creative_package.copies as unknown[])).toHaveLength(1);
-    expect((result.generator_inputs.creative_package.assets as unknown[])).toHaveLength(1);
+    expect(result.generator_inputs.creative_package.copies).toEqual([expect.objectContaining({
+      copyId: 'AD_01',
+      headline: 'Calçados no atacado',
+      whatsappMessage: 'Olá! Quero conhecer o atacado.',
+      callToAction: 'SEND_WHATSAPP_MESSAGE',
+    })]);
+    expect(result.generator_inputs.creative_package.assets).toEqual([{
+      assetId: 'MEDIA_01',
+      storageRef: 'asset://rosa-vip/media-01',
+      sha256: 'a'.repeat(64),
+      mimeType: 'image/jpeg',
+      width: 1080,
+      height: 1350,
+    }]);
     expect(result.boundaries).toEqual({
       persisted: false,
       execution_plan_created: false,
