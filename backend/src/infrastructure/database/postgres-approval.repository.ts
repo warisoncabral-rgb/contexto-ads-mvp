@@ -100,6 +100,24 @@ export class PostgresApprovalRepository implements ApprovalRepository {
     return result.rows[0] ? this.toDomain(result.rows[0]) : null;
   }
 
+  async findCurrentForPlan(
+    tenantId: string,
+    executionPlanId: string,
+    planHash: string,
+  ): Promise<ApprovalV1 | null> {
+    const result = await this.pool.query<ApprovalRow>(
+      `select ${COLUMNS} from plan_approvals
+      where tenant_id = $1 and execution_plan_id = $2
+        and approved_plan_hash = $3
+        and status in ('pending', 'approved')
+        and expires_at > now()
+      order by updated_at desc, approval_id desc
+      limit 1`,
+      [tenantId, executionPlanId, planHash],
+    );
+    return result.rows[0] ? this.toDomain(result.rows[0]) : null;
+  }
+
   async approveIfCurrent(
     tenantId: string,
     approvalId: string,
