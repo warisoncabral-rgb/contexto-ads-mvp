@@ -4,8 +4,10 @@ info:
   version: 1.0.0
   description: >-
     Action contract for the Contexto Ads GPT to hand off a completed Campaign Package V1
-    to the Generator backend and read the resulting internal status. Submission never
-    authorizes Meta delivery or spend by itself.
+    to the Generator backend, read the resulting internal status, and coordinate the existing
+    human plan-approval workflow. Submission and approval never authorize Meta delivery or
+    spend by themselves. High-risk execution endpoints remain deliberately outside this Action
+    contract until the hosted no-write proof is completed.
 servers:
   - url: https://contexto-ads-validation-api.onrender.com/v1
 security:
@@ -34,12 +36,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HandoffResultV1'
-        '400':
-          description: Malformed request
-        '401':
-          description: Authentication or tenant access denied
-        '409':
-          description: Invalid package, version conflict or unresolved internal precondition
+        '400': { description: Malformed request }
+        '401': { description: Authentication or tenant access denied }
+        '409': { description: Invalid package, version conflict or unresolved internal precondition }
   /operator/tenants/{tenantId}/campaign-packages/v1/{packageId}/status:
     get:
       operationId: getCampaignPackageStatus
@@ -49,12 +48,7 @@ paths:
         Raw technical logs and secrets are not returned.
       parameters:
         - $ref: '#/components/parameters/TenantId'
-        - name: packageId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - $ref: '#/components/parameters/PackageId'
       responses:
         '200':
           description: Current internal status
@@ -62,10 +56,106 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PackageStatusV1'
-        '401':
-          description: Authentication or tenant access denied
-        '404':
-          description: Package handoff not found
+        '401': { description: Authentication or tenant access denied }
+        '404': { description: Package handoff not found }
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/latest:
+    get:
+      operationId: getLatestCreativePackage
+      summary: Read the latest creative package before approval
+      description: Read-only operation. It exposes the exact version and content hash required for review.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200': { description: Latest creative package }
+        '401': { description: Authentication or tenant access denied }
+        '404': { description: Creative package not found }
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/{version}/approve:
+    post:
+      operationId: approveCreativePackage
+      summary: Approve the exact reviewed creative package version
+      description: >-
+        Human decision operation. Approval must include the exact content hash returned by the
+        latest creative package. This approval still performs no Meta write and does not authorize delivery or spend.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/CampaignId'
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [contentHash]
+              properties:
+                contentHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+      responses:
+        '201': { description: Creative package approved and plan derived }
+        '400': { description: Invalid request }
+        '401': { description: Authentication or tenant access denied }
+        '409': { description: Creative version/hash is stale or not ready }
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/approvals:
+    post:
+      operationId: requestExecutionPlanApproval
+      summary: Request human approval for the exact current execution plan
+      description: >-
+        Opens the existing approval record bound to execution plan ID, plan hash and financial scope.
+        Requesting approval does not execute the plan and performs no Meta write.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/ExecutionPlanId'
+      responses:
+        '201': { description: Approval requested }
+        '401': { description: Authentication or tenant access denied }
+        '404': { description: Execution plan not found }
+        '409': { description: Plan is stale or unsafe for approval }
+  /operator/tenants/{tenantId}/approvals/{approvalId}:
+    get:
+      operationId: getExecutionPlanApproval
+      summary: Read the current plan-approval state
+      description: Read-only operation returning the exact approval state and scope.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/ApprovalId'
+      responses:
+        '200': { description: Approval state }
+        '401': { description: Authentication or tenant access denied }
+        '404': { description: Approval not found }
+  /operator/tenants/{tenantId}/approvals/{approvalId}/{decision}:
+    post:
+      operationId: decideExecutionPlanApproval
+      summary: Record the user's explicit decision on a plan approval
+      description: >-
+        Human decision operation. Supported decisions are approve, reject and revoke. Even an
+        approved plan is not an execution authorization and this operation performs no Meta write.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/ApprovalId'
+        - name: decision
+          in: path
+          required: true
+          schema: { type: string, enum: [approve, reject, revoke] }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        '201': { description: Decision recorded and readiness recalculated }
+        '400': { description: Invalid decision }
+        '401': { description: Authentication or tenant access denied }
+        '404': { description: Approval not found }
+        '409': { description: Approval no longer valid for this transition }
 components:
   securitySchemes:
     bearerAuth:
@@ -76,9 +166,27 @@ components:
       name: tenantId
       in: path
       required: true
-      schema:
-        type: string
-        format: uuid
+      schema: { type: string, format: uuid }
+    PackageId:
+      name: packageId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CampaignId:
+      name: campaignId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ExecutionPlanId:
+      name: executionPlanId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ApprovalId:
+      name: approvalId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
   schemas:
     CampaignPackageV1:
       type: object
