@@ -81,6 +81,7 @@ describe('ApprovalService', () => {
     approvals = {
       request: jest.fn(async (approval: ApprovalV1, _event: AuditEvent) => approval),
       findById: jest.fn().mockResolvedValue(pendingApproval),
+      findCurrentForPlan: jest.fn().mockResolvedValue(pendingApproval),
       approveIfCurrent: jest.fn(),
       transition: jest.fn(),
       expire: jest.fn().mockResolvedValue(null),
