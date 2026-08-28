@@ -11,6 +11,11 @@ on:
         description: Tenant UUID to inspect
         required: true
         default: 22222222-2222-4222-8222-222222222222
+  push:
+    branches:
+      - main
+    paths:
+      - .github/prechecks/meta-stable.trigger
 
 permissions:
   contents: read
@@ -20,8 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      BASE_URL: ${{ inputs.base_url }}
-      TENANT_ID: ${{ inputs.tenant_id }}
+      BASE_URL: ${{ inputs.base_url || 'https://contexto-ads-validation-api.onrender.com/v1' }}
+      TENANT_ID: ${{ inputs.tenant_id || '22222222-2222-4222-8222-222222222222' }}
       OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
     steps:
       - name: Require stable operator secret
@@ -69,8 +74,16 @@ jobs:
           console.log(JSON.stringify({ selected_target_present: Boolean(connectionId && adAccountId), connection_id: connectionId || null, ad_account_id: adAccountId || null }, null, 2));
           NODE
 
+      - name: Require selected execution target
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CONNECTION_ID:-}" ] || [ -z "${AD_ACCOUNT_ID:-}" ]; then
+            echo "No selected Meta execution target is available for this tenant."
+            exit 3
+          fi
+
       - name: Read discovered assets and validate execution capabilities
-        if: env.CONNECTION_ID != ''
         shell: bash
         run: |
           set -euo pipefail
