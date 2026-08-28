@@ -1,0 +1,394 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads -> Generator Integration V1
+  version: 1.0.1
+  description: >-
+    GPT-compatible Action contract for Contexto Ads. It hands a completed Campaign Package V1
+    to the Generator, reads status, submits reviewed creative content, and coordinates human
+    approval of the exact current plan. None of these operations authorize Meta delivery,
+    spend, or external writes.
+servers:
+  - url: https://contexto-ads-integration-candidate-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/tenants/{tenantId}/campaign-packages/v1/submit:
+    post:
+      operationId: submitCampaignPackage
+      summary: Submit a completed Campaign Package V1
+      description: >-
+        Validates and persists the handoff and creates or reuses internal Campaign Context,
+        Execution Plan and Creative Package records. Performs no Meta write.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            examples:
+              minimal:
+                value:
+                  package_id: 11111111-1111-4111-8111-111111111111
+                  package_version: 1
+                  created_at: 2026-08-28T12:00:00Z
+                  source: contexto_ads
+                  client_id: client-1
+                  business_name: Example Business
+                  business_description: Example business description
+                  offer_name: Example Offer
+                  offer_description: Example offer description
+                  offer_type: lead_generation
+                  campaign_objective: LEADS
+                  conversion_destination: WHATSAPP
+                  campaign_goal_description: Generate qualified WhatsApp conversations
+                  audience_description: Adults interested in the offer
+                  locations:
+                    - city: Campina Grande
+                      state: PB
+                      country: BR
+                      radius_km: 40
+                      include: true
+                  budget_type: DAILY
+                  budget_amount: 10
+                  currency: BRL
+                  duration_days: 7
+                  ads:
+                    - ad_reference: ad-1
+                      primary_text: Example primary text
+                      headline: Example headline
+                      cta: WHATSAPP_MESSAGE
+                      initial_message: Hello, I want more information.
+                      media_id: media-1
+                  media:
+                    - media_id: media-1
+                      media_type: image
+                      source: uploaded
+                      file_reference: media://example/image-1
+                      checksum: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                      mime_type: image/jpeg
+                      width: 1080
+                      height: 1350
+                  strategy_status: COMPLETE
+                  handoff_status: READY_FOR_GENERATOR
+                  meta_connection_id: 33333333-3333-4333-8333-333333333333
+      responses:
+        '201':
+          description: Handoff accepted internally
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Malformed request
+        '401':
+          description: Authentication or tenant access denied
+        '409':
+          description: Package conflict or unresolved precondition
+
+  /operator/tenants/{tenantId}/campaign-packages/v1/{packageId}/status:
+    get:
+      operationId: getCampaignPackageStatus
+      summary: Get current Generator status for a package
+      description: Returns sanitized internal status. Performs no Meta write.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current package status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          description: Authentication or tenant access denied
+        '404':
+          description: Package not found
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/creative-packages:
+    post:
+      operationId: submitReviewedCreativePackage
+      summary: Submit reviewed creative content for the current plan
+      description: Creates a new Creative Package version. Does not approve or execute it automatically.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: executionPlanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - creative
+              properties:
+                creative:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Reviewed creative version created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid creative payload
+        '401':
+          description: Authentication or tenant access denied
+        '404':
+          description: Plan or campaign not found
+        '409':
+          description: Current plan changed or creative precondition failed
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/latest:
+    get:
+      operationId: getLatestCreativePackage
+      summary: Read the latest Creative Package version and hash
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Latest Creative Package
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          description: Authentication or tenant access denied
+        '404':
+          description: Creative Package not found
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/{version}/approve:
+    post:
+      operationId: approveCreativePackage
+      summary: Approve the exact reviewed Creative Package version
+      description: Requires explicit human approval of the exact content hash. Performs no Meta write.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - contentHash
+              properties:
+                contentHash:
+                  type: string
+                  pattern: '^[0-9a-f]{64}$'
+      responses:
+        '201':
+          description: Creative Package approved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request
+        '401':
+          description: Authentication or tenant access denied
+        '409':
+          description: Creative version or hash is stale or not ready
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/approvals:
+    post:
+      operationId: requestExecutionPlanApproval
+      summary: Request approval for the exact current execution plan
+      description: Opens a hash-bound plan approval. Does not execute the plan.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: executionPlanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: Plan approval requested
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          description: Authentication or tenant access denied
+        '404':
+          description: Execution plan not found
+        '409':
+          description: Plan is stale or unsafe for approval
+
+  /operator/tenants/{tenantId}/approvals/{approvalId}:
+    get:
+      operationId: getExecutionPlanApproval
+      summary: Read the current plan approval state
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: approvalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current approval state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          description: Authentication or tenant access denied
+        '404':
+          description: Approval not found
+
+  /operator/tenants/{tenantId}/approvals/{approvalId}/{decision}:
+    post:
+      operationId: decideExecutionPlanApproval
+      summary: Record explicit human decision on plan approval
+      description: >-
+        Records approve, reject, or revoke. Even approve is not an execution authorization and
+        performs no Meta write.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: approvalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: decision
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - approve
+              - reject
+              - revoke
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '201':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid decision
+        '401':
+          description: Authentication or tenant access denied
+        '404':
+          description: Approval not found
+        '409':
+          description: Approval no longer valid for this transition
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
