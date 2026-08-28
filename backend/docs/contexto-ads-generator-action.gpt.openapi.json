@@ -1,0 +1,378 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Contexto Ads Generator Integration V1",
+    "version": "1.0.3",
+    "description": "GPT-compatible contract for the hosted no-write Contexto Ads to Generator integration. These operations do not authorize Meta delivery, spend, activation, or external writes."
+  },
+  "servers": [
+    {
+      "url": "https://contexto-ads-integration-candidate-api.onrender.com/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/operator/tenants/{tenantId}/campaign-packages/v1/submit": {
+      "post": {
+        "operationId": "submitCampaignPackage",
+        "summary": "Submit a completed Campaign Package V1",
+        "description": "Validates and persists the handoff. Performs no Meta write.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "package_id", "package_version", "created_at", "source", "client_id",
+                  "business_name", "business_description", "offer_name", "offer_description",
+                  "offer_type", "campaign_objective", "conversion_destination",
+                  "campaign_goal_description", "audience_description", "locations",
+                  "budget_type", "budget_amount", "currency", "duration_days", "ads", "media",
+                  "strategy_status", "handoff_status", "meta_connection_id"
+                ],
+                "properties": {
+                  "package_id": { "type": "string", "format": "uuid" },
+                  "package_version": { "type": "integer", "minimum": 1 },
+                  "created_at": { "type": "string", "format": "date-time" },
+                  "source": { "type": "string", "enum": ["contexto_ads"] },
+                  "client_id": { "type": "string" },
+                  "business_name": { "type": "string" },
+                  "business_description": { "type": "string" },
+                  "offer_name": { "type": "string" },
+                  "offer_description": { "type": "string" },
+                  "offer_type": { "type": "string", "enum": ["product", "service", "catalog", "promotion", "lead_generation"] },
+                  "commercial_conditions": { "type": "object", "properties": {}, "additionalProperties": true },
+                  "campaign_objective": { "type": "string", "enum": ["LEADS"] },
+                  "conversion_destination": { "type": "string", "enum": ["WHATSAPP"] },
+                  "campaign_goal_description": { "type": "string" },
+                  "audience_description": { "type": "string" },
+                  "locations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["city", "country"],
+                      "properties": {
+                        "city": { "type": "string" },
+                        "state": { "type": "string" },
+                        "country": { "type": "string" },
+                        "radius_km": { "type": "number" },
+                        "include": { "type": "boolean" }
+                      }
+                    }
+                  },
+                  "age_min": { "type": "integer" },
+                  "age_max": { "type": "integer" },
+                  "gender": { "type": "string", "enum": ["all", "male", "female"] },
+                  "targeting_notes": { "type": "object", "properties": {}, "additionalProperties": true },
+                  "budget_type": { "type": "string", "enum": ["DAILY", "LIFETIME"] },
+                  "budget_amount": { "type": "number" },
+                  "currency": { "type": "string" },
+                  "duration_days": { "type": "integer", "minimum": 1 },
+                  "start_date": { "type": "string" },
+                  "end_date": { "type": "string" },
+                  "ads": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["ad_reference", "primary_text", "headline", "cta", "initial_message", "media_id"],
+                      "properties": {
+                        "ad_reference": { "type": "string" },
+                        "primary_text": { "type": "string" },
+                        "headline": { "type": "string" },
+                        "description": { "type": "string" },
+                        "cta": { "type": "string", "enum": ["WHATSAPP_MESSAGE"] },
+                        "initial_message": { "type": "string" },
+                        "media_id": { "type": "string" }
+                      }
+                    }
+                  },
+                  "media": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["media_id", "media_type", "source", "file_reference", "checksum", "mime_type", "width", "height"],
+                      "properties": {
+                        "media_id": { "type": "string" },
+                        "media_type": { "type": "string", "enum": ["image"] },
+                        "source": { "type": "string" },
+                        "file_reference": { "type": "string" },
+                        "checksum": { "type": "string" },
+                        "mime_type": { "type": "string", "enum": ["image/jpeg", "image/png"] },
+                        "width": { "type": "integer" },
+                        "height": { "type": "integer" }
+                      }
+                    }
+                  },
+                  "constraints": { "type": "object", "properties": {}, "additionalProperties": true },
+                  "strategy_notes": { "type": "object", "properties": {}, "additionalProperties": true },
+                  "strategy_status": { "type": "string", "enum": ["COMPLETE"] },
+                  "handoff_status": { "type": "string", "enum": ["READY_FOR_GENERATOR"] },
+                  "ad_account_id": { "type": "string" },
+                  "facebook_page_id": { "type": "string" },
+                  "instagram_account_id": { "type": "string" },
+                  "whatsapp_asset_id": { "type": "string" },
+                  "meta_connection_id": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Handoff accepted", "content": { "application/json": { "schema": { "type": "object", "properties": { "package_id": { "type": "string" }, "campaign_id": { "type": "string" }, "execution_plan_id": { "type": "string" }, "next_action": { "type": "string" } }, "additionalProperties": true } } } },
+          "400": { "description": "Malformed request" },
+          "401": { "description": "Authentication denied" },
+          "409": { "description": "Conflict or unresolved precondition" }
+        }
+      }
+    },
+    "/operator/tenants/{tenantId}/campaign-packages/v1/{packageId}/status": {
+      "get": {
+        "operationId": "getCampaignPackageStatus",
+        "summary": "Get current package status",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "packageId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Current status", "content": { "application/json": { "schema": { "type": "object", "properties": { "package_id": { "type": "string" }, "next_action": { "type": "string" }, "plan_approval": { "type": ["object", "null"], "properties": {}, "additionalProperties": true } }, "additionalProperties": true } } } },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Package not found" }
+        }
+      }
+    },
+    "/operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/creative-packages": {
+      "post": {
+        "operationId": "submitReviewedCreativePackage",
+        "summary": "Submit reviewed creative content",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "campaignId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "executionPlanId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["creative"],
+                "properties": {
+                  "creative": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["copies", "claims", "assets", "reviewChecklist"],
+                    "properties": {
+                      "copies": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["copyId", "primaryText", "headline", "whatsappMessage", "callToAction"],
+                          "properties": {
+                            "copyId": { "type": "string" },
+                            "primaryText": { "type": "string" },
+                            "headline": { "type": "string" },
+                            "description": { "type": "string" },
+                            "whatsappMessage": { "type": "string" },
+                            "callToAction": { "type": "string", "enum": ["SEND_WHATSAPP_MESSAGE"] }
+                          }
+                        }
+                      },
+                      "claims": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["claimId", "text", "sourceRefs"],
+                          "properties": {
+                            "claimId": { "type": "string" },
+                            "text": { "type": "string" },
+                            "sourceRefs": { "type": "array", "items": { "type": "string" } }
+                          }
+                        }
+                      },
+                      "assets": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["assetId", "storageRef", "sha256", "mimeType", "width", "height"],
+                          "properties": {
+                            "assetId": { "type": "string" },
+                            "storageRef": { "type": "string" },
+                            "sha256": { "type": "string" },
+                            "mimeType": { "type": "string", "enum": ["image/jpeg", "image/png"] },
+                            "width": { "type": "integer" },
+                            "height": { "type": "integer" }
+                          }
+                        }
+                      },
+                      "reviewChecklist": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["claimsVerifiedAgainstSources", "visualFidelityReviewed", "safeAreaReviewed", "requiredFieldsReviewed", "automaticEnhancementsReviewed"],
+                        "properties": {
+                          "claimsVerifiedAgainstSources": { "type": "boolean" },
+                          "visualFidelityReviewed": { "type": "boolean" },
+                          "safeAreaReviewed": { "type": "boolean" },
+                          "requiredFieldsReviewed": { "type": "boolean" },
+                          "automaticEnhancementsReviewed": { "type": "boolean" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Creative version created", "content": { "application/json": { "schema": { "type": "object", "properties": { "creativePackage": { "type": "object", "properties": {}, "additionalProperties": true }, "executionPlan": { "type": "object", "properties": {}, "additionalProperties": true } }, "additionalProperties": true } } } },
+          "400": { "description": "Invalid payload" },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Plan not found" },
+          "409": { "description": "Conflict" }
+        }
+      }
+    },
+    "/operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/latest": {
+      "get": {
+        "operationId": "getLatestCreativePackage",
+        "summary": "Get latest creative package",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "campaignId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Latest creative package", "content": { "application/json": { "schema": { "type": "object", "properties": { "creativePackageId": { "type": "string" }, "version": { "type": "integer" }, "status": { "type": "string" }, "contentHash": { "type": "string" } }, "additionalProperties": true } } } },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/{version}/approve": {
+      "post": {
+        "operationId": "approveCreativePackage",
+        "summary": "Approve exact creative version",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "campaignId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "version", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["contentHash"],
+                "properties": { "contentHash": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Creative approved", "content": { "application/json": { "schema": { "type": "object", "properties": { "creativePackage": { "type": "object", "properties": {}, "additionalProperties": true }, "executionPlan": { "type": "object", "properties": {}, "additionalProperties": true } }, "additionalProperties": true } } } },
+          "400": { "description": "Invalid request" },
+          "401": { "description": "Authentication denied" },
+          "409": { "description": "Stale creative" }
+        }
+      }
+    },
+    "/operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/approvals": {
+      "post": {
+        "operationId": "requestExecutionPlanApproval",
+        "summary": "Request approval for current plan",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "campaignId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "executionPlanId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "201": { "description": "Approval requested", "content": { "application/json": { "schema": { "type": "object", "properties": { "approval": { "type": "object", "properties": {}, "additionalProperties": true } }, "additionalProperties": true } } } },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Plan not found" },
+          "409": { "description": "Plan stale" }
+        }
+      }
+    },
+    "/operator/tenants/{tenantId}/approvals/{approvalId}": {
+      "get": {
+        "operationId": "getExecutionPlanApproval",
+        "summary": "Get current plan approval",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "approvalId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Approval state", "content": { "application/json": { "schema": { "type": "object", "properties": { "approvalId": { "type": "string" }, "status": { "type": "string" }, "approvedPlanHash": { "type": "string" } }, "additionalProperties": true } } } },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Approval not found" }
+        }
+      }
+    },
+    "/operator/tenants/{tenantId}/approvals/{approvalId}/{decision}": {
+      "post": {
+        "operationId": "decideExecutionPlanApproval",
+        "summary": "Record explicit plan approval decision",
+        "description": "Approve, reject, or revoke. Approve is not execution authorization and performs no Meta write.",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "approvalId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "decision", "in": "path", "required": true, "schema": { "type": "string", "enum": ["approve", "reject", "revoke"] } }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": { "reason": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Decision recorded", "content": { "application/json": { "schema": { "type": "object", "properties": { "approval": { "type": "object", "properties": {}, "additionalProperties": true } }, "additionalProperties": true } } } },
+          "400": { "description": "Invalid decision" },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Approval not found" },
+          "409": { "description": "Invalid transition" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
