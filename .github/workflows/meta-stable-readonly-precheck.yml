@@ -25,18 +25,24 @@ jobs:
       OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
     steps:
       - name: Require stable operator secret
+        shell: bash
         run: |
+          set -euo pipefail
           if [ -z "$OPERATOR_TOKEN" ]; then
             echo "Repository secret CONTEXT_ADS_STABLE_OPERATOR_TOKEN is required."
             exit 2
           fi
 
       - name: Health check
+        shell: bash
         run: |
+          set -euo pipefail
           curl --fail --silent --show-error "$BASE_URL/health" | tee /tmp/health.json
 
       - name: Read tenants and portfolio
+        shell: bash
         run: |
+          set -euo pipefail
           curl --fail --silent --show-error \
             -H "Authorization: Bearer $OPERATOR_TOKEN" \
             "$BASE_URL/operator/tenants" | tee /tmp/tenants.json
@@ -45,7 +51,9 @@ jobs:
             "$BASE_URL/operator/portfolio" | tee /tmp/portfolio.json
 
       - name: Read selected execution target
+        shell: bash
         run: |
+          set -euo pipefail
           curl --fail --silent --show-error \
             -H "Authorization: Bearer $OPERATOR_TOKEN" \
             "$BASE_URL/operator/tenants/$TENANT_ID/meta/selected-execution-target" \
@@ -63,7 +71,9 @@ jobs:
 
       - name: Read discovered assets and validate execution capabilities
         if: env.CONNECTION_ID != ''
+        shell: bash
         run: |
+          set -euo pipefail
           curl --fail --silent --show-error \
             -H "Authorization: Bearer $OPERATOR_TOKEN" \
             "$BASE_URL/operator/tenants/$TENANT_ID/meta/connections/$CONNECTION_ID/assets" \
@@ -80,6 +90,8 @@ jobs:
             | tee /tmp/smoke.json
 
       - name: Confirm no-write boundary
+        shell: bash
         run: |
+          set -euo pipefail
           echo "Read-only Meta precheck completed."
           echo "No manifest, execution authorization, preflight, kill-switch mutation, meta-write protocol, or execute-paused endpoint was called."
