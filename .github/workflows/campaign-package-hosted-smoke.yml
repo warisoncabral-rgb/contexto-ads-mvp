@@ -11,6 +11,11 @@ on:
         description: Tenant UUID used for the authenticated no-write proof
         required: true
         default: 22222222-2222-4222-8222-222222222222
+  push:
+    branches:
+      - main
+    paths:
+      - .github/hosted-smoke-trigger.txt
 
 permissions:
   contents: read
@@ -23,11 +28,13 @@ jobs:
       run:
         working-directory: backend
     env:
-      CONTEXT_ADS_API_BASE_URL: ${{ inputs.base_url }}
-      CONTEXT_ADS_TENANT_ID: ${{ inputs.tenant_id }}
+      CONTEXT_ADS_API_BASE_URL: ${{ github.event.inputs.base_url || 'https://contexto-ads-integration-candidate-api.onrender.com/v1' }}
+      CONTEXT_ADS_TENANT_ID: ${{ github.event.inputs.tenant_id || '22222222-2222-4222-8222-222222222222' }}
       CONTEXT_ADS_OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_HOSTED_OPERATOR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/contexto-gerador-integration-v1
       - uses: actions/setup-node@v4
         with:
           node-version: 24
