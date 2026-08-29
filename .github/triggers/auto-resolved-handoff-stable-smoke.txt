@@ -1,2 +1,2 @@
-triggered_at=2026-08-29T18:16:30Z
-reason=validate-auto-resolved-contexto-ads-handoff
+triggered_at=2026-08-29T18:23:30Z
+reason=validate-auto-resolved-contexto-ads-handoff-after-deploy-ci
