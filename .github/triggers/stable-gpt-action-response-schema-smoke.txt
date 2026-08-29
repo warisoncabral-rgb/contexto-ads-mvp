@@ -1,0 +1,2 @@
+triggered_at=2026-08-29T21:49:00Z
+reason=validate-v1.0.8-explicit-json-response-schemas-and-authenticated-action-ping
