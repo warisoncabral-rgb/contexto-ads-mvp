@@ -1,0 +1,135 @@
+name: Formal Current Campaign Handoff Diagnosis
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/formal-current-campaign-handoff-diagnosis.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        shell: bash
+        run: test -n "$OPERATOR_TOKEN"
+
+      - name: Submit exact current campaign package safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_ID=$(python - <<'PY'
+          import uuid
+          print(uuid.uuid4())
+          PY
+          )
+          CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > /tmp/package.json <<JSON
+          {
+            "package_id": "$PACKAGE_ID",
+            "package_version": 1,
+            "created_at": "$CREATED_AT",
+            "source": "contexto_ads",
+            "client_id": "rosavip-formal-current-campaign",
+            "business_name": "Rosa VIP Calçados",
+            "business_description": "Venda de calçados femininos premium no atacado para lojistas, empreendedores e revendedores.",
+            "offer_name": "Calçados femininos premium no atacado",
+            "offer_description": "Linha de calçados femininos premium para revenda, com pedido mínimo de R$ 500, grade fechada de 12 pares disponível e entrega grátis em rota programada.",
+            "offer_type": "catalog",
+            "commercial_conditions": {
+              "minimum_order_brl": 500,
+              "closed_grade_pairs": 12,
+              "free_delivery_on_scheduled_route": true
+            },
+            "campaign_objective": "LEADS",
+            "conversion_destination": "WHATSAPP",
+            "campaign_goal_description": "Gerar conversas qualificadas no WhatsApp com lojistas, empreendedores e revendedores.",
+            "audience_description": "Lojistas, empreendedores e revendedores que valorizam qualidade, acabamento e valor percebido em calçados femininos premium.",
+            "locations": [
+              {"city": "João Pessoa", "state": "PB", "country": "BR", "radius_km": 40, "include": true},
+              {"city": "Recife", "state": "PE", "country": "BR", "radius_km": 40, "include": true}
+            ],
+            "budget_type": "DAILY",
+            "budget_amount": 20,
+            "currency": "BRL",
+            "duration_days": 7,
+            "ads": [
+              {
+                "ad_reference": "destaques-rosavip",
+                "primary_text": "Renove seu estoque com calçados femininos premium que agregam valor ao seu negócio.",
+                "headline": "Calçados femininos premium no atacado",
+                "description": "Pedido mínimo de R$ 500. Fale com a Rosa VIP pelo WhatsApp.",
+                "cta": "WHATSAPP_MESSAGE",
+                "initial_message": "Olá! Tenho interesse nos calçados Rosavip para revenda. Gostaria de receber o catálogo atualizado e entender melhor como funciona o pedido no atacado.",
+                "media_id": "destaques-rosavip"
+              },
+              {
+                "ad_reference": "pedido-minimo-500",
+                "primary_text": "Renove seu estoque com calçados femininos premium que agregam valor ao seu negócio.",
+                "headline": "Pedido mínimo de R$ 500",
+                "description": "Calçados femininos premium no atacado para revenda.",
+                "cta": "WHATSAPP_MESSAGE",
+                "initial_message": "Olá! Tenho interesse nos calçados Rosavip para revenda. Gostaria de receber o catálogo atualizado e entender melhor como funciona o pedido no atacado.",
+                "media_id": "pedido-minimo-500"
+              }
+            ],
+            "media": [
+              {
+                "media_id": "destaques-rosavip",
+                "media_type": "image",
+                "source": "chatgpt_library",
+                "file_reference": "library://file_00000000e630820ea9fe4fcfae142ca7",
+                "checksum": "99d331ea1d64550ad640a4e99fe5c61be71e42763a2155d3c3e85ac0d9c4a955",
+                "mime_type": "image/png",
+                "width": 864,
+                "height": 1821
+              },
+              {
+                "media_id": "pedido-minimo-500",
+                "media_type": "image",
+                "source": "chatgpt_library",
+                "file_reference": "library://file_0000000016ec820e88962de792f1f937",
+                "checksum": "0a13be0e57aa122b0e033792d497c58d7c63c246b563fcb84b03a50ae3b98dc5",
+                "mime_type": "image/png",
+                "width": 1522,
+                "height": 2532
+              }
+            ],
+            "constraints": {
+              "test_mode": true,
+              "no_meta_write": true,
+              "maximum_planned_spend_brl": 140
+            },
+            "strategy_notes": {
+              "preserve_approved_strategy": true,
+              "approved_creatives": ["Destaques Rosavip", "Pedido mínimo R$ 500"]
+            },
+            "strategy_status": "COMPLETE",
+            "handoff_status": "READY_FOR_GENERATOR"
+          }
+          JSON
+
+          CODE=$(curl --max-time 60 --silent --show-error -o /tmp/result.json -w '%{http_code}' \
+            -X POST "$BASE_URL/operator/campaign-packages/v1/submit" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/package.json)
+
+          echo "HTTP $CODE"
+          cat /tmp/result.json | jq .
+          echo "PACKAGE_ID=$PACKAGE_ID"
+          test "$CODE" = "201"
+          jq -e '.boundaries.publication_authorized == false and .boundaries.external_writes_allowed == false and .boundaries.external_writes_performed == false' /tmp/result.json >/dev/null
+
+      - name: Confirm no Meta execution endpoint called
+        shell: bash
+        run: |
+          echo "Diagnostic handoff only. No execution manifest, execution authorization, preflight, execute-paused, activation, publication or spend authorization endpoint was called."
