@@ -1,0 +1,57 @@
+name: Canonical Package Recovery Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/canonical-package-recovery-check.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      PACKAGE_ID: 849547ce-645e-4c7b-a844-451182253fe6
+    steps:
+      - name: Require stable operator secret
+        shell: bash
+        run: test -n "$OPERATOR_TOKEN"
+      - name: Recover canonical package status read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 4); do
+            CODE=$(curl --max-time 45 --silent --show-error -o /tmp/result.json -w '%{http_code}' \
+              -H "Authorization: Bearer $OPERATOR_TOKEN" \
+              "$BASE_URL/operator/campaign-packages/v1/$PACKAGE_ID/status" || true)
+            echo "attempt $attempt: HTTP $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo 'RECOVERY_RESULT=PERSISTED'
+              cat /tmp/result.json | jq '{package_id,campaign_id,context,creative,execution_plan,plan_approval,next_action,resolved_context,boundaries}'
+              exit 0
+            fi
+            if [ "$CODE" = "404" ]; then
+              echo 'RECOVERY_RESULT=NOT_FOUND'
+              cat /tmp/result.json || true
+              exit 0
+            fi
+            if [[ "$CODE" =~ ^5 ]] || [ "$CODE" = "000" ]; then
+              sleep 5
+              continue
+            fi
+            echo 'RECOVERY_RESULT=UNEXPECTED'
+            cat /tmp/result.json || true
+            exit 1
+          done
+          echo 'RECOVERY_RESULT=UNRESOLVED_AFTER_RETRIES'
+          cat /tmp/result.json || true
+          exit 1
+      - name: Confirm no Meta execution
+        shell: bash
+        run: echo 'Read-only recovery GET only; no Meta execution, publication, activation or spend endpoint called.'
