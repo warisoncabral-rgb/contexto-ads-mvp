@@ -144,6 +144,7 @@ describe('CreativePackageService', () => {
     approvals = {
       request: jest.fn(),
       findById: jest.fn(),
+      findCurrentForPlan: jest.fn(),
       approveIfCurrent: jest.fn(),
       transition: jest.fn(),
       expire: jest.fn(),

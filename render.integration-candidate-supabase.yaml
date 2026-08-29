@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: contexto-ads-integration-candidate-api
+    runtime: node
+    plan: free
+    region: virginia
+    branch: agent/contexto-gerador-integration-v1
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /v1/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CREDENTIAL_VAULT_PROVIDER
+        value: postgres
+      - key: CREDENTIAL_VAULT_MASTER_KEY
+        generateValue: true
+      - key: META_GRAPH_BASE_URL
+        value: https://graph.facebook.com
+      - key: META_GRAPH_API_VERSION
+        value: v26.0
+      - key: META_WRITE_ADAPTER_ENABLED
+        value: "false"
+      - key: META_CITY_RADIUS_KM
+        value: "40"
+      - key: OPERATOR_BOOTSTRAP_SUBJECT
+        value: operator:integration-candidate
+      - key: OPERATOR_BOOTSTRAP_TOKEN
+        generateValue: true
+      - key: BOOTSTRAP_TENANT_ID
+        value: 22222222-2222-4222-8222-222222222222
+      - key: BOOTSTRAP_TENANT_DISPLAY_NAME
+        value: Integration Candidate

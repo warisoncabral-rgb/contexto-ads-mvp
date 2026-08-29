@@ -1,0 +1,90 @@
+name: Campaign Package E2E validation
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/campaign-package-e2e.yml'
+  push:
+    branches:
+      - agent/contexto-gerador-integration-v1
+    paths:
+      - 'backend/**'
+      - '.github/workflows/campaign-package-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: contexto_ads
+          POSTGRES_PASSWORD: contexto_ads
+          POSTGRES_DB: contexto_ads_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U contexto_ads -d contexto_ads_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://contexto_ads:contexto_ads@localhost:5432/contexto_ads_e2e
+      PORT: '3000'
+      BOOTSTRAP_TENANT_ID: 22222222-2222-4222-8222-222222222222
+      BOOTSTRAP_TENANT_DISPLAY_NAME: Campaign Package E2E
+      OPERATOR_BOOTSTRAP_SUBJECT: operator:e2e
+      OPERATOR_BOOTSTRAP_TOKEN: campaign-package-e2e-token-1234567890
+      CONTEXT_ADS_TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CONTEXT_ADS_OPERATOR_TOKEN: campaign-package-e2e-token-1234567890
+      CONTEXT_ADS_API_BASE_URL: http://127.0.0.1:3000/v1
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run migrate
+      - run: npm run build
+      - name: Start API locally
+        run: |
+          node dist/main.js > /tmp/contexto-ads-api.log 2>&1 &
+          echo $! > /tmp/contexto-ads-api.pid
+      - name: Wait for health endpoint
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/v1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/contexto-ads-api.log
+          exit 1
+      - name: Run authenticated handoff smoke
+        run: |
+          export CAMPAIGN_PACKAGE_JSON="$(cat docs/campaign-package-v1.example.json)"
+          npm run smoke:campaign-package
+      - name: Run reviewed creative and plan approval smoke
+        run: |
+          export CAMPAIGN_PACKAGE_JSON="$(cat docs/campaign-package-v1.example.json)"
+          npm run smoke:campaign-package-approval
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/contexto-ads-api.pid ]; then
+            kill "$(cat /tmp/contexto-ads-api.pid)" || true
+          fi
+          cat /tmp/contexto-ads-api.log || true

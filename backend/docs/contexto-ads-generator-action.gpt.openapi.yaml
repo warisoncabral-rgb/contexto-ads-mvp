@@ -1,0 +1,364 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads -> Generator Integration V1
+  version: 1.0.2
+  description: GPT-compatible Action contract for Contexto Ads. These operations do not authorize Meta delivery, spend, or external writes.
+servers:
+  - url: https://contexto-ads-integration-candidate-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/tenants/{tenantId}/campaign-packages/v1/submit:
+    post:
+      operationId: submitCampaignPackage
+      summary: Submit a completed Campaign Package V1
+      description: Validates and persists the handoff and creates or reuses internal planning records. Performs no Meta write.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id, package_version, created_at, source, client_id, business_name, business_description, offer_name, offer_description, offer_type, campaign_objective, conversion_destination, campaign_goal_description, audience_description, locations, budget_type, budget_amount, currency, duration_days, ads, media, strategy_status, handoff_status, meta_connection_id]
+              properties:
+                package_id: { type: string, format: uuid }
+                package_version: { type: integer, minimum: 1 }
+                created_at: { type: string, format: date-time }
+                source: { type: string, enum: [contexto_ads] }
+                client_id: { type: string }
+                business_name: { type: string }
+                business_description: { type: string }
+                offer_name: { type: string }
+                offer_description: { type: string }
+                offer_type: { type: string }
+                campaign_objective: { type: string, enum: [LEADS] }
+                conversion_destination: { type: string, enum: [WHATSAPP] }
+                campaign_goal_description: { type: string }
+                audience_description: { type: string }
+                locations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      city: { type: string }
+                      state: { type: string }
+                      country: { type: string }
+                      radius_km: { type: number }
+                      include: { type: boolean }
+                budget_type: { type: string, enum: [DAILY, LIFETIME] }
+                budget_amount: { type: number }
+                currency: { type: string }
+                duration_days: { type: integer }
+                ads:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ad_reference: { type: string }
+                      primary_text: { type: string }
+                      headline: { type: string }
+                      description: { type: string }
+                      cta: { type: string, enum: [WHATSAPP_MESSAGE] }
+                      initial_message: { type: string }
+                      media_id: { type: string }
+                media:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      media_id: { type: string }
+                      media_type: { type: string, enum: [image] }
+                      source: { type: string }
+                      file_reference: { type: string }
+                      checksum: { type: string }
+                      mime_type: { type: string }
+                      width: { type: integer }
+                      height: { type: integer }
+                strategy_status: { type: string, enum: [COMPLETE] }
+                handoff_status: { type: string, enum: [READY_FOR_GENERATOR] }
+                meta_connection_id: { type: string, format: uuid }
+                ad_account_id: { type: string }
+                facebook_page_id: { type: string }
+                instagram_account_id: { type: string }
+                whatsapp_asset_id: { type: string }
+      responses:
+        '201':
+          description: Handoff accepted internally
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  package_id: { type: string, format: uuid }
+                  campaign_id: { type: string, format: uuid }
+                  execution_plan_id: { type: string, format: uuid }
+                  execution_plan_hash: { type: string }
+                  creative_package_id: { type: string, format: uuid }
+                  creative_package_version: { type: integer }
+                  creative_package_status: { type: string }
+                  target_binding_status: { type: string }
+                  next_action: { type: string }
+        '400': { description: Malformed request }
+        '401': { description: Authentication denied }
+        '409': { description: Package conflict or unresolved precondition }
+
+  /operator/tenants/{tenantId}/campaign-packages/v1/{packageId}/status:
+    get:
+      operationId: getCampaignPackageStatus
+      summary: Get current Generator status for a package
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: packageId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current package status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  package_id: { type: string, format: uuid }
+                  campaign_id: { type: string, format: uuid }
+                  next_action: { type: string }
+                  context: { type: object, properties: { status: { type: string }, version: { type: integer }, content_hash: { type: string } } }
+                  creative: { type: object, properties: { status: { type: string }, version: { type: integer }, content_hash: { type: string } } }
+                  execution_plan: { type: object, properties: { execution_plan_id: { type: string }, plan_hash: { type: string }, status: { type: string }, target_binding_status: { type: string }, maximum_planned_spend_minor: { type: integer }, currency: { type: string } } }
+                  plan_approval: { type: object, properties: { approval_id: { type: string }, status: { type: string }, approved_plan_hash: { type: string }, expires_at: { type: string } } }
+        '401': { description: Authentication denied }
+        '404': { description: Package not found }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/creative-packages:
+    post:
+      operationId: submitReviewedCreativePackage
+      summary: Submit reviewed creative content for the current plan
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: executionPlanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [creative]
+              properties:
+                creative:
+                  type: object
+                  required: [copies, claims, assets, reviewChecklist]
+                  properties:
+                    copies: { type: array, items: { type: object, properties: { copyId: { type: string }, primaryText: { type: string }, headline: { type: string }, description: { type: string }, whatsappMessage: { type: string }, callToAction: { type: string } } } }
+                    claims: { type: array, items: { type: object, properties: { claimId: { type: string }, text: { type: string }, sourceRefs: { type: array, items: { type: string } } } } }
+                    assets: { type: array, items: { type: object, properties: { assetId: { type: string }, storageRef: { type: string }, sha256: { type: string }, mimeType: { type: string }, width: { type: integer }, height: { type: integer } } } }
+                    reviewChecklist: { type: object, properties: { claimsVerifiedAgainstSources: { type: boolean }, visualFidelityReviewed: { type: boolean }, safeAreaReviewed: { type: boolean }, requiredFieldsReviewed: { type: boolean }, automaticEnhancementsReviewed: { type: boolean } } }
+      responses:
+        '201':
+          description: Reviewed creative version created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  boundaries: { type: object, properties: { publicationAuthorized: { type: boolean }, externalWritesAllowed: { type: boolean }, externalWritesPerformed: { type: boolean } } }
+                  creativePackage: { type: object, properties: { creativePackageId: { type: string }, version: { type: integer }, status: { type: string }, contentHash: { type: string } } }
+                  executionPlan: { type: object, properties: { executionPlanId: { type: string }, planHash: { type: string } } }
+        '400': { description: Invalid creative payload }
+        '401': { description: Authentication denied }
+        '404': { description: Plan or campaign not found }
+        '409': { description: Current plan changed }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/latest:
+    get:
+      operationId: getLatestCreativePackage
+      summary: Read the latest Creative Package version and hash
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Latest Creative Package
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  creativePackageId: { type: string }
+                  version: { type: integer }
+                  status: { type: string }
+                  contentHash: { type: string }
+        '401': { description: Authentication denied }
+        '404': { description: Creative Package not found }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/{version}/approve:
+    post:
+      operationId: approveCreativePackage
+      summary: Approve the exact reviewed Creative Package version
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contentHash]
+              properties:
+                contentHash: { type: string }
+      responses:
+        '201':
+          description: Creative Package approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  creativePackage: { type: object, properties: { version: { type: integer }, status: { type: string }, contentHash: { type: string } } }
+                  executionPlan: { type: object, properties: { executionPlanId: { type: string }, planHash: { type: string } } }
+        '400': { description: Invalid request }
+        '401': { description: Authentication denied }
+        '409': { description: Creative version or hash is stale }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/approvals:
+    post:
+      operationId: requestExecutionPlanApproval
+      summary: Request approval for the exact current execution plan
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: executionPlanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Plan approval requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approval: { type: object, properties: { approvalId: { type: string }, status: { type: string }, approvedPlanHash: { type: string } } }
+                  boundaries: { type: object, properties: { approvalIsExecutionAuthorization: { type: boolean }, externalWritesAllowed: { type: boolean }, externalWritesPerformed: { type: boolean } } }
+        '401': { description: Authentication denied }
+        '404': { description: Execution plan not found }
+        '409': { description: Plan stale }
+
+  /operator/tenants/{tenantId}/approvals/{approvalId}:
+    get:
+      operationId: getExecutionPlanApproval
+      summary: Read the current plan approval state
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current approval state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approvalId: { type: string }
+                  status: { type: string }
+                  approvedPlanHash: { type: string }
+                  expiresAt: { type: string }
+        '401': { description: Authentication denied }
+        '404': { description: Approval not found }
+
+  /operator/tenants/{tenantId}/approvals/{approvalId}/{decision}:
+    post:
+      operationId: decideExecutionPlanApproval
+      summary: Record explicit human decision on plan approval
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: decision
+          in: path
+          required: true
+          schema: { type: string, enum: [approve, reject, revoke] }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '201':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approval: { type: object, properties: { approvalId: { type: string }, status: { type: string }, approvedPlanHash: { type: string } } }
+                  boundaries: { type: object, properties: { approvalIsExecutionAuthorization: { type: boolean }, externalWritesAllowed: { type: boolean }, externalWritesPerformed: { type: boolean } } }
+        '400': { description: Invalid decision }
+        '401': { description: Authentication denied }
+        '404': { description: Approval not found }
+        '409': { description: Approval no longer valid }
+
+components:
+  schemas: {}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

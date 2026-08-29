@@ -19,6 +19,8 @@ import { OperatorMetaController } from './operator-meta.controller';
 import { ReadinessModule } from '../readiness/readiness.module';
 import { CapabilityRegistryModule } from '../capability-registry/capability-registry.module';
 import { MetaExecutionModule } from '../meta-execution/meta-execution.module';
+import { CampaignPackageModule } from '../campaign-package/campaign-package.module';
+import { OperatorCampaignPackageController } from './operator-campaign-package.controller';
 
 @Module({
   imports: [
@@ -39,8 +41,13 @@ import { MetaExecutionModule } from '../meta-execution/meta-execution.module';
     ReadinessModule,
     CapabilityRegistryModule,
     MetaExecutionModule,
+    CampaignPackageModule,
   ],
-  controllers: [OperatorAccessController, OperatorMetaController],
+  controllers: [
+    OperatorAccessController,
+    OperatorMetaController,
+    OperatorCampaignPackageController,
+  ],
   providers: [OperatorAccessService],
 })
 export class OperatorAccessModule {}

@@ -1,0 +1,54 @@
+{
+  "package_id": "11111111-1111-4111-8111-111111111111",
+  "package_version": 1,
+  "created_at": "2026-08-26T21:30:00.000Z",
+  "source": "contexto_ads",
+  "client_id": "example-client",
+  "business_name": "Negócio Exemplo",
+  "business_description": "Negócio de exemplo usado somente para validar o contrato de integração.",
+  "offer_name": "Oferta Exemplo",
+  "offer_description": "Oferta de exemplo para geração de contatos.",
+  "offer_type": "lead_generation",
+  "campaign_objective": "LEADS",
+  "conversion_destination": "WHATSAPP",
+  "campaign_goal_description": "Gerar contatos qualificados pelo WhatsApp.",
+  "audience_description": "Público de exemplo definido pela estratégia.",
+  "locations": [
+    {
+      "city": "Campina Grande",
+      "state": "PB",
+      "country": "BR",
+      "radius_km": 40,
+      "include": true
+    }
+  ],
+  "budget_type": "DAILY",
+  "budget_amount": 10,
+  "currency": "BRL",
+  "duration_days": 7,
+  "ads": [
+    {
+      "ad_reference": "AD_01",
+      "primary_text": "Texto de exemplo aprovado para validar o handoff.",
+      "headline": "Oferta Exemplo",
+      "cta": "WHATSAPP_MESSAGE",
+      "initial_message": "Olá! Quero saber mais sobre a oferta.",
+      "media_id": "MEDIA_01"
+    }
+  ],
+  "media": [
+    {
+      "media_id": "MEDIA_01",
+      "media_type": "image",
+      "source": "approved_asset",
+      "file_reference": "asset://example/media-01",
+      "checksum": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mime_type": "image/jpeg",
+      "width": 1080,
+      "height": 1350
+    }
+  ],
+  "strategy_status": "COMPLETE",
+  "handoff_status": "READY_FOR_GENERATOR",
+  "meta_connection_id": "33333333-3333-4333-8333-333333333333"
+}

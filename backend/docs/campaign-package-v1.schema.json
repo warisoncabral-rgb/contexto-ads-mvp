@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contexto-ads.local/schemas/campaign-package-v1.schema.json",
+  "title": "Campaign Package V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "package_id", "package_version", "created_at", "source",
+    "client_id", "business_name", "business_description",
+    "offer_name", "offer_description", "offer_type",
+    "campaign_objective", "conversion_destination", "campaign_goal_description",
+    "audience_description", "locations",
+    "budget_type", "budget_amount", "currency",
+    "ads", "media", "strategy_status", "handoff_status", "meta_connection_id"
+  ],
+  "properties": {
+    "package_id": { "type": "string", "format": "uuid" },
+    "package_version": { "type": "integer", "minimum": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "source": { "const": "contexto_ads" },
+    "client_id": { "type": "string", "minLength": 1 },
+    "business_name": { "type": "string", "minLength": 1 },
+    "business_description": { "type": "string", "minLength": 1 },
+    "offer_name": { "type": "string", "minLength": 1 },
+    "offer_description": { "type": "string", "minLength": 1 },
+    "offer_type": { "enum": ["product", "service", "catalog", "promotion", "lead_generation"] },
+    "commercial_conditions": { "type": ["object", "string"] },
+    "campaign_objective": { "const": "LEADS" },
+    "conversion_destination": { "const": "WHATSAPP" },
+    "campaign_goal_description": { "type": "string", "minLength": 1 },
+    "audience_description": { "type": "string", "minLength": 1 },
+    "locations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["city", "country"],
+        "properties": {
+          "city": { "type": "string", "minLength": 1 },
+          "state": { "type": "string" },
+          "country": { "type": "string", "minLength": 1 },
+          "radius_km": { "type": "number", "exclusiveMinimum": 0 },
+          "include": { "type": "boolean" }
+        }
+      }
+    },
+    "age_min": { "type": "integer", "minimum": 18, "maximum": 65 },
+    "age_max": { "type": "integer", "minimum": 18, "maximum": 65 },
+    "gender": { "enum": ["all", "male", "female"] },
+    "targeting_notes": { "type": ["object", "string"] },
+    "budget_type": { "enum": ["DAILY", "LIFETIME"] },
+    "budget_amount": { "type": "number", "exclusiveMinimum": 0 },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "duration_days": { "type": "integer", "minimum": 1 },
+    "start_date": { "type": "string", "format": "date" },
+    "end_date": { "type": "string", "format": "date" },
+    "ads": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ad_reference", "primary_text", "headline", "cta", "initial_message", "media_id"],
+        "properties": {
+          "ad_reference": { "type": "string", "minLength": 1 },
+          "primary_text": { "type": "string", "minLength": 1 },
+          "headline": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "cta": { "const": "WHATSAPP_MESSAGE" },
+          "initial_message": { "type": "string", "minLength": 1 },
+          "media_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "media": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["media_id", "media_type", "source", "file_reference", "checksum", "mime_type", "width", "height"],
+        "properties": {
+          "media_id": { "type": "string", "minLength": 1 },
+          "media_type": { "const": "image" },
+          "source": { "type": "string", "minLength": 1 },
+          "file_reference": { "type": "string", "minLength": 1 },
+          "checksum": { "type": "string", "pattern": "^(sha256:)?[a-fA-F0-9]{64}$" },
+          "mime_type": { "enum": ["image/jpeg", "image/png"] },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "constraints": { "type": ["object", "string"] },
+    "strategy_notes": { "type": ["object", "string"] },
+    "strategy_status": { "const": "COMPLETE" },
+    "handoff_status": { "const": "READY_FOR_GENERATOR" },
+    "ad_account_id": { "type": "string" },
+    "facebook_page_id": { "type": "string" },
+    "instagram_account_id": { "type": "string" },
+    "whatsapp_asset_id": { "type": "string" },
+    "meta_connection_id": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "budget_type": { "const": "DAILY" } }, "required": ["budget_type"] },
+      "then": { "required": ["duration_days"] }
+    }
+  ]
+}
