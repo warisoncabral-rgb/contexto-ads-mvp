@@ -1,0 +1,138 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Generator Action Recovery Diagnostic
+  version: 1.0.11-recovery
+  description: Authenticated no-write recovery diagnostic using package_id in a JSON request body.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/transport-ping:
+    get:
+      operationId: testGeneratorTransport
+      summary: Test public transport reachability
+      security: []
+      responses:
+        '200':
+          description: Generator domain is reachable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransportPingResponse'
+
+  /operator/action-ping:
+    get:
+      operationId: testGeneratorActionConnection
+      summary: Test authenticated Generator connectivity
+      responses:
+        '200':
+          description: Authentication and Generator connectivity are working
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthPingResponse'
+
+  /operator/campaign-packages/v1/action-status:
+    post:
+      operationId: recoverCampaignPackageStatus
+      summary: Recover Campaign Package status by request body
+      description: Read-only recovery. Performs no Meta write, publication, activation or spend operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoveryRequest'
+      responses:
+        '200':
+          description: Readable recovery envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionStatusEnvelope'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    NoWriteBoundaries:
+      type: object
+      additionalProperties: true
+      properties:
+        publication_authorized: { type: boolean }
+        external_writes_allowed: { type: boolean }
+        external_writes_performed: { type: boolean }
+        meta_write_performed: { type: boolean }
+
+    TransportPingResponse:
+      type: object
+      additionalProperties: false
+      required: [action_status, service, transport, schema_version, authenticated, boundaries]
+      properties:
+        action_status: { type: string, enum: [OK] }
+        service: { type: string }
+        transport: { type: string, enum: [reachable] }
+        schema_version: { type: string }
+        authenticated: { type: boolean, enum: [false] }
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
+
+    AuthPingResponse:
+      type: object
+      additionalProperties: false
+      required: [action_status, service, schema_version, authenticated, authorized_tenant_count, boundaries]
+      properties:
+        action_status: { type: string, enum: [OK] }
+        service: { type: string }
+        schema_version: { type: string }
+        authenticated: { type: boolean, enum: [true] }
+        authorized_tenant_count: { type: integer, minimum: 0 }
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
+
+    RecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [package_id]
+      properties:
+        package_id:
+          type: string
+          format: uuid
+
+    ErrorObject:
+      type: object
+      additionalProperties: true
+      properties:
+        code: { type: string }
+        message: { type: string }
+        statusCode: { type: integer }
+        packageId: { type: string }
+
+    ResolvedContext:
+      type: object
+      additionalProperties: true
+      properties:
+        tenant_id: { type: string, format: uuid }
+        tenant_display_name: { type: string }
+
+    ActionStatusEnvelope:
+      type: object
+      additionalProperties: true
+      required: [action_status]
+      properties:
+        action_status:
+          type: string
+          enum: [FOUND, NOT_FOUND, REJECTED]
+        http_status: { type: integer }
+        error:
+          $ref: '#/components/schemas/ErrorObject'
+        package_id: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+        next_action: { type: string }
+        resolved_context:
+          $ref: '#/components/schemas/ResolvedContext'
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'

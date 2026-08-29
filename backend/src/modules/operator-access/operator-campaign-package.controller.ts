@@ -47,18 +47,33 @@ export class OperatorCampaignPackageController {
     @Param('packageId') packageId: string,
     @Headers('authorization') authorization: string | undefined,
   ): Promise<any> {
-    try {
-      const result = await this.getStatusAutoResolved(packageId, authorization);
+    return this.statusActionEnvelope(packageId, authorization);
+  }
+
+  @Post('campaign-packages/v1/action-status')
+  @HttpCode(200)
+  async postStatusActionEnvelope(
+    @Body() body: unknown,
+    @Headers('authorization') authorization: string | undefined,
+  ): Promise<any> {
+    const packageId = this.readPackageId(body);
+    if (!packageId) {
       return {
-        action_status: 'FOUND',
-        ...result,
+        action_status: 'REJECTED',
+        http_status: 400,
+        error: {
+          code: 'package_id_required',
+          message: 'A valid package_id UUID is required',
+        },
+        boundaries: {
+          publication_authorized: false,
+          external_writes_allowed: false,
+          external_writes_performed: false,
+          meta_write_performed: false,
+        },
       };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        return this.httpEnvelope('NOT_FOUND', error);
-      }
-      return this.httpEnvelope('REJECTED', error);
     }
+    return this.statusActionEnvelope(packageId, authorization);
   }
 
   @Post('campaign-packages/v1/submit')
@@ -219,6 +234,24 @@ export class OperatorCampaignPackageController {
     return this.status.get(tenantId, packageId);
   }
 
+  private async statusActionEnvelope(
+    packageId: string,
+    authorization: string | undefined,
+  ): Promise<any> {
+    try {
+      const result = await this.getStatusAutoResolved(packageId, authorization);
+      return {
+        action_status: 'FOUND',
+        ...result,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return this.httpEnvelope('NOT_FOUND', error);
+      }
+      return this.httpEnvelope('REJECTED', error);
+    }
+  }
+
   private httpEnvelope(actionStatus: 'REJECTED' | 'NOT_FOUND', error: unknown) {
     if (!(error instanceof HttpException)) throw error;
     return {
@@ -238,6 +271,16 @@ export class OperatorCampaignPackageController {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
     const value = (body as Record<string, unknown>).business_name;
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+
+  private readPackageId(body: unknown): string | undefined {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
+    const value = (body as Record<string, unknown>).package_id;
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+      ? normalized
+      : undefined;
   }
 
   private normalizeName(value: string): string {
