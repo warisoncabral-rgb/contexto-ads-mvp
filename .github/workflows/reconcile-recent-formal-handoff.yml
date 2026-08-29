@@ -18,17 +18,22 @@ jobs:
       BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
       OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
       TENANT_ID: 22222222-2222-4222-8222-222222222222
+      GPT_PACKAGE_ID: b995d1c2-f5da-4cdd-8a8d-b87e8605ed6b
     steps:
-      - name: Read recent campaign contexts and portfolio only
+      - name: Read GPT-persisted package status and recent portfolio only
         shell: bash
         run: |
           set -euo pipefail
+          echo '--- GPT PACKAGE STATUS ---'
+          curl --max-time 60 --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaign-packages/v1/$GPT_PACKAGE_ID/status" | jq .
           echo '--- CAMPAIGN CONTEXTS ---'
           curl --max-time 60 --fail --silent --show-error \
             -H "Authorization: Bearer $OPERATOR_TOKEN" \
-            "$BASE_URL/operator/tenants/$TENANT_ID/campaign-contexts" | jq .
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaign-contexts" | jq '{tenantId, contexts: [.contexts[] | {campaignId, version, status, createdAt, offer: .facts.offer.value, budget: .facts.budget.value, geography: .facts.geography.value, durationDays: .facts.durationDays.value}]}'
           echo '--- PORTFOLIO ---'
           curl --max-time 60 --fail --silent --show-error \
             -H "Authorization: Bearer $OPERATOR_TOKEN" \
-            "$BASE_URL/operator/portfolio" | jq .
+            "$BASE_URL/operator/portfolio" | jq '{items: [.items[] | {campaignId, executionPlanId, planStatus, readinessStatus, nextAction, maximumPlannedSpendMinor, currency, updatedAt}], boundaries}'
           echo 'Read-only reconciliation complete; no Meta endpoint called.'
