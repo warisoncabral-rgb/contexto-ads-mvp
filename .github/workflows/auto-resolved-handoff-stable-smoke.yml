@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: test -n "$OPERATOR_TOKEN"
 
-      - name: Wait for stable API deployment
+      - name: Wait for stable API health
         shell: bash
         run: |
           set -euo pipefail
@@ -39,7 +39,7 @@ jobs:
           done
           exit 1
 
-      - name: Submit package with no tenant or Meta IDs
+      - name: Submit package after auto-resolved route is deployed
         shell: bash
         run: |
           set -euo pipefail
@@ -100,20 +100,33 @@ jobs:
           }
           JSON
 
-          CODE=$(curl --max-time 45 --silent --show-error -o /tmp/result.json -w '%{http_code}' \
-            -X POST "$BASE_URL/operator/campaign-packages/v1/submit" \
-            -H "Authorization: Bearer $OPERATOR_TOKEN" \
-            -H 'Content-Type: application/json' \
-            --data-binary @/tmp/package.json)
-          echo "HTTP $CODE"
+          for attempt in $(seq 1 16); do
+            CODE=$(curl --max-time 45 --silent --show-error -o /tmp/result.json -w '%{http_code}' \
+              -X POST "$BASE_URL/operator/campaign-packages/v1/submit" \
+              -H "Authorization: Bearer $OPERATOR_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --data-binary @/tmp/package.json)
+            echo "attempt $attempt: HTTP $CODE"
+            if [ "$CODE" = "201" ]; then
+              break
+            fi
+            if [ "$CODE" != "404" ]; then
+              cat /tmp/result.json
+              exit 1
+            fi
+            if [ "$attempt" = "16" ]; then
+              cat /tmp/result.json
+              exit 1
+            fi
+            sleep 15
+          done
+
           cat /tmp/result.json | jq '{package_id,campaign_id,target_binding_status,next_action,resolved_context,boundaries}'
-          test "$CODE" = "201"
           jq -e --arg t "$EXPECTED_TENANT_ID" '.resolved_context.tenant_id == $t' /tmp/result.json >/dev/null
           jq -e --arg c "$EXPECTED_CONNECTION_ID" '.resolved_context.meta_connection_id == $c' /tmp/result.json >/dev/null
           jq -e --arg a "$EXPECTED_AD_ACCOUNT_ID" '.resolved_context.ad_account_id == $a' /tmp/result.json >/dev/null
           jq -e '.target_binding_status == "BOUND"' /tmp/result.json >/dev/null
           jq -e '.boundaries.meta_write_performed == false and .boundaries.external_writes_allowed == false and .boundaries.external_writes_performed == false and .boundaries.publication_authorized == false and .boundaries.technical_target_auto_resolved == true' /tmp/result.json >/dev/null
-          echo "PACKAGE_ID=$PACKAGE_ID" >> "$GITHUB_ENV"
 
       - name: Confirm no external Meta execution
         shell: bash
