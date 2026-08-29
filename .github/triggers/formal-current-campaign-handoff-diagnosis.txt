@@ -1,0 +1,2 @@
+triggered_at=2026-08-29T19:52:00Z
+reason=reproduce-gpt-action-clientresponseerror-with-exact-approved-current-package
