@@ -1,0 +1,61 @@
+name: Real Controlled Plan Approval
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/triggers/real-controlled-plan-approval.txt
+
+permissions:
+  contents: read
+
+jobs:
+  approve-plan-stop-before-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      PACKAGE_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      APPROVAL_ID: ca8a2a18-18ce-4fb9-831d-6b739b7edeb5
+      EXPECTED_PLAN_HASH: d874c1ad0cb23735eee83f70bded6bec9c5ea3a29bf1069cc3cebe640285d0f6
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: test -n "$OPERATOR_TOKEN"
+
+      - name: Read pending approval and verify exact hash
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/approvals/$APPROVAL_ID"
+          CODE=$(curl -sS -o /tmp/before.json -w '%{http_code}' "$URL" -H "Authorization: Bearer $OPERATOR_TOKEN")
+          echo "approval before HTTP $CODE"
+          jq '{approvalId,status,approvedPlanHash,expiresAt}' /tmp/before.json
+          test "$CODE" = "200"
+          jq -e --arg h "$EXPECTED_PLAN_HASH" '.approvedPlanHash == $h and .status == "pending"' /tmp/before.json >/dev/null
+
+      - name: Record explicit human plan approval
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/approvals/$APPROVAL_ID/approve"
+          CODE=$(curl -sS -o /tmp/decision.json -w '%{http_code}' -X POST "$URL" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"reason":"Explicit user approval for the exact controlled test plan; this is not execution authorization."}')
+          echo "plan approval decision HTTP $CODE"
+          jq '{approval,boundaries}' /tmp/decision.json
+          test "$CODE" = "201"
+          jq -e --arg h "$EXPECTED_PLAN_HASH" '.approval.status == "approved" and .approval.approvedPlanHash == $h' /tmp/decision.json >/dev/null
+          jq -e '.boundaries.approvalIsExecutionAuthorization == false and .boundaries.externalWritesAllowed == false and .boundaries.externalWritesPerformed == false' /tmp/decision.json >/dev/null
+
+      - name: Verify execution gate remains separate
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaign-packages/v1/$PACKAGE_ID/status"
+          CODE=$(curl -sS -o /tmp/status.json -w '%{http_code}' "$URL" -H "Authorization: Bearer $OPERATOR_TOKEN")
+          echo "package status HTTP $CODE"
+          jq '{package_id,next_action,execution_plan,creative,plan_approval,boundaries}' /tmp/status.json
+          test "$CODE" = "200"
+          jq -e '.plan_approval.status == "approved"' /tmp/status.json >/dev/null
+          jq -e '.boundaries.publication_authorized == false and .boundaries.external_writes_allowed == false and .boundaries.external_writes_performed == false and .boundaries.plan_approval_is_execution_authorization == false' /tmp/status.json >/dev/null
+          echo "Plan approved. Hard stop preserved before every Meta execution endpoint."
