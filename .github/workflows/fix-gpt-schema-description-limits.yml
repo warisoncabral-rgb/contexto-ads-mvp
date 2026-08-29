@@ -1,0 +1,50 @@
+name: Fix GPT Schema Description Limits
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/fix-gpt-schema-description-limits.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Shorten GPT Action descriptions
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/docs/contexto-ads-generator-action.gpt.openapi.v1.0.6.yaml')
+          s = p.read_text()
+          old_submit = '''      description: >-\n        Preferred campaign handoff. The Generator authenticates the operator, resolves the\n        authorized campaign-preparation tenant and selected Meta target, injects technical IDs,\n        validates and persists the package. Performs no Meta write. IMPORTANT: create and retain\n        package_id before calling this operation. If this call ends with ClientResponseError,\n        timeout, connection error or an uncertain client-side result, DO NOT generate a new\n        package_id and DO NOT blindly resubmit. First call recoverCampaignPackageStatus with the\n        exact same package_id. Resubmit only if recovery confirms the package is not persisted,\n        and then reuse the exact same package_id, package_version and content.\n'''
+          new_submit = '''      description: >-\n        Submit and persist the package with automatic tenant/Meta target resolution and no Meta write.\n        Keep the same package_id. If the result is uncertain or times out, call\n        recoverCampaignPackageStatus before any retry; never create a new package_id for recovery.\n'''
+          old_recover = '''      description: >-\n        Read-only recovery operation designed for ClientResponseError, timeout or lost submit\n        responses. It resolves the authorized tenant internally from the authenticated operator\n        and searches for the exact package_id. Call this before any submit retry. A 200 proves the\n        package exists and returns its current internal state. A 404 means it was not found in the\n        operator's authorized campaign-preparation tenants. Performs no Meta write.\n'''
+          new_recover = '''      description: >-\n        Read-only recovery after timeout or lost submit response. Resolves the authorized tenant\n        internally and checks the exact package_id. Call before any retry. HTTP 200 means the\n        package exists; HTTP 404 means it was not found. Performs no Meta write.\n'''
+          if old_submit not in s:
+              raise SystemExit('submit description block not found')
+          if old_recover not in s:
+              raise SystemExit('recover description block not found')
+          s = s.replace(old_submit, new_submit).replace(old_recover, new_recover)
+          p.write_text(s)
+          submit_text = 'Submit and persist the package with automatic tenant/Meta target resolution and no Meta write. Keep the same package_id. If the result is uncertain or times out, call recoverCampaignPackageStatus before any retry; never create a new package_id for recovery.'
+          recover_text = 'Read-only recovery after timeout or lost submit response. Resolves the authorized tenant internally and checks the exact package_id. Call before any retry. HTTP 200 means the package exists; HTTP 404 means it was not found. Performs no Meta write.'
+          assert len(submit_text) <= 300, len(submit_text)
+          assert len(recover_text) <= 300, len(recover_text)
+          print('submit description length:', len(submit_text))
+          print('recover description length:', len(recover_text))
+          PY
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/docs/contexto-ads-generator-action.gpt.openapi.v1.0.6.yaml
+          git commit -m "fix: shorten GPT Action descriptions for editor limits"
+          git push origin main
