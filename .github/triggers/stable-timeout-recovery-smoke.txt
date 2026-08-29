@@ -1,0 +1,2 @@
+triggered_at=2026-08-29T20:23:00Z
+reason=verify-auto-resolved-package-status-recovery-after-client-timeout
