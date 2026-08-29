@@ -1,0 +1,118 @@
+name: Campaign Package Stable Safe Smoke
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/stable-package-smoke-trigger.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stable-safe-handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      META_CONNECTION_ID: 673dbb65-e187-4d80-8751-772d6e0156b3
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+
+      - name: Build unique safe Campaign Package
+        run: |
+          set -euo pipefail
+          PACKAGE_ID=$(python -c 'import uuid; print(uuid.uuid4())')
+          CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "PACKAGE_ID=$PACKAGE_ID" >> "$GITHUB_ENV"
+          cat > /tmp/package.json <<JSON
+          {
+            "package_id": "$PACKAGE_ID",
+            "package_version": 1,
+            "created_at": "$CREATED_AT",
+            "source": "contexto_ads",
+            "client_id": "stable-safe-smoke",
+            "business_name": "Contexto Ads",
+            "business_description": "Teste seguro da integração Contexto Ads para Gerador.",
+            "offer_name": "Contexto Ads - teste seguro",
+            "offer_description": "Pacote técnico para validar o handoff sem publicação, ativação ou gasto.",
+            "offer_type": "service",
+            "campaign_objective": "LEADS",
+            "conversion_destination": "WHATSAPP",
+            "campaign_goal_description": "Validar o handoff Leads para WhatsApp sem efeito externo.",
+            "audience_description": "Pequenos empreendedores brasileiros.",
+            "locations": [{"city":"Campina Grande","state":"PB","country":"BR","radius_km":40,"include":true}],
+            "age_min": 18,
+            "age_max": 65,
+            "gender": "all",
+            "budget_type": "DAILY",
+            "budget_amount": 10,
+            "currency": "BRL",
+            "duration_days": 7,
+            "ads": [{"ad_reference":"AD_01","primary_text":"Teste seguro do Contexto Ads para o Gerador.","headline":"Teste seguro","cta":"WHATSAPP_MESSAGE","initial_message":"Olá! Este é um teste seguro de integração.","media_id":"MEDIA_01"}],
+            "media": [{"media_id":"MEDIA_01","media_type":"image","source":"approved_asset","file_reference":"asset://stable-safe-smoke/media-01","checksum":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","mime_type":"image/jpeg","width":1080,"height":1350}],
+            "constraints": {"safe_test": true, "no_meta_write": true},
+            "strategy_status": "COMPLETE",
+            "handoff_status": "READY_FOR_GENERATOR",
+            "meta_connection_id": "$META_CONNECTION_ID"
+          }
+          JSON
+
+      - name: Wait for stable deployment and submit safe package
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaign-packages/v1/submit"
+          for attempt in $(seq 1 30); do
+            CODE=$(curl -sS -o /tmp/submit.json -w '%{http_code}' \
+              -X POST "$URL" \
+              -H "Authorization: Bearer $OPERATOR_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --data-binary @/tmp/package.json || true)
+            echo "submit attempt $attempt -> HTTP $CODE"
+            if [ "$CODE" = "201" ] || [ "$CODE" = "200" ]; then
+              cat /tmp/submit.json | jq '{package_id,campaign_id,execution_plan_id,target_binding_status,next_action,boundaries}'
+              exit 0
+            fi
+            if [ "$CODE" = "401" ] || [ "$CODE" = "403" ]; then
+              cat /tmp/submit.json
+              echo "Authentication failed; not retrying."
+              exit 1
+            fi
+            if [ "$CODE" = "400" ] || [ "$CODE" = "409" ]; then
+              cat /tmp/submit.json
+              echo "Request reached the route but was rejected; not a deployment 404."
+              exit 1
+            fi
+            sleep 10
+          done
+          cat /tmp/submit.json || true
+          echo "Stable Campaign Package route did not become available in time."
+          exit 1
+
+      - name: Read persisted package status
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaign-packages/v1/$PACKAGE_ID/status"
+          CODE=$(curl -sS -o /tmp/status.json -w '%{http_code}' \
+            "$URL" -H "Authorization: Bearer $OPERATOR_TOKEN")
+          echo "status -> HTTP $CODE"
+          cat /tmp/status.json | jq '{package_id,campaign_id,next_action,execution_plan,creative,plan_approval,boundaries}'
+          test "$CODE" = "200"
+          jq -e --arg id "$PACKAGE_ID" '.package_id == $id' /tmp/status.json >/dev/null
+
+      - name: Enforce no-external-effect boundary
+        run: |
+          set -euo pipefail
+          if grep -Eqi '"(externalWritesPerformed|meta_write_performed|delivery_authorized|spend_authorized)"[[:space:]]*:[[:space:]]*true' /tmp/submit.json /tmp/status.json; then
+            echo "Unsafe external-effect flag detected."
+            exit 1
+          fi
+          echo "Safe handoff persisted. No Meta execution endpoint was called by this workflow."
+          echo "Manifest, execution authorization, preflight, kill-switch mutation and execute-paused are out of scope."
