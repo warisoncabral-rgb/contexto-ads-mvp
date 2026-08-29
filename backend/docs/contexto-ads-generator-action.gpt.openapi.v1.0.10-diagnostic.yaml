@@ -1,0 +1,103 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Generator Action Diagnostic
+  version: 1.0.10-diagnostic
+  description: Separates public transport reachability from authenticated Action connectivity.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/transport-ping:
+    get:
+      operationId: testGeneratorTransport
+      summary: Test public transport reachability
+      description: Public no-write ping. Tests only whether the GPT Action can reach the Generator domain.
+      security: []
+      responses:
+        '200':
+          description: Generator domain is reachable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransportPingResponse'
+  /operator/action-ping:
+    get:
+      operationId: testGeneratorActionConnection
+      summary: Test authenticated Generator connectivity
+      description: Authenticated no-write ping. Tests the Bearer credential after transport is confirmed.
+      responses:
+        '200':
+          description: Authentication and Generator connectivity are working
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthPingResponse'
+        '401':
+          description: Authentication denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Boundaries:
+      type: object
+      additionalProperties: false
+      required:
+        - publication_authorized
+        - external_writes_allowed
+        - external_writes_performed
+        - meta_write_performed
+      properties:
+        publication_authorized: { type: boolean }
+        external_writes_allowed: { type: boolean }
+        external_writes_performed: { type: boolean }
+        meta_write_performed: { type: boolean }
+    TransportPingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - action_status
+        - service
+        - transport
+        - schema_version
+        - authenticated
+        - boundaries
+      properties:
+        action_status: { type: string, enum: [OK] }
+        service: { type: string }
+        transport: { type: string, enum: [reachable] }
+        schema_version: { type: string }
+        authenticated: { type: boolean, enum: [false] }
+        boundaries:
+          $ref: '#/components/schemas/Boundaries'
+    AuthPingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - action_status
+        - service
+        - schema_version
+        - authenticated
+        - authorized_tenant_count
+        - boundaries
+      properties:
+        action_status: { type: string, enum: [OK] }
+        service: { type: string }
+        schema_version: { type: string }
+        authenticated: { type: boolean, enum: [true] }
+        authorized_tenant_count: { type: integer, minimum: 0 }
+        boundaries:
+          $ref: '#/components/schemas/Boundaries'
+    ErrorResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        statusCode: { type: integer }
+        message: { type: string }
+        error: { type: string }
