@@ -1,0 +1,51 @@
+name: Stable Action Transport Auth Isolation
+
+on:
+  push:
+    paths:
+      - '.github/triggers/stable-action-transport-auth-isolation.txt'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: test -n "$OPERATOR_TOKEN"
+
+      - name: Wait for public transport ping
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            CODE=$(curl --max-time 45 --silent --show-error -D /tmp/public.headers -o /tmp/public.json -w '%{http_code}' \
+              "$BASE_URL/operator/transport-ping" || true)
+            echo "public ping attempt $attempt: HTTP $CODE"
+            if [ "$CODE" = "200" ]; then
+              cat /tmp/public.json | jq .
+              grep -qi '^content-type: application/json' /tmp/public.headers
+              jq -e '.action_status == "OK" and .transport == "reachable" and .authenticated == false and .boundaries.meta_write_performed == false' /tmp/public.json >/dev/null
+              break
+            fi
+            if [ "$attempt" = "24" ]; then exit 1; fi
+            sleep 15
+          done
+
+      - name: Verify authenticated Action ping
+        shell: bash
+        run: |
+          set -euo pipefail
+          CODE=$(curl --max-time 45 --silent --show-error -D /tmp/auth.headers -o /tmp/auth.json -w '%{http_code}' \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/action-ping")
+          echo "authenticated ping HTTP $CODE"
+          cat /tmp/auth.json | jq .
+          test "$CODE" = "200"
+          grep -qi '^content-type: application/json' /tmp/auth.headers
+          jq -e '.action_status == "OK" and .authenticated == true and .authorized_tenant_count >= 1 and .boundaries.meta_write_performed == false' /tmp/auth.json >/dev/null
+
+      - name: Confirm no Meta execution
+        run: echo 'Transport/auth ping only; no campaign submit, Meta execution, publication, activation or spend endpoint called.'
