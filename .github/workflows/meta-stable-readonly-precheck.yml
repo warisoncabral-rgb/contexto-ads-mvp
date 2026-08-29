@@ -1,0 +1,110 @@
+name: Meta Stable Read-Only Precheck
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Stable API base URL including /v1
+        required: true
+        default: https://contexto-ads-validation-api.onrender.com/v1
+      tenant_id:
+        description: Tenant UUID to inspect
+        required: true
+        default: 22222222-2222-4222-8222-222222222222
+  push:
+    branches:
+      - main
+    paths:
+      - .github/prechecks/meta-stable.trigger
+
+permissions:
+  contents: read
+
+jobs:
+  readonly-precheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: ${{ inputs.base_url || 'https://contexto-ads-validation-api.onrender.com/v1' }}
+      TENANT_ID: ${{ inputs.tenant_id || '22222222-2222-4222-8222-222222222222' }}
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$OPERATOR_TOKEN" ]; then
+            echo "Repository secret CONTEXT_ADS_STABLE_OPERATOR_TOKEN is required."
+            exit 2
+          fi
+
+      - name: Health check
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$BASE_URL/health" | tee /tmp/health.json
+
+      - name: Read tenants and portfolio
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants" | tee /tmp/tenants.json
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/portfolio" | tee /tmp/portfolio.json
+
+      - name: Read selected execution target
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/meta/selected-execution-target" \
+            | tee /tmp/target.json
+          node <<'NODE'
+          const fs = require('fs');
+          const raw = fs.readFileSync('/tmp/target.json','utf8');
+          let data = {};
+          try { data = JSON.parse(raw); } catch {}
+          const connectionId = data.connectionId ?? data.connection_id ?? data.connection?.connectionId ?? data.connection?.connection_id ?? '';
+          const adAccountId = data.adAccountId ?? data.ad_account_id ?? data.adAccount?.externalId ?? data.ad_account?.external_id ?? '';
+          fs.appendFileSync(process.env.GITHUB_ENV, `CONNECTION_ID=${connectionId}\nAD_ACCOUNT_ID=${adAccountId}\n`);
+          console.log(JSON.stringify({ selected_target_present: Boolean(connectionId && adAccountId), connection_id: connectionId || null, ad_account_id: adAccountId || null }, null, 2));
+          NODE
+
+      - name: Require selected execution target
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CONNECTION_ID:-}" ] || [ -z "${AD_ACCOUNT_ID:-}" ]; then
+            echo "No selected Meta execution target is available for this tenant."
+            exit 3
+          fi
+
+      - name: Read discovered assets and validate execution capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/meta/connections/$CONNECTION_ID/assets" \
+            | tee /tmp/assets.json
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/meta/connections/$CONNECTION_ID/capabilities/validate-execution" \
+            | tee /tmp/capabilities.json
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/meta/connections/$CONNECTION_ID/smoke-test" \
+            | tee /tmp/smoke.json
+
+      - name: Confirm no-write boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Read-only Meta precheck completed."
+          echo "No manifest, execution authorization, preflight, kill-switch mutation, meta-write protocol, or execute-paused endpoint was called."

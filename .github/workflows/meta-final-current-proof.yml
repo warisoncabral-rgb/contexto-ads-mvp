@@ -1,0 +1,46 @@
+name: Meta Final Current Proof
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/triggers/meta-final-current-proof.txt
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: b8f16916-cf4c-4e80-894e-dcc56fbd9564
+      EXECUTION_PLAN_ID: 90e39a0f-3cbc-4405-80c0-31045af22550
+      EXPECTED_PLAN_HASH: 3b2e27a82f9507c2c148f876287a28121ebec327d65714a1b387bf27c0ef893e
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Read current final proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $OPERATOR_TOKEN")
+          curl --fail --silent --show-error "${auth[@]}" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/plans/$EXECUTION_PLAN_ID/execution-manifests/latest" | tee /tmp/manifest.json
+          MANIFEST_ID=$(node -e "const x=require('/tmp/manifest.json'); console.log(x.executionManifestId||x.execution_manifest_id||'')")
+          test -n "$MANIFEST_ID"
+          curl --fail --silent --show-error "${auth[@]}" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/meta-write-validation-protocols/latest" | tee /tmp/protocol.json
+          curl --fail --silent --show-error "${auth[@]}" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/kill-switch/effective" | tee /tmp/kill.json
+          node <<'NODE'
+          const manifest=require('/tmp/manifest.json');
+          const protocol=require('/tmp/protocol.json');
+          const kill=require('/tmp/kill.json');
+          const expected=process.env.EXPECTED_PLAN_HASH;
+          const mh=manifest.planHash||manifest.plan_hash||manifest.executionPlanHash||manifest.execution_plan_hash;
+          if(mh && mh!==expected) throw new Error(`Manifest plan hash mismatch: ${mh}`);
+          console.log('\n--- FINAL CURRENT PROOF ---');
+          console.log(JSON.stringify({manifest,protocol,kill},null,2));
+          NODE
