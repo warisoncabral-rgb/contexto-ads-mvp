@@ -1,0 +1,576 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Generator Integration V1
+  version: 1.0.9
+  description: >-
+    GPT-compatible no-write campaign handoff with explicit JSON response schemas, authenticated
+    connectivity ping, automatic tenant/Meta target resolution and readable action envelopes.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/action-ping:
+    get:
+      operationId: testGeneratorActionConnection
+      summary: Test authenticated Generator Action connectivity
+      description: >-
+        Small read-only authenticated ping. Use to verify the Action transport before campaign
+        handoff. Performs no Meta write, publication, activation or spend operation.
+      responses:
+        '200':
+          description: Authenticated Generator connection is working
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionPingResponse'
+        '401':
+          description: Authentication denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+
+  /operator/campaign-packages/v1/action-submit:
+    post:
+      operationId: submitCampaignPackage
+      summary: Submit a completed Campaign Package V1
+      description: >-
+        Action-safe handoff. Returns action_status ACCEPTED or REJECTED. Keep the same package_id.
+        On uncertain results, recover before any retry. Performs no Meta write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignPackageAutoV1'
+      responses:
+        '200':
+          description: Readable accepted or rejected handoff envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionSubmitEnvelope'
+
+  /operator/campaign-packages/v1/{packageId}/action-status:
+    get:
+      operationId: recoverCampaignPackageStatus
+      summary: Recover Campaign Package status
+      description: >-
+        Action-safe read-only recovery. Returns action_status FOUND, NOT_FOUND or REJECTED.
+        Call before any submit retry. Performs no Meta write.
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Readable recovery envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionStatusEnvelope'
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/creative-packages:
+    post:
+      operationId: submitReviewedCreativePackage
+      summary: Submit reviewed creative content
+      description: Persists reviewed creative content only; performs no Meta write.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: executionPlanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [creative]
+              properties:
+                creative:
+                  $ref: '#/components/schemas/CreativePackageInputV1'
+      responses:
+        '201':
+          description: Creative version created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        '400': { description: Invalid payload }
+        '401': { description: Authentication denied }
+        '404': { description: Plan not found }
+        '409': { description: Conflict }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/latest:
+    get:
+      operationId: getLatestCreativePackage
+      summary: Get latest creative package
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Latest creative package
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        '401': { description: Authentication denied }
+        '404': { description: Creative package not found }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/{version}/approve:
+    post:
+      operationId: approveCreativePackage
+      summary: Approve exact creative version and content hash
+      description: Creative approval is not plan approval or execution authorization.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [contentHash]
+              properties:
+                contentHash:
+                  type: string
+                  pattern: '^[0-9a-f]{64}$'
+      responses:
+        '201':
+          description: Creative approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        '400': { description: Invalid request }
+        '401': { description: Authentication denied }
+        '404': { description: Creative package not found }
+        '409': { description: Stale creative or invalid transition }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/approvals:
+    post:
+      operationId: requestExecutionPlanApproval
+      summary: Request approval for the exact current execution plan
+      description: Requesting plan approval performs no Meta write and is not execution authorization.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: executionPlanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Approval requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        '401': { description: Authentication denied }
+        '404': { description: Plan not found }
+        '409': { description: Plan stale or not approvable }
+
+  /operator/tenants/{tenantId}/approvals/{approvalId}:
+    get:
+      operationId: getExecutionPlanApproval
+      summary: Get current execution plan approval state
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Approval state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        '401': { description: Authentication denied }
+        '404': { description: Approval not found }
+
+  /operator/tenants/{tenantId}/approvals/{approvalId}/{decision}:
+    post:
+      operationId: decideExecutionPlanApproval
+      summary: Record explicit plan approval decision
+      description: >-
+        Approve, reject or revoke the exact plan approval. Approval is not execution authorization
+        and this operation performs no Meta write.
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: decision
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [approve, reject, revoke]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        '201':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        '400': { description: Invalid decision }
+        '401': { description: Authentication denied }
+        '404': { description: Approval not found }
+        '409': { description: Invalid transition }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    NoWriteBoundaries:
+      type: object
+      additionalProperties: true
+      properties:
+        publication_authorized: { type: boolean }
+        external_writes_allowed: { type: boolean }
+        external_writes_performed: { type: boolean }
+        meta_write_performed: { type: boolean }
+
+    GenericErrorObject:
+      type: object
+      additionalProperties: true
+      properties:
+        code: { type: string }
+        message: { type: string }
+        statusCode: { type: integer }
+        packageId: { type: string }
+
+    ResolvedContextResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        tenant_id: { type: string, format: uuid }
+        tenant_display_name: { type: string }
+        meta_connection_id: { type: string, format: uuid }
+        ad_account_id: { type: string }
+        facebook_page_id: { type: string }
+        instagram_account_id: { type: string }
+        whatsapp_asset_id: { type: string }
+
+    ActionPingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - action_status
+        - service
+        - schema_version
+        - authenticated
+        - authorized_tenant_count
+        - boundaries
+      properties:
+        action_status: { type: string, enum: [OK] }
+        service: { type: string }
+        schema_version: { type: string }
+        authenticated: { type: boolean }
+        authorized_tenant_count: { type: integer, minimum: 0 }
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
+
+    ActionSubmitEnvelope:
+      type: object
+      additionalProperties: true
+      required: [action_status]
+      properties:
+        action_status: { type: string, enum: [ACCEPTED, REJECTED] }
+        http_status: { type: integer }
+        error:
+          $ref: '#/components/schemas/GenericErrorObject'
+        package_id: { type: string, format: uuid }
+        package_version: { type: integer }
+        package_hash: { type: string }
+        campaign_id: { type: string, format: uuid }
+        creative_package_id: { type: string, format: uuid }
+        execution_plan_id: { type: string, format: uuid }
+        next_action: { type: string }
+        resolved_context:
+          $ref: '#/components/schemas/ResolvedContextResponse'
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
+
+    ActionStatusEnvelope:
+      type: object
+      additionalProperties: true
+      required: [action_status]
+      properties:
+        action_status: { type: string, enum: [FOUND, NOT_FOUND, REJECTED] }
+        http_status: { type: integer }
+        error:
+          $ref: '#/components/schemas/GenericErrorObject'
+        package_id: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+        next_action: { type: string }
+        resolved_context:
+          $ref: '#/components/schemas/ResolvedContextResponse'
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
+
+    GenericObjectResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        id: { type: string }
+        status: { type: string }
+        action_status: { type: string }
+        message: { type: string }
+        code: { type: string }
+        tenantId: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        campaignId: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+        executionPlanId: { type: string, format: uuid }
+        execution_plan_id: { type: string, format: uuid }
+        approvalId: { type: string, format: uuid }
+        approval_id: { type: string, format: uuid }
+        creativePackageId: { type: string, format: uuid }
+        creative_package_id: { type: string, format: uuid }
+        version: { type: integer }
+        contentHash: { type: string }
+        content_hash: { type: string }
+        planHash: { type: string }
+        plan_hash: { type: string }
+        next_action: { type: string }
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
+
+    CampaignPackageAutoV1:
+      type: object
+      additionalProperties: false
+      required:
+        - package_id
+        - package_version
+        - created_at
+        - source
+        - client_id
+        - business_name
+        - business_description
+        - offer_name
+        - offer_description
+        - offer_type
+        - campaign_objective
+        - conversion_destination
+        - campaign_goal_description
+        - audience_description
+        - locations
+        - budget_type
+        - budget_amount
+        - currency
+        - duration_days
+        - ads
+        - media
+        - strategy_status
+        - handoff_status
+      properties:
+        package_id: { type: string, format: uuid }
+        package_version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        source: { type: string, enum: [contexto_ads] }
+        client_id: { type: string, minLength: 1 }
+        business_name: { type: string, minLength: 1 }
+        business_description: { type: string, minLength: 1 }
+        offer_name: { type: string, minLength: 1 }
+        offer_description: { type: string, minLength: 1 }
+        offer_type:
+          type: string
+          enum: [product, service, catalog, promotion, lead_generation]
+        commercial_conditions:
+          type: object
+          additionalProperties: true
+        campaign_objective: { type: string, enum: [LEADS] }
+        conversion_destination: { type: string, enum: [WHATSAPP] }
+        campaign_goal_description: { type: string, minLength: 1 }
+        audience_description: { type: string, minLength: 1 }
+        locations:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [city, country]
+            properties:
+              city: { type: string, minLength: 1 }
+              state: { type: string }
+              country: { type: string, minLength: 1 }
+              radius_km: { type: number, exclusiveMinimum: 0 }
+              include: { type: boolean }
+        age_min: { type: integer, minimum: 18, maximum: 65 }
+        age_max: { type: integer, minimum: 18, maximum: 65 }
+        gender: { type: string, enum: [all, male, female] }
+        targeting_notes:
+          type: object
+          additionalProperties: true
+        budget_type: { type: string, enum: [DAILY, LIFETIME] }
+        budget_amount: { type: number, exclusiveMinimum: 0 }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        duration_days: { type: integer, minimum: 1, maximum: 365 }
+        start_date: { type: string }
+        end_date: { type: string }
+        ads:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: false
+            required: [ad_reference, primary_text, headline, cta, initial_message, media_id]
+            properties:
+              ad_reference: { type: string, minLength: 1 }
+              primary_text: { type: string, minLength: 1 }
+              headline: { type: string, minLength: 1 }
+              description: { type: string }
+              cta: { type: string, enum: [WHATSAPP_MESSAGE] }
+              initial_message: { type: string, minLength: 1 }
+              media_id: { type: string, minLength: 1 }
+        media:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [media_id, media_type, source, file_reference, checksum, mime_type, width, height]
+            properties:
+              media_id: { type: string, minLength: 1 }
+              media_type: { type: string, enum: [image] }
+              source: { type: string, minLength: 1 }
+              file_reference: { type: string, minLength: 1 }
+              checksum: { type: string, pattern: '^(sha256:)?[0-9a-fA-F]{64}$' }
+              mime_type: { type: string, enum: [image/jpeg, image/png] }
+              width: { type: integer, minimum: 1 }
+              height: { type: integer, minimum: 1 }
+        constraints:
+          type: object
+          additionalProperties: true
+        strategy_notes:
+          type: object
+          additionalProperties: true
+        strategy_status: { type: string, enum: [COMPLETE] }
+        handoff_status: { type: string, enum: [READY_FOR_GENERATOR] }
+        meta_connection_id: { type: string, format: uuid }
+        ad_account_id: { type: string }
+        facebook_page_id: { type: string }
+        instagram_account_id: { type: string }
+        whatsapp_asset_id: { type: string }
+
+    CreativePackageInputV1:
+      type: object
+      additionalProperties: false
+      required: [copies, claims, assets, reviewChecklist]
+      properties:
+        copies:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [copyId, primaryText, headline, whatsappMessage, callToAction]
+            properties:
+              copyId: { type: string }
+              primaryText: { type: string }
+              headline: { type: string }
+              description: { type: string }
+              whatsappMessage: { type: string }
+              callToAction: { type: string, enum: [SEND_WHATSAPP_MESSAGE] }
+        claims:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [claimId, text, sourceRefs]
+            properties:
+              claimId: { type: string }
+              text: { type: string }
+              sourceRefs:
+                type: array
+                items: { type: string }
+        assets:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [assetId, storageRef, sha256, mimeType, width, height]
+            properties:
+              assetId: { type: string }
+              storageRef: { type: string }
+              sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+              mimeType: { type: string, enum: [image/jpeg, image/png] }
+              width: { type: integer, minimum: 1 }
+              height: { type: integer, minimum: 1 }
+        reviewChecklist:
+          type: object
+          additionalProperties: false
+          required:
+            - claimsVerifiedAgainstSources
+            - visualFidelityReviewed
+            - safeAreaReviewed
+            - requiredFieldsReviewed
+            - automaticEnhancementsReviewed
+          properties:
+            claimsVerifiedAgainstSources: { type: boolean }
+            visualFidelityReviewed: { type: boolean }
+            safeAreaReviewed: { type: boolean }
+            requiredFieldsReviewed: { type: boolean }
+            automaticEnhancementsReviewed: { type: boolean }
