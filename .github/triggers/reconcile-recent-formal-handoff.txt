@@ -1,2 +1,2 @@
-triggered_at=2026-08-29T20:12:00Z
-reason=check-whether-gpt-action-timeouts-persisted-packages
+triggered_at=2026-08-29T20:15:00Z
+reason=inspect-gpt-persisted-current-package-status-after-client-timeout
