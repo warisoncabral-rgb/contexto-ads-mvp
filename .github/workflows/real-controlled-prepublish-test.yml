@@ -1,0 +1,89 @@
+name: Real Controlled Prepublish Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/triggers/real-controlled-prepublish.trigger
+
+permissions:
+  contents: read
+
+jobs:
+  prepublish-safe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      META_CONNECTION_ID: 673dbb65-e187-4d80-8751-772d6e0156b3
+      AD_ACCOUNT_ID: act_929361834160386
+      FACEBOOK_PAGE_ID: '100457068314696'
+      WHATSAPP_ASSET_ID: '558386553047'
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: test -n "$OPERATOR_TOKEN"
+      - name: Build real controlled package
+        run: |
+          set -euo pipefail
+          PACKAGE_ID=$(python -c 'import uuid; print(uuid.uuid4())')
+          CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "PACKAGE_ID=$PACKAGE_ID" >> "$GITHUB_ENV"
+          cat > /tmp/package.json <<JSON
+          {
+            "package_id": "$PACKAGE_ID",
+            "package_version": 1,
+            "created_at": "$CREATED_AT",
+            "source": "contexto_ads",
+            "client_id": "rosavip-real-controlled-prepublish",
+            "business_name": "Rosa VIP Calçados",
+            "business_description": "Negócio de calçados e acessórios com atendimento e vendas pelo WhatsApp.",
+            "offer_name": "Rosa VIP Calçados - teste real controlado",
+            "offer_description": "Teste real de preparação de campanha Leads para WhatsApp, sem publicação, ativação ou gasto.",
+            "offer_type": "lead_generation",
+            "campaign_objective": "LEADS",
+            "conversion_destination": "WHATSAPP",
+            "campaign_goal_description": "Preparar uma campanha real de Leads para WhatsApp até o gate anterior à execução externa.",
+            "audience_description": "Pessoas com potencial interesse em calçados e acessórios femininos na região de Campina Grande.",
+            "locations": [{"city":"Campina Grande","state":"PB","country":"BR","radius_km":40,"include":true}],
+            "age_min": 18,
+            "age_max": 65,
+            "gender": "all",
+            "budget_type": "DAILY",
+            "budget_amount": 10,
+            "currency": "BRL",
+            "duration_days": 7,
+            "ads": [{"ad_reference":"AD_REAL_01","primary_text":"Conheça a Rosa VIP Calçados e fale com a gente pelo WhatsApp para saber mais sobre os produtos disponíveis.","headline":"Fale com a Rosa VIP pelo WhatsApp","description":"Atendimento direto pelo WhatsApp.","cta":"WHATSAPP_MESSAGE","initial_message":"Olá! Quero saber mais sobre os produtos da Rosa VIP.","media_id":"MEDIA_REAL_01"}],
+            "media": [{"media_id":"MEDIA_REAL_01","media_type":"image","source":"approved_asset","file_reference":"asset://rosavip/real-controlled-prepublish/media-01","checksum":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","mime_type":"image/jpeg","width":1080,"height":1350}],
+            "constraints":{"real_controlled_test":true,"no_meta_write":true,"stop_before_execution":true},
+            "strategy_status":"COMPLETE",
+            "handoff_status":"READY_FOR_GENERATOR",
+            "meta_connection_id":"$META_CONNECTION_ID",
+            "ad_account_id":"$AD_ACCOUNT_ID",
+            "facebook_page_id":"$FACEBOOK_PAGE_ID",
+            "whatsapp_asset_id":"$WHATSAPP_ASSET_ID"
+          }
+          JSON
+      - name: Submit package to stable Generator
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaign-packages/v1/submit"
+          CODE=$(curl -sS -o /tmp/submit.json -w '%{http_code}' -X POST "$URL" -H "Authorization: Bearer $OPERATOR_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/package.json)
+          echo "submit HTTP $CODE"
+          cat /tmp/submit.json | jq '{package_id,campaign_id,execution_plan_id,execution_plan_hash,target_binding_status,next_action,boundaries}'
+          test "$CODE" = "201"
+      - name: Read exact persisted plan
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaign-packages/v1/$PACKAGE_ID/status"
+          CODE=$(curl -sS -o /tmp/status.json -w '%{http_code}' "$URL" -H "Authorization: Bearer $OPERATOR_TOKEN")
+          echo "status HTTP $CODE"
+          cat /tmp/status.json | jq '{package_id,campaign_id,next_action,execution_plan,creative,plan_approval,boundaries}'
+          test "$CODE" = "200"
+      - name: Enforce hard stop before external execution
+        run: |
+          set -euo pipefail
+          jq -e '.boundaries.publication_authorized == false and .boundaries.external_writes_allowed == false and .boundaries.external_writes_performed == false' /tmp/status.json >/dev/null
+          echo "Hard stop confirmed: no Meta execution endpoint called."
+          echo "Manifest, short execution authorization, preflight, kill-switch mutation, execute-paused, activation and publication are intentionally NOT called."
