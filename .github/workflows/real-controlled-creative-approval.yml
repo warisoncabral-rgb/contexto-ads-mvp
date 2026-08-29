@@ -1,0 +1,83 @@
+name: Real Controlled Creative Approval
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/triggers/real-controlled-creative-approval.txt
+
+permissions:
+  contents: read
+
+jobs:
+  approve-creative-open-plan-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      PACKAGE_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: test -n "$OPERATOR_TOKEN"
+
+      - name: Read exact latest creative
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/creative-packages/latest"
+          CODE=$(curl -sS -o /tmp/creative.json -w '%{http_code}' "$URL" -H "Authorization: Bearer $OPERATOR_TOKEN")
+          echo "latest creative HTTP $CODE"
+          jq '{creativePackageId,version,status,contentHash}' /tmp/creative.json
+          test "$CODE" = "200"
+          VERSION=$(jq -r '.version' /tmp/creative.json)
+          HASH=$(jq -r '.contentHash' /tmp/creative.json)
+          test -n "$VERSION"
+          test "$HASH" != "null"
+          echo "CREATIVE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CREATIVE_HASH=$HASH" >> "$GITHUB_ENV"
+
+      - name: Approve exact creative version
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/creative-packages/$CREATIVE_VERSION/approve"
+          CODE=$(curl -sS -o /tmp/approve.json -w '%{http_code}' -X POST "$URL" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "{\"contentHash\":\"$CREATIVE_HASH\"}")
+          echo "approve creative HTTP $CODE"
+          jq '{creativePackage,executionPlan,boundaries}' /tmp/approve.json
+          test "$CODE" = "201"
+          PLAN_ID=$(jq -r '.executionPlan.executionPlanId' /tmp/approve.json)
+          PLAN_HASH=$(jq -r '.executionPlan.planHash' /tmp/approve.json)
+          test "$PLAN_ID" != "null"
+          test "$PLAN_HASH" != "null"
+          echo "PLAN_ID=$PLAN_ID" >> "$GITHUB_ENV"
+          echo "PLAN_HASH=$PLAN_HASH" >> "$GITHUB_ENV"
+
+      - name: Open plan approval request only
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/plans/$PLAN_ID/approvals"
+          CODE=$(curl -sS -o /tmp/approval-request.json -w '%{http_code}' -X POST "$URL" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN")
+          echo "request plan approval HTTP $CODE"
+          jq '{approval,boundaries}' /tmp/approval-request.json
+          test "$CODE" = "201"
+          APPROVAL_ID=$(jq -r '.approval.approvalId' /tmp/approval-request.json)
+          test "$APPROVAL_ID" != "null"
+          echo "APPROVAL_ID=$APPROVAL_ID" >> "$GITHUB_ENV"
+
+      - name: Verify stopped at plan decision gate
+        run: |
+          set -euo pipefail
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaign-packages/v1/$PACKAGE_ID/status"
+          CODE=$(curl -sS -o /tmp/status.json -w '%{http_code}' "$URL" -H "Authorization: Bearer $OPERATOR_TOKEN")
+          echo "status HTTP $CODE"
+          jq '{package_id,next_action,execution_plan,creative,plan_approval,boundaries}' /tmp/status.json
+          test "$CODE" = "200"
+          jq -e '.creative.status == "approved"' /tmp/status.json >/dev/null
+          jq -e '.plan_approval.status == "pending"' /tmp/status.json >/dev/null
+          jq -e '.boundaries.publication_authorized == false and .boundaries.external_writes_allowed == false and .boundaries.external_writes_performed == false and .boundaries.plan_approval_is_execution_authorization == false' /tmp/status.json >/dev/null
+          echo "Stopped safely before plan approval decision and before all Meta execution endpoints."
