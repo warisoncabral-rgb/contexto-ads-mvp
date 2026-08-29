@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  NotFoundException,
   Param,
   Post,
 } from '@nestjs/common';
@@ -90,6 +91,65 @@ export class OperatorCampaignPackageController {
       boundaries: {
         ...result.boundaries,
         technical_target_auto_resolved: true,
+        publication_authorized: false,
+        external_writes_allowed: false,
+        external_writes_performed: false,
+      },
+    };
+  }
+
+  @Get('campaign-packages/v1/:packageId/status')
+  async getStatusAutoResolved(
+    @Param('packageId') packageId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    const workspace = await this.access.listTenants(authorization);
+    const candidates = workspace.tenants.filter((tenant) =>
+      tenant.permissions.includes('manage_campaign_preparation'),
+    );
+    const found: Array<{
+      tenant: (typeof candidates)[number];
+      result: Awaited<ReturnType<CampaignPackageStatusService['get']>>;
+    }> = [];
+
+    for (const tenant of candidates) {
+      try {
+        found.push({
+          tenant,
+          result: await this.status.get(tenant.tenantId, packageId),
+        });
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) throw error;
+      }
+    }
+
+    if (found.length === 0) {
+      throw new NotFoundException({
+        code: 'campaign_package_not_found',
+        message: 'Campaign Package was not found in the authenticated operator tenants',
+        packageId,
+      });
+    }
+    if (found.length > 1) {
+      throw new ConflictException({
+        code: 'campaign_package_status_ambiguous',
+        message: 'Campaign Package exists in more than one authorized tenant',
+        packageId,
+        candidateCount: found.length,
+      });
+    }
+
+    const match = found[0];
+    await this.access.authorizeCampaignPreparation(authorization, match.tenant.tenantId);
+    return {
+      ...match.result,
+      resolved_context: {
+        tenant_id: match.tenant.tenantId,
+        tenant_display_name: match.tenant.displayName,
+      },
+      boundaries: {
+        ...match.result.boundaries,
+        tenant_auto_resolved: true,
         publication_authorized: false,
         external_writes_allowed: false,
         external_writes_performed: false,
