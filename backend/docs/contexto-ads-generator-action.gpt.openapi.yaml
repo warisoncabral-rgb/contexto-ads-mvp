@@ -4,7 +4,7 @@ info:
   version: 1.0.2
   description: GPT-compatible Action contract for Contexto Ads. These operations do not authorize Meta delivery, spend, or external writes.
 servers:
-  - url: https://contexto-ads-integration-candidate-api.onrender.com/v1
+  - url: https://contexto-ads-validation-api.onrender.com/v1
 security:
   - bearerAuth: []
 paths:

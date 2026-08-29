@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://contexto-ads-integration-candidate-api.onrender.com/v1"
+      "url": "https://contexto-ads-validation-api.onrender.com/v1"
     }
   ],
   "security": [
