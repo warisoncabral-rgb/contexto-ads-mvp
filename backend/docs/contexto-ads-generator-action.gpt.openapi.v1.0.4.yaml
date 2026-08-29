@@ -31,7 +31,10 @@ paths:
         assets. Use these values to populate the Campaign Package technical target fields.
         Performs no Meta write.
       parameters:
-        - $ref: '#/components/parameters/TenantId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       responses:
         '200': { description: Selected Meta execution target }
         '401': { description: Authentication denied }
@@ -45,7 +48,10 @@ paths:
         Validates and persists the handoff. Performs no Meta write. If technical target IDs
         are not known, call listAuthorizedTenants and getSelectedExecutionTarget first.
       parameters:
-        - $ref: '#/components/parameters/TenantId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
@@ -62,8 +68,14 @@ paths:
       operationId: getCampaignPackageStatus
       summary: Get current package status
       parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/PackageId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: packageId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       responses:
         '200': { description: Current status }
         '401': { description: Authentication denied }
@@ -74,9 +86,18 @@ paths:
       operationId: submitReviewedCreativePackage
       summary: Submit reviewed creative content
       parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/CampaignId'
-        - $ref: '#/components/parameters/ExecutionPlanId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: executionPlanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
@@ -99,8 +120,14 @@ paths:
       operationId: getLatestCreativePackage
       summary: Get latest creative package
       parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/CampaignId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       responses:
         '200': { description: Latest creative package }
         '401': { description: Authentication denied }
@@ -111,8 +138,14 @@ paths:
       operationId: approveCreativePackage
       summary: Approve exact creative version
       parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/CampaignId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
         - name: version
           in: path
           required: true
@@ -139,9 +172,18 @@ paths:
       summary: Request approval for the current plan
       description: Requesting approval does not execute the plan and performs no Meta write.
       parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/CampaignId'
-        - $ref: '#/components/parameters/ExecutionPlanId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: executionPlanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       responses:
         '201': { description: Approval requested }
         '401': { description: Authentication denied }
@@ -153,8 +195,14 @@ paths:
       operationId: getExecutionPlanApproval
       summary: Get current plan approval
       parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/ApprovalId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       responses:
         '200': { description: Approval state }
         '401': { description: Authentication denied }
@@ -168,8 +216,14 @@ paths:
         Approve, reject or revoke. An approved plan is not an execution authorization and
         this operation performs no Meta write.
       parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/ApprovalId'
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
         - name: decision
           in: path
           required: true
@@ -195,32 +249,6 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-  parameters:
-    TenantId:
-      name: tenantId
-      in: path
-      required: true
-      schema: { type: string, format: uuid }
-    PackageId:
-      name: packageId
-      in: path
-      required: true
-      schema: { type: string, format: uuid }
-    CampaignId:
-      name: campaignId
-      in: path
-      required: true
-      schema: { type: string, format: uuid }
-    ExecutionPlanId:
-      name: executionPlanId
-      in: path
-      required: true
-      schema: { type: string, format: uuid }
-    ApprovalId:
-      name: approvalId
-      in: path
-      required: true
-      schema: { type: string, format: uuid }
   schemas:
     CampaignPackageV1:
       type: object
