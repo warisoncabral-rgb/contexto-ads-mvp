@@ -21,6 +21,7 @@ import { CapabilityRegistryModule } from '../capability-registry/capability-regi
 import { MetaExecutionModule } from '../meta-execution/meta-execution.module';
 import { CampaignPackageModule } from '../campaign-package/campaign-package.module';
 import { OperatorCampaignPackageController } from './operator-campaign-package.controller';
+import { OperatorActionPingController } from './operator-action-ping.controller';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { OperatorCampaignPackageController } from './operator-campaign-package.c
     OperatorAccessController,
     OperatorMetaController,
     OperatorCampaignPackageController,
+    OperatorActionPingController,
   ],
   providers: [OperatorAccessService],
 })
