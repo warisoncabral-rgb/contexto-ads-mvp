@@ -80,6 +80,69 @@ describe('OperatorCampaignPackageController', () => {
     });
   });
 
+  it('recovers package status across the authorized tenant without requiring tenantId', async () => {
+    const access = {
+      listTenants: jest.fn(async () => ({
+        operator: { subject: 'operator:test' },
+        tenants: [{
+          tenantId: '22222222-2222-4222-8222-222222222222',
+          displayName: 'Rosa VIP Calçados',
+          role: 'owner',
+          permissions: ['manage_campaign_preparation'],
+          membershipId: 'membership-1',
+        }],
+      })),
+      authorizeCampaignPreparation: jest.fn(async () => ({
+        operator: { subject: 'operator:test' },
+        membership: { role: 'owner' },
+      })),
+    };
+    const handoff = { submit: jest.fn() };
+    const status = {
+      get: jest.fn(async () => ({
+        package_id: '11111111-1111-4111-8111-111111111111',
+        next_action: 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE',
+        boundaries: {
+          publication_authorized: false,
+          external_writes_allowed: false,
+          external_writes_performed: false,
+          plan_approval_is_execution_authorization: false,
+        },
+      })),
+    };
+    const connections = { selectedExecutionTarget: jest.fn() };
+    const controller = new OperatorCampaignPackageController(
+      access as any,
+      handoff as any,
+      status as any,
+      connections as any,
+    );
+
+    const result = await controller.getStatusAutoResolved(
+      '11111111-1111-4111-8111-111111111111',
+      'Bearer secret',
+    );
+
+    expect(status.get).toHaveBeenCalledWith(
+      '22222222-2222-4222-8222-222222222222',
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(access.authorizeCampaignPreparation).toHaveBeenCalledWith(
+      'Bearer secret',
+      '22222222-2222-4222-8222-222222222222',
+    );
+    expect(result.resolved_context).toEqual({
+      tenant_id: '22222222-2222-4222-8222-222222222222',
+      tenant_display_name: 'Rosa VIP Calçados',
+    });
+    expect(result.boundaries).toMatchObject({
+      tenant_auto_resolved: true,
+      publication_authorized: false,
+      external_writes_allowed: false,
+      external_writes_performed: false,
+    });
+  });
+
   it('fails closed when multiple preparation tenants cannot be matched safely', async () => {
     const access = {
       listTenants: jest.fn(async () => ({
