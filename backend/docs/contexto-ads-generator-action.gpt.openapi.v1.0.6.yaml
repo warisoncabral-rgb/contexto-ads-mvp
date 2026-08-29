@@ -16,14 +16,9 @@ paths:
       operationId: submitCampaignPackage
       summary: Submit a completed Campaign Package V1
       description: >-
-        Preferred campaign handoff. The Generator authenticates the operator, resolves the
-        authorized campaign-preparation tenant and selected Meta target, injects technical IDs,
-        validates and persists the package. Performs no Meta write. IMPORTANT: create and retain
-        package_id before calling this operation. If this call ends with ClientResponseError,
-        timeout, connection error or an uncertain client-side result, DO NOT generate a new
-        package_id and DO NOT blindly resubmit. First call recoverCampaignPackageStatus with the
-        exact same package_id. Resubmit only if recovery confirms the package is not persisted,
-        and then reuse the exact same package_id, package_version and content.
+        Submit and persist the package with automatic tenant/Meta target resolution and no Meta write.
+        Keep the same package_id. If the result is uncertain or times out, call
+        recoverCampaignPackageStatus before any retry; never create a new package_id for recovery.
       requestBody:
         required: true
         content:
@@ -47,11 +42,9 @@ paths:
       operationId: recoverCampaignPackageStatus
       summary: Recover Campaign Package status after an uncertain submit result
       description: >-
-        Read-only recovery operation designed for ClientResponseError, timeout or lost submit
-        responses. It resolves the authorized tenant internally from the authenticated operator
-        and searches for the exact package_id. Call this before any submit retry. A 200 proves the
-        package exists and returns its current internal state. A 404 means it was not found in the
-        operator's authorized campaign-preparation tenants. Performs no Meta write.
+        Read-only recovery after timeout or lost submit response. Resolves the authorized tenant
+        internally and checks the exact package_id. Call before any retry. HTTP 200 means the
+        package exists; HTTP 404 means it was not found. Performs no Meta write.
       parameters:
         - name: packageId
           in: path
