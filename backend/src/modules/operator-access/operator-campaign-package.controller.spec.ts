@@ -1,4 +1,8 @@
-import { ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { OperatorCampaignPackageController } from './operator-campaign-package.controller';
 
 describe('OperatorCampaignPackageController', () => {
@@ -80,6 +84,130 @@ describe('OperatorCampaignPackageController', () => {
     });
   });
 
+  it('returns a 200-style accepted envelope for GPT Actions', async () => {
+    const access = {
+      listTenants: jest.fn(async () => ({
+        operator: { subject: 'operator:test' },
+        tenants: [{
+          tenantId: '22222222-2222-4222-8222-222222222222',
+          displayName: 'Rosa VIP Calçados',
+          role: 'owner',
+          permissions: ['manage_campaign_preparation'],
+          membershipId: 'membership-1',
+        }],
+      })),
+      authorizeCampaignPreparation: jest.fn(async () => ({
+        operator: { subject: 'operator:test' },
+        membership: { role: 'owner' },
+      })),
+    };
+    const handoff = {
+      submit: jest.fn(async () => ({
+        package_id: '11111111-1111-4111-8111-111111111111',
+        boundaries: {
+          persisted: true,
+          creative_package_persisted: true,
+          execution_plan_created: true,
+          meta_write_performed: false,
+          spend_authorized: false,
+          delivery_authorized: false,
+        },
+      })),
+    };
+    const status = { get: jest.fn() };
+    const connections = {
+      selectedExecutionTarget: jest.fn(async () => ({
+        connectionId: '673dbb65-e187-4d80-8751-772d6e0156b3',
+        adAccountId: 'act_929361834160386',
+        selectedAssets: [],
+      })),
+    };
+    const controller = new OperatorCampaignPackageController(
+      access as any,
+      handoff as any,
+      status as any,
+      connections as any,
+    );
+
+    const result = await controller.submitActionEnvelope(
+      {
+        package_id: '11111111-1111-4111-8111-111111111111',
+        business_name: 'Rosa VIP Calçados',
+      },
+      'Bearer secret',
+    );
+
+    expect(result.action_status).toBe('ACCEPTED');
+    expect(result.package_id).toBe('11111111-1111-4111-8111-111111111111');
+    expect(result.boundaries).toMatchObject({
+      publication_authorized: false,
+      external_writes_allowed: false,
+      external_writes_performed: false,
+    });
+  });
+
+  it('returns validation errors inside a readable action envelope', async () => {
+    const access = {
+      listTenants: jest.fn(async () => ({
+        operator: { subject: 'operator:test' },
+        tenants: [{
+          tenantId: '22222222-2222-4222-8222-222222222222',
+          displayName: 'Rosa VIP Calçados',
+          permissions: ['manage_campaign_preparation'],
+        }],
+      })),
+      authorizeCampaignPreparation: jest.fn(async () => ({
+        operator: { subject: 'operator:test' },
+      })),
+    };
+    const handoff = {
+      submit: jest.fn(async () => {
+        throw new BadRequestException({
+          code: 'campaign_package_invalid',
+          message: 'Campaign Package validation failed',
+          missing_fields: ['ads[1].headline'],
+        });
+      }),
+    };
+    const status = { get: jest.fn() };
+    const connections = {
+      selectedExecutionTarget: jest.fn(async () => ({
+        connectionId: '673dbb65-e187-4d80-8751-772d6e0156b3',
+        adAccountId: 'act_929361834160386',
+        selectedAssets: [],
+      })),
+    };
+    const controller = new OperatorCampaignPackageController(
+      access as any,
+      handoff as any,
+      status as any,
+      connections as any,
+    );
+
+    const result = await controller.submitActionEnvelope(
+      {
+        package_id: '11111111-1111-4111-8111-111111111111',
+        business_name: 'Rosa VIP Calçados',
+      },
+      'Bearer secret',
+    );
+
+    expect(result).toMatchObject({
+      action_status: 'REJECTED',
+      http_status: 400,
+      error: {
+        code: 'campaign_package_invalid',
+        missing_fields: ['ads[1].headline'],
+      },
+      boundaries: {
+        publication_authorized: false,
+        external_writes_allowed: false,
+        external_writes_performed: false,
+        meta_write_performed: false,
+      },
+    });
+  });
+
   it('recovers package status across the authorized tenant without requiring tenantId', async () => {
     const access = {
       listTenants: jest.fn(async () => ({
@@ -140,6 +268,49 @@ describe('OperatorCampaignPackageController', () => {
       publication_authorized: false,
       external_writes_allowed: false,
       external_writes_performed: false,
+    });
+  });
+
+  it('returns NOT_FOUND as a readable 200-style recovery envelope', async () => {
+    const access = {
+      listTenants: jest.fn(async () => ({
+        operator: { subject: 'operator:test' },
+        tenants: [{
+          tenantId: '22222222-2222-4222-8222-222222222222',
+          displayName: 'Rosa VIP Calçados',
+          permissions: ['manage_campaign_preparation'],
+        }],
+      })),
+      authorizeCampaignPreparation: jest.fn(),
+    };
+    const handoff = { submit: jest.fn() };
+    const status = {
+      get: jest.fn(async () => {
+        throw new NotFoundException('Campaign Package not found');
+      }),
+    };
+    const connections = { selectedExecutionTarget: jest.fn() };
+    const controller = new OperatorCampaignPackageController(
+      access as any,
+      handoff as any,
+      status as any,
+      connections as any,
+    );
+
+    const result = await controller.getStatusActionEnvelope(
+      '11111111-1111-4111-8111-111111111111',
+      'Bearer secret',
+    );
+
+    expect(result).toMatchObject({
+      action_status: 'NOT_FOUND',
+      http_status: 404,
+      boundaries: {
+        publication_authorized: false,
+        external_writes_allowed: false,
+        external_writes_performed: false,
+        meta_write_performed: false,
+      },
     });
   });
 
