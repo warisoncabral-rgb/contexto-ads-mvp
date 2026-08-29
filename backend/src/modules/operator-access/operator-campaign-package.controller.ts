@@ -29,7 +29,7 @@ export class OperatorCampaignPackageController {
   async submitActionEnvelope(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
-  ) {
+  ): Promise<any> {
     try {
       const result = await this.submitAutoResolved(body, authorization);
       return {
@@ -46,7 +46,7 @@ export class OperatorCampaignPackageController {
   async getStatusActionEnvelope(
     @Param('packageId') packageId: string,
     @Headers('authorization') authorization: string | undefined,
-  ) {
+  ): Promise<any> {
     try {
       const result = await this.getStatusAutoResolved(packageId, authorization);
       return {
