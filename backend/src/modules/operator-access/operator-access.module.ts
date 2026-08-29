@@ -22,6 +22,7 @@ import { MetaExecutionModule } from '../meta-execution/meta-execution.module';
 import { CampaignPackageModule } from '../campaign-package/campaign-package.module';
 import { OperatorCampaignPackageController } from './operator-campaign-package.controller';
 import { OperatorActionPingController } from './operator-action-ping.controller';
+import { OperatorActionTransportController } from './operator-action-transport.controller';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { OperatorActionPingController } from './operator-action-ping.controller'
     OperatorMetaController,
     OperatorCampaignPackageController,
     OperatorActionPingController,
+    OperatorActionTransportController,
   ],
   providers: [OperatorAccessService],
 })
