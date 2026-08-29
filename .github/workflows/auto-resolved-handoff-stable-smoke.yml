@@ -1,0 +1,122 @@
+name: Stable Auto-Resolved Handoff Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/auto-resolved-handoff-stable-smoke.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      EXPECTED_TENANT_ID: 22222222-2222-4222-8222-222222222222
+      EXPECTED_CONNECTION_ID: 673dbb65-e187-4d80-8751-772d6e0156b3
+      EXPECTED_AD_ACCOUNT_ID: act_929361834160386
+    steps:
+      - name: Require stable operator secret
+        shell: bash
+        run: test -n "$OPERATOR_TOKEN"
+
+      - name: Wait for stable API deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if curl --max-time 45 --fail --silent --show-error "$BASE_URL/health" >/tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "API not ready yet (attempt $attempt/12)"
+            sleep 15
+          done
+          exit 1
+
+      - name: Submit package with no tenant or Meta IDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_ID=$(python - <<'PY'
+          import uuid
+          print(uuid.uuid4())
+          PY
+          )
+          CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > /tmp/package.json <<JSON
+          {
+            "package_id": "$PACKAGE_ID",
+            "package_version": 1,
+            "created_at": "$CREATED_AT",
+            "source": "contexto_ads",
+            "client_id": "stable-auto-resolved-smoke",
+            "business_name": "Rosa VIP Calçados",
+            "business_description": "Teste controlado do handoff automático Contexto Ads para Gerador.",
+            "offer_name": "Calçados femininos premium no atacado",
+            "offer_description": "Linha de calçados femininos para revenda.",
+            "offer_type": "catalog",
+            "commercial_conditions": {"minimum_order_brl": 500},
+            "campaign_objective": "LEADS",
+            "conversion_destination": "WHATSAPP",
+            "campaign_goal_description": "Gerar conversas qualificadas no WhatsApp.",
+            "audience_description": "Lojistas, empreendedores e revendedores que valorizam qualidade.",
+            "locations": [
+              {"city": "João Pessoa", "state": "PB", "country": "BR", "radius_km": 40, "include": true},
+              {"city": "Recife", "state": "PE", "country": "BR", "radius_km": 40, "include": true}
+            ],
+            "budget_type": "DAILY",
+            "budget_amount": 20,
+            "currency": "BRL",
+            "duration_days": 7,
+            "ads": [{
+              "ad_reference": "ad-01",
+              "primary_text": "Renove seu estoque com calçados femininos premium que agregam valor ao seu negócio.",
+              "headline": "Fale com a Rosa VIP pelo WhatsApp",
+              "description": "Atacado para lojistas e revendedores.",
+              "cta": "WHATSAPP_MESSAGE",
+              "initial_message": "Olá! Tenho interesse nos calçados Rosavip para revenda. Gostaria de receber o catálogo atualizado e entender melhor como funciona o pedido no atacado.",
+              "media_id": "media-01"
+            }],
+            "media": [{
+              "media_id": "media-01",
+              "media_type": "image",
+              "source": "controlled_test_fixture",
+              "file_reference": "asset://rosavip/stable-auto-resolved-smoke/media-01",
+              "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "mime_type": "image/jpeg",
+              "width": 1080,
+              "height": 1350
+            }],
+            "constraints": {"test_mode": true, "no_meta_write": true},
+            "strategy_notes": {"video_preserved_for_future_use": true},
+            "strategy_status": "COMPLETE",
+            "handoff_status": "READY_FOR_GENERATOR"
+          }
+          JSON
+
+          CODE=$(curl --max-time 45 --silent --show-error -o /tmp/result.json -w '%{http_code}' \
+            -X POST "$BASE_URL/operator/campaign-packages/v1/submit" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/package.json)
+          echo "HTTP $CODE"
+          cat /tmp/result.json | jq '{package_id,campaign_id,target_binding_status,next_action,resolved_context,boundaries}'
+          test "$CODE" = "201"
+          jq -e --arg t "$EXPECTED_TENANT_ID" '.resolved_context.tenant_id == $t' /tmp/result.json >/dev/null
+          jq -e --arg c "$EXPECTED_CONNECTION_ID" '.resolved_context.meta_connection_id == $c' /tmp/result.json >/dev/null
+          jq -e --arg a "$EXPECTED_AD_ACCOUNT_ID" '.resolved_context.ad_account_id == $a' /tmp/result.json >/dev/null
+          jq -e '.target_binding_status == "BOUND"' /tmp/result.json >/dev/null
+          jq -e '.boundaries.meta_write_performed == false and .boundaries.external_writes_allowed == false and .boundaries.external_writes_performed == false and .boundaries.publication_authorized == false and .boundaries.technical_target_auto_resolved == true' /tmp/result.json >/dev/null
+          echo "PACKAGE_ID=$PACKAGE_ID" >> "$GITHUB_ENV"
+
+      - name: Confirm no external Meta execution
+        shell: bash
+        run: |
+          echo "Auto-resolved handoff passed."
+          echo "No execution manifest, execution authorization, preflight, kill-switch mutation, Meta write protocol, execute-paused, activation or publication endpoint was called."
