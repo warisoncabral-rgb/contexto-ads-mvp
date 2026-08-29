@@ -1,0 +1,50 @@
+name: Stable Timeout Recovery Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/stable-timeout-recovery-smoke.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      PACKAGE_ID: 25d98fdd-fc00-44be-9c92-52944133c1e0
+    steps:
+      - name: Require stable operator secret
+        shell: bash
+        run: test -n "$OPERATOR_TOKEN"
+      - name: Wait for recovery route and verify read-only status
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            CODE=$(curl --max-time 45 --silent --show-error -o /tmp/result.json -w '%{http_code}' \
+              -H "Authorization: Bearer $OPERATOR_TOKEN" \
+              "$BASE_URL/operator/campaign-packages/v1/$PACKAGE_ID/status" || true)
+            echo "attempt $attempt: HTTP $CODE"
+            if [ "$CODE" = "200" ]; then
+              cat /tmp/result.json | jq '{package_id,campaign_id,next_action,resolved_context,boundaries}'
+              jq -e --arg p "$PACKAGE_ID" '.package_id == $p' /tmp/result.json >/dev/null
+              jq -e '.boundaries.tenant_auto_resolved == true and .boundaries.publication_authorized == false and .boundaries.external_writes_allowed == false and .boundaries.external_writes_performed == false' /tmp/result.json >/dev/null
+              exit 0
+            fi
+            if [ "$CODE" != "404" ]; then
+              cat /tmp/result.json || true
+              exit 1
+            fi
+            sleep 15
+          done
+          cat /tmp/result.json || true
+          exit 1
+      - name: Confirm no Meta execution
+        shell: bash
+        run: echo 'Recovery GET only; no Meta execution endpoint called.'
