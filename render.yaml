@@ -13,6 +13,7 @@ services:
     runtime: node
     plan: free
     region: virginia
+    branch: main
     rootDir: backend
     buildCommand: npm ci --include=dev && npm run build
     startCommand: sh -c 'export META_OAUTH_REDIRECT_URI="${META_OAUTH_REDIRECT_URI:-https://$RENDER_EXTERNAL_HOSTNAME/v1/meta/oauth/callback}"; npm run start:prod'
@@ -53,6 +54,7 @@ services:
     runtime: node
     plan: free
     region: virginia
+    branch: main
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /
