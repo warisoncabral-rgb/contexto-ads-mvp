@@ -11,7 +11,7 @@ export class OperatorActionPingController {
     return {
       action_status: 'OK' as const,
       service: 'contexto-ads-generator',
-      schema_version: '1.0.8',
+      schema_version: '1.0.10-diagnostic',
       authenticated: true,
       authorized_tenant_count: workspace.tenants.length,
       boundaries: {
