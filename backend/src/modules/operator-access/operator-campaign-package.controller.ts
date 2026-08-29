@@ -4,6 +4,8 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpException,
   NotFoundException,
   Param,
   Post,
@@ -21,6 +23,43 @@ export class OperatorCampaignPackageController {
     private readonly status: CampaignPackageStatusService,
     private readonly connections: MetaConnectionService,
   ) {}
+
+  @Post('campaign-packages/v1/action-submit')
+  @HttpCode(200)
+  async submitActionEnvelope(
+    @Body() body: unknown,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    try {
+      const result = await this.submitAutoResolved(body, authorization);
+      return {
+        action_status: 'ACCEPTED',
+        ...result,
+      };
+    } catch (error) {
+      return this.httpEnvelope('REJECTED', error);
+    }
+  }
+
+  @Get('campaign-packages/v1/:packageId/action-status')
+  @HttpCode(200)
+  async getStatusActionEnvelope(
+    @Param('packageId') packageId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    try {
+      const result = await this.getStatusAutoResolved(packageId, authorization);
+      return {
+        action_status: 'FOUND',
+        ...result,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return this.httpEnvelope('NOT_FOUND', error);
+      }
+      return this.httpEnvelope('REJECTED', error);
+    }
+  }
 
   @Post('campaign-packages/v1/submit')
   async submitAutoResolved(
@@ -178,6 +217,21 @@ export class OperatorCampaignPackageController {
   ) {
     await this.access.authorizeCampaignPreparation(authorization, tenantId);
     return this.status.get(tenantId, packageId);
+  }
+
+  private httpEnvelope(actionStatus: 'REJECTED' | 'NOT_FOUND', error: unknown) {
+    if (!(error instanceof HttpException)) throw error;
+    return {
+      action_status: actionStatus,
+      http_status: error.getStatus(),
+      error: error.getResponse(),
+      boundaries: {
+        publication_authorized: false,
+        external_writes_allowed: false,
+        external_writes_performed: false,
+        meta_write_performed: false,
+      },
+    };
   }
 
   private readBusinessName(body: unknown): string | undefined {
