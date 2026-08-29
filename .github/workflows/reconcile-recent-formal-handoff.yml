@@ -1,0 +1,34 @@
+name: Reconcile Recent Formal Handoff
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/reconcile-recent-formal-handoff.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+    steps:
+      - name: Read recent campaign contexts and portfolio only
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '--- CAMPAIGN CONTEXTS ---'
+          curl --max-time 60 --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaign-contexts" | jq .
+          echo '--- PORTFOLIO ---'
+          curl --max-time 60 --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/portfolio" | jq .
+          echo 'Read-only reconciliation complete; no Meta endpoint called.'
