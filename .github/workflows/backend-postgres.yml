@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - agent/contexto-gerador-integration-v1
+      - agent/hosted-meta-oauth-validation
     paths:
       - 'backend/**'
       - 'render.yaml'
