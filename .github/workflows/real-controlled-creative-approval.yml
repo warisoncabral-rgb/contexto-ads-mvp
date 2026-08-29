@@ -18,27 +18,79 @@ jobs:
       TENANT_ID: 22222222-2222-4222-8222-222222222222
       CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
       PACKAGE_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      SOURCE_PLAN_ID: e56fa716-af92-43d3-9726-22ad8b0b2e77
       OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
     steps:
       - name: Require stable operator secret
         run: test -n "$OPERATOR_TOKEN"
 
-      - name: Read exact latest creative
+      - name: Submit reviewed creative version
+        run: |
+          set -euo pipefail
+          cat > /tmp/reviewed.json <<'JSON'
+          {
+            "creative": {
+              "copies": [
+                {
+                  "copyId": "AD_REAL_01",
+                  "primaryText": "Conheça a Rosa VIP Calçados e fale com a gente pelo WhatsApp para saber mais sobre os produtos disponíveis.",
+                  "headline": "Fale com a Rosa VIP pelo WhatsApp",
+                  "description": "Atendimento direto pelo WhatsApp.",
+                  "whatsappMessage": "Olá! Quero saber mais sobre os produtos da Rosa VIP.",
+                  "callToAction": "SEND_WHATSAPP_MESSAGE"
+                }
+              ],
+              "claims": [],
+              "assets": [
+                {
+                  "assetId": "MEDIA_REAL_01",
+                  "storageRef": "asset://rosavip/real-controlled-prepublish/media-01",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "mimeType": "image/jpeg",
+                  "width": 1080,
+                  "height": 1350
+                }
+              ],
+              "reviewChecklist": {
+                "claimsVerifiedAgainstSources": true,
+                "visualFidelityReviewed": true,
+                "safeAreaReviewed": true,
+                "requiredFieldsReviewed": true,
+                "automaticEnhancementsReviewed": true
+              }
+            }
+          }
+          JSON
+          URL="$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/plans/$SOURCE_PLAN_ID/creative-packages"
+          CODE=$(curl -sS -o /tmp/reviewed-response.json -w '%{http_code}' -X POST "$URL" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/reviewed.json)
+          echo "submit reviewed creative HTTP $CODE"
+          cat /tmp/reviewed-response.json | jq '{creativePackage,executionPlan,boundaries}'
+          test "$CODE" = "201"
+          REVIEW_PLAN_ID=$(jq -r '.executionPlan.executionPlanId' /tmp/reviewed-response.json)
+          test "$REVIEW_PLAN_ID" != "null"
+          echo "REVIEW_PLAN_ID=$REVIEW_PLAN_ID" >> "$GITHUB_ENV"
+
+      - name: Read exact latest reviewed creative
         run: |
           set -euo pipefail
           URL="$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/creative-packages/latest"
           CODE=$(curl -sS -o /tmp/creative.json -w '%{http_code}' "$URL" -H "Authorization: Bearer $OPERATOR_TOKEN")
           echo "latest creative HTTP $CODE"
-          jq '{creativePackageId,version,status,contentHash}' /tmp/creative.json
+          jq '{creativePackageId,version,status,contentHash,reviewChecklist,validationIssues}' /tmp/creative.json
           test "$CODE" = "200"
           VERSION=$(jq -r '.version' /tmp/creative.json)
           HASH=$(jq -r '.contentHash' /tmp/creative.json)
-          test -n "$VERSION"
           test "$HASH" != "null"
+          jq -e '.status == "needs_review"' /tmp/creative.json >/dev/null
+          jq -e '.validationIssues | length == 0' /tmp/creative.json >/dev/null
+          jq -e '.reviewChecklist | to_entries | all(.value == true)' /tmp/creative.json >/dev/null
           echo "CREATIVE_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "CREATIVE_HASH=$HASH" >> "$GITHUB_ENV"
 
-      - name: Approve exact creative version
+      - name: Approve exact reviewed creative version
         run: |
           set -euo pipefail
           URL="$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/creative-packages/$CREATIVE_VERSION/approve"
@@ -47,7 +99,7 @@ jobs:
             -H 'Content-Type: application/json' \
             --data "{\"contentHash\":\"$CREATIVE_HASH\"}")
           echo "approve creative HTTP $CODE"
-          jq '{creativePackage,executionPlan,boundaries}' /tmp/approve.json
+          cat /tmp/approve.json | jq '{creativePackage,executionPlan,boundaries}'
           test "$CODE" = "201"
           PLAN_ID=$(jq -r '.executionPlan.executionPlanId' /tmp/approve.json)
           PLAN_HASH=$(jq -r '.executionPlan.planHash' /tmp/approve.json)
@@ -63,7 +115,7 @@ jobs:
           CODE=$(curl -sS -o /tmp/approval-request.json -w '%{http_code}' -X POST "$URL" \
             -H "Authorization: Bearer $OPERATOR_TOKEN")
           echo "request plan approval HTTP $CODE"
-          jq '{approval,boundaries}' /tmp/approval-request.json
+          cat /tmp/approval-request.json | jq '{approval,boundaries}'
           test "$CODE" = "201"
           APPROVAL_ID=$(jq -r '.approval.approvalId' /tmp/approval-request.json)
           test "$APPROVAL_ID" != "null"
