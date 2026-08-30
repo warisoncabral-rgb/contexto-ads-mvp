@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Post } from '@nestjs/common';
 import { OperatorAccessService } from './operator-access.service';
 
 @Controller('operator')
@@ -24,6 +24,7 @@ export class OperatorActionPingController {
   }
 
   @Post('action-post-ping')
+  @HttpCode(200)
   async postPing(
     @Body() body: { probe?: string },
     @Headers('authorization') authorization: string | undefined,
