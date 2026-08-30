@@ -6,8 +6,11 @@ export class OperatorActionPingController {
   constructor(private readonly access: OperatorAccessService) {}
 
   @Get('action-ping')
-  async ping(@Headers('authorization') authorization: string | undefined) {
-    const workspace = await this.access.listTenants(authorization);
+  async ping(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
+  ) {
+    const workspace = await this.access.listTenants(this.operatorAuthorization(authorization, operatorKey));
     return {
       action_status: 'OK' as const,
       service: 'contexto-ads-generator',
@@ -48,8 +51,9 @@ export class OperatorActionPingController {
   async postPing(
     @Body() body: { probe?: string },
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    const workspace = await this.access.listTenants(authorization);
+    const workspace = await this.access.listTenants(this.operatorAuthorization(authorization, operatorKey));
     return {
       action_status: 'OK' as const,
       service: 'contexto-ads-generator',
@@ -64,5 +68,14 @@ export class OperatorActionPingController {
         meta_write_performed: false,
       },
     };
+  }
+
+  private operatorAuthorization(
+    authorization: string | undefined,
+    operatorKey: string | undefined,
+  ): string | undefined {
+    if (authorization?.trim()) return authorization;
+    const token = operatorKey?.trim();
+    return token ? `Bearer ${token}` : undefined;
   }
 }

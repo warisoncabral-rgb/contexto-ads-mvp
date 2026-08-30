@@ -30,6 +30,33 @@ describe('OperatorActionPingController', () => {
     });
   });
 
+  it('accepts the custom GPT Action operator header when Authorization is absent', async () => {
+    const access = {
+      listTenants: jest.fn(async () => ({
+        operator: { subject: 'operator:test' },
+        tenants: [{ tenantId: '22222222-2222-4222-8222-222222222222' }],
+      })),
+    };
+    const controller = new OperatorActionPingController(access as any);
+
+    const result = await controller.postPing({ probe: 'ok' }, undefined, 'secret-token');
+
+    expect(access.listTenants).toHaveBeenCalledWith('Bearer secret-token');
+    expect(result.action_status).toBe('OK');
+    expect(result.authenticated).toBe(true);
+  });
+
+  it('prefers Authorization when both authentication headers are present', async () => {
+    const access = {
+      listTenants: jest.fn(async () => ({ operator: { subject: 'operator:test' }, tenants: [] })),
+    };
+    const controller = new OperatorActionPingController(access as any);
+
+    await controller.ping('Bearer primary-secret', 'secondary-secret');
+
+    expect(access.listTenants).toHaveBeenCalledWith('Bearer primary-secret');
+  });
+
   it('returns a minimal public POST transport response without authentication', async () => {
     const access = { listTenants: jest.fn() };
     const controller = new OperatorActionPingController(access as any);

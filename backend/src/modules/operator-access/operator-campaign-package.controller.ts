@@ -29,9 +29,13 @@ export class OperatorCampaignPackageController {
   async submitActionEnvelope(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ): Promise<any> {
     try {
-      const result = await this.submitAutoResolved(body, authorization);
+      const result = await this.submitAutoResolved(
+        body,
+        this.operatorAuthorization(authorization, operatorKey),
+      );
       return {
         action_status: 'ACCEPTED',
         ...result,
@@ -46,8 +50,12 @@ export class OperatorCampaignPackageController {
   async getStatusActionEnvelope(
     @Param('packageId') packageId: string,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ): Promise<any> {
-    return this.statusActionEnvelope(packageId, authorization);
+    return this.statusActionEnvelope(
+      packageId,
+      this.operatorAuthorization(authorization, operatorKey),
+    );
   }
 
   @Post('campaign-packages/v1/action-status')
@@ -55,6 +63,7 @@ export class OperatorCampaignPackageController {
   async postStatusActionEnvelope(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ): Promise<any> {
     const packageId = this.readPackageId(body);
     if (!packageId) {
@@ -73,7 +82,10 @@ export class OperatorCampaignPackageController {
         },
       };
     }
-    return this.statusActionEnvelope(packageId, authorization);
+    return this.statusActionEnvelope(
+      packageId,
+      this.operatorAuthorization(authorization, operatorKey),
+    );
   }
 
   @Post('campaign-packages/v1/submit')
@@ -265,6 +277,15 @@ export class OperatorCampaignPackageController {
         meta_write_performed: false,
       },
     };
+  }
+
+  private operatorAuthorization(
+    authorization: string | undefined,
+    operatorKey: string | undefined,
+  ): string | undefined {
+    if (authorization?.trim()) return authorization;
+    const token = operatorKey?.trim();
+    return token ? `Bearer ${token}` : undefined;
   }
 
   private readBusinessName(body: unknown): string | undefined {
