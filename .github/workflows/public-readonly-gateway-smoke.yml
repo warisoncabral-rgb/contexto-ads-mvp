@@ -15,13 +15,13 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for public read-only gateway deployment
+      - name: Wait for static public read-only gateway deployment
         shell: bash
         run: |
           set -euo pipefail
-          URL='https://contexto-ads-validation-api.onrender.com/v1/public-action-gateway/campaign-packages/v1/849547ce-645e-4c7b-a844-451182253fe6/status'
+          URL='https://contexto-ads-validation-api.onrender.com/v1/public-action-gateway/canonical-package-status'
           for attempt in $(seq 1 24); do
-            CODE=$(curl --max-time 45 --silent --show-error               -D /tmp/headers               -o /tmp/body               -w '%{http_code}'               "$URL" || true)
+            CODE=$(curl --max-time 45 --silent --show-error -o /tmp/body -w '%{http_code}' "$URL" || true)
             echo "attempt $attempt: HTTP $CODE"
             cat /tmp/body || true
             if [ "$CODE" = "200" ]; then
