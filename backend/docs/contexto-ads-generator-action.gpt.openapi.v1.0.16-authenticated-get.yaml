@@ -1,0 +1,78 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Generator Authenticated GET Diagnostic
+  version: 1.0.16
+  description: Minimal authenticated GET diagnostic with no writes or Meta execution.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/action-ping:
+    get:
+      operationId: testGeneratorAuthenticatedGet
+      summary: Test authenticated GET without external effects
+      description: Read-only authentication and transport diagnostic. Performs no campaign submission or Meta write.
+      responses:
+        '200':
+          description: Authenticated GET succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthPingResponse'
+        '401':
+          description: Missing or invalid Bearer token
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    NoWriteBoundaries:
+      type: object
+      additionalProperties: false
+      required:
+        - publication_authorized
+        - external_writes_allowed
+        - external_writes_performed
+        - meta_write_performed
+      properties:
+        publication_authorized:
+          type: boolean
+          enum: [false]
+        external_writes_allowed:
+          type: boolean
+          enum: [false]
+        external_writes_performed:
+          type: boolean
+          enum: [false]
+        meta_write_performed:
+          type: boolean
+          enum: [false]
+    AuthPingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - action_status
+        - service
+        - schema_version
+        - authenticated
+        - authorized_tenant_count
+        - boundaries
+      properties:
+        action_status:
+          type: string
+          enum: [OK]
+        service:
+          type: string
+          enum: [contexto-ads-generator]
+        schema_version:
+          type: string
+        authenticated:
+          type: boolean
+          enum: [true]
+        authorized_tenant_count:
+          type: integer
+          minimum: 0
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
