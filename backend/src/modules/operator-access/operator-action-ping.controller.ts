@@ -1,4 +1,4 @@
-import { Controller, Get, Headers } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post } from '@nestjs/common';
 import { OperatorAccessService } from './operator-access.service';
 
 @Controller('operator')
@@ -13,6 +13,28 @@ export class OperatorActionPingController {
       service: 'contexto-ads-generator',
       schema_version: '1.0.8',
       authenticated: true,
+      authorized_tenant_count: workspace.tenants.length,
+      boundaries: {
+        publication_authorized: false,
+        external_writes_allowed: false,
+        external_writes_performed: false,
+        meta_write_performed: false,
+      },
+    };
+  }
+
+  @Post('action-post-ping')
+  async postPing(
+    @Body() body: { probe?: string },
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    const workspace = await this.access.listTenants(authorization);
+    return {
+      action_status: 'OK' as const,
+      service: 'contexto-ads-generator',
+      method: 'POST' as const,
+      authenticated: true,
+      probe: body?.probe === 'ok' ? 'ok' as const : 'invalid' as const,
       authorized_tenant_count: workspace.tenants.length,
       boundaries: {
         publication_authorized: false,
