@@ -1,0 +1,39 @@
+name: Public Read-only Gateway Smoke
+
+on:
+  push:
+    branches:
+      - agent/action-custom-header-auth
+    paths:
+      - '.github/workflows/public-readonly-gateway-smoke.yml'
+      - 'backend/src/modules/operator-access/public-readonly-action-gateway.controller.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for public read-only gateway deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://contexto-ads-validation-api.onrender.com/v1/public-action-gateway/campaign-packages/v1/849547ce-645e-4c7b-a844-451182253fe6/status'
+          for attempt in $(seq 1 24); do
+            CODE=$(curl --max-time 45 --silent --show-error               -D /tmp/headers               -o /tmp/body               -w '%{http_code}'               "$URL" || true)
+            echo "attempt $attempt: HTTP $CODE"
+            cat /tmp/body || true
+            if [ "$CODE" = "200" ]; then
+              jq -e '
+                (.action_status == "FOUND" or .action_status == "NOT_FOUND") and
+                .boundaries.publication_authorized == false and
+                .boundaries.external_writes_allowed == false and
+                .boundaries.external_writes_performed == false and
+                .boundaries.meta_write_performed == false
+              ' /tmp/body >/dev/null
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
