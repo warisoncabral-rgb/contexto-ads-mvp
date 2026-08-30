@@ -1,0 +1,67 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Generator Public POST Diagnostic
+  version: 1.0.13-public-post
+  description: Isolates whether GPT Actions can execute a minimal public POST request with JSON body.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+paths:
+  /operator/transport-post-ping:
+    post:
+      operationId: testGeneratorPublicPost
+      summary: Test public POST transport
+      description: Public no-write POST diagnostic. Does not authenticate, access campaign data, mutate the database, call Meta, publish, activate or spend.
+      security: []
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [probe]
+              properties:
+                probe:
+                  type: string
+                  enum: [ok]
+      responses:
+        '200':
+          description: Public POST reached the Generator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicPostResponse'
+components:
+  schemas:
+    PublicPostResponse:
+      type: object
+      additionalProperties: false
+      required: [action_status, service, method, transport, authenticated, probe, boundaries]
+      properties:
+        action_status:
+          type: string
+          enum: [OK]
+        service:
+          type: string
+        method:
+          type: string
+          enum: [POST]
+        transport:
+          type: string
+          enum: [reachable]
+        authenticated:
+          type: boolean
+          enum: [false]
+        probe:
+          type: string
+          enum: [ok]
+        boundaries:
+          type: object
+          additionalProperties: false
+          required: [publication_authorized, external_writes_allowed, external_writes_performed, meta_write_performed]
+          properties:
+            publication_authorized: { type: boolean, enum: [false] }
+            external_writes_allowed: { type: boolean, enum: [false] }
+            external_writes_performed: { type: boolean, enum: [false] }
+            meta_write_performed: { type: boolean, enum: [false] }
