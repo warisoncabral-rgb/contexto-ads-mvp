@@ -1,11 +1,7 @@
 name: Stable Authenticated POST Action Smoke
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/stable-action-post-ping.yml'
-      - 'backend/src/modules/operator-access/operator-action-ping.controller.ts'
+  workflow_dispatch:
 
 jobs:
   smoke:
@@ -16,39 +12,33 @@ jobs:
     steps:
       - name: Require stable operator secret
         run: test -n "$OPERATOR_TOKEN"
-      - name: Wait for authenticated POST ping
+      - name: Verify authenticated POST ping
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 24); do
-            CODE=$(curl --max-time 45 --silent --show-error \
-              -D /tmp/post.headers \
-              -o /tmp/post.json \
-              -w '%{http_code}' \
-              -H "Authorization: Bearer $OPERATOR_TOKEN" \
-              -H 'Content-Type: application/json' \
-              -X POST \
-              --data '{"probe":"ok"}' \
-              "$BASE_URL/operator/action-post-ping" || true)
-            echo "authenticated POST ping attempt $attempt: HTTP $CODE"
-            if [ "$CODE" = "200" ]; then
-              cat /tmp/post.json | jq .
-              grep -qi '^content-type: application/json' /tmp/post.headers
-              jq -e '
-                .action_status == "OK" and
-                .method == "POST" and
-                .authenticated == true and
-                .probe == "ok" and
-                .authorized_tenant_count >= 1 and
-                .boundaries.publication_authorized == false and
-                .boundaries.external_writes_allowed == false and
-                .boundaries.external_writes_performed == false and
-                .boundaries.meta_write_performed == false
-              ' /tmp/post.json >/dev/null
-              exit 0
-            fi
-            if [ "$attempt" = "24" ]; then exit 1; fi
-            sleep 15
-          done
+          CODE=$(curl --max-time 45 --silent --show-error \
+            -D /tmp/post.headers \
+            -o /tmp/post.json \
+            -w '%{http_code}' \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -X POST \
+            --data '{"probe":"ok"}' \
+            "$BASE_URL/operator/action-post-ping")
+          echo "authenticated POST ping: HTTP $CODE"
+          cat /tmp/post.json | jq .
+          test "$CODE" = "200"
+          grep -qi '^content-type: application/json' /tmp/post.headers
+          jq -e '
+            .action_status == "OK" and
+            .method == "POST" and
+            .authenticated == true and
+            .probe == "ok" and
+            .authorized_tenant_count >= 1 and
+            .boundaries.publication_authorized == false and
+            .boundaries.external_writes_allowed == false and
+            .boundaries.external_writes_performed == false and
+            .boundaries.meta_write_performed == false
+          ' /tmp/post.json >/dev/null
       - name: Confirm no Meta execution
         run: echo 'POST ping only; no campaign submit, database mutation, Meta execution, publication, activation or spend endpoint called.'
