@@ -24,6 +24,7 @@ export class OperatorActionPingController {
   }
 
   @Post('action-post-ping')
+  // GPT Actions schema declares this diagnostic operation as an explicit HTTP 200 response.
   @HttpCode(200)
   async postPing(
     @Body() body: { probe?: string },
