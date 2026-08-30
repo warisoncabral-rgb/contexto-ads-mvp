@@ -1,0 +1,88 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Generator Authenticated POST Diagnostic
+  version: 1.0.14-post-auth-nonconsequential
+  description: Tests a minimal authenticated POST explicitly marked non-consequential.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/action-ping:
+    get:
+      operationId: testGeneratorActionConnection
+      summary: Test authenticated GET connectivity
+      responses:
+        '200':
+          description: Authenticated GET works
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthPingResponse'
+  /operator/action-post-ping:
+    post:
+      operationId: testGeneratorAuthenticatedPost
+      summary: Test authenticated POST connectivity
+      description: Minimal authenticated no-write POST diagnostic.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostPingRequest'
+      responses:
+        '200':
+          description: Authenticated POST works
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPingResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    NoWriteBoundaries:
+      type: object
+      additionalProperties: false
+      required: [publication_authorized, external_writes_allowed, external_writes_performed, meta_write_performed]
+      properties:
+        publication_authorized: { type: boolean }
+        external_writes_allowed: { type: boolean }
+        external_writes_performed: { type: boolean }
+        meta_write_performed: { type: boolean }
+    AuthPingResponse:
+      type: object
+      additionalProperties: false
+      required: [action_status, service, schema_version, authenticated, authorized_tenant_count, boundaries]
+      properties:
+        action_status: { type: string, enum: [OK] }
+        service: { type: string }
+        schema_version: { type: string }
+        authenticated: { type: boolean, enum: [true] }
+        authorized_tenant_count: { type: integer, minimum: 0 }
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
+    PostPingRequest:
+      type: object
+      additionalProperties: false
+      required: [probe]
+      properties:
+        probe:
+          type: string
+          enum: [ok]
+    PostPingResponse:
+      type: object
+      additionalProperties: false
+      required: [action_status, service, method, authenticated, probe, authorized_tenant_count, boundaries]
+      properties:
+        action_status: { type: string, enum: [OK] }
+        service: { type: string }
+        method: { type: string, enum: [POST] }
+        authenticated: { type: boolean, enum: [true] }
+        probe: { type: string, enum: [ok] }
+        authorized_tenant_count: { type: integer, minimum: 0 }
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
