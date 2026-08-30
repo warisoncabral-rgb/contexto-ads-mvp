@@ -30,6 +30,29 @@ describe('OperatorActionPingController', () => {
     });
   });
 
+  it('returns a minimal public POST transport response without authentication', async () => {
+    const access = { listTenants: jest.fn() };
+    const controller = new OperatorActionPingController(access as any);
+
+    const result = await controller.transportPostPing({ probe: 'ok' });
+
+    expect(access.listTenants).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      action_status: 'OK',
+      service: 'contexto-ads-generator',
+      method: 'POST',
+      transport: 'reachable',
+      authenticated: false,
+      probe: 'ok',
+      boundaries: {
+        publication_authorized: false,
+        external_writes_allowed: false,
+        external_writes_performed: false,
+        meta_write_performed: false,
+      },
+    });
+  });
+
   it('returns a minimal authenticated no-write POST response', async () => {
     const access = {
       listTenants: jest.fn(async () => ({
