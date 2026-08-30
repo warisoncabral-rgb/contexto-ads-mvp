@@ -23,6 +23,25 @@ export class OperatorActionPingController {
     };
   }
 
+  @Post('transport-post-ping')
+  @HttpCode(200)
+  async transportPostPing(@Body() body: { probe?: string }) {
+    return {
+      action_status: 'OK' as const,
+      service: 'contexto-ads-generator',
+      method: 'POST' as const,
+      transport: 'reachable' as const,
+      authenticated: false,
+      probe: body?.probe === 'ok' ? 'ok' as const : 'invalid' as const,
+      boundaries: {
+        publication_authorized: false,
+        external_writes_allowed: false,
+        external_writes_performed: false,
+        meta_write_performed: false,
+      },
+    };
+  }
+
   @Post('action-post-ping')
   // GPT Actions schema declares this diagnostic operation as an explicit HTTP 200 response.
   @HttpCode(200)
