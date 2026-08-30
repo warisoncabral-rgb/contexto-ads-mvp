@@ -23,6 +23,7 @@ import { CampaignPackageModule } from '../campaign-package/campaign-package.modu
 import { OperatorCampaignPackageController } from './operator-campaign-package.controller';
 import { OperatorActionPingController } from './operator-action-ping.controller';
 import { OperatorActionTransportController } from './operator-action-transport.controller';
+import { PublicReadonlyActionGatewayController } from './public-readonly-action-gateway.controller';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { OperatorActionTransportController } from './operator-action-transport.c
     OperatorCampaignPackageController,
     OperatorActionPingController,
     OperatorActionTransportController,
+    PublicReadonlyActionGatewayController,
   ],
   providers: [OperatorAccessService],
 })

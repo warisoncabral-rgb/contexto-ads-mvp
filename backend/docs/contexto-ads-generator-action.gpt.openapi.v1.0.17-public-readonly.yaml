@@ -1,0 +1,59 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Public Read-only Gateway
+  version: 1.0.17
+  description: Public capability-style recovery by unguessable package UUID. Read-only; no submission or Meta execution routes.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+paths:
+  /public-action-gateway/campaign-packages/v1/{packageId}/status:
+    get:
+      operationId: recoverCampaignPackageStatusPublic
+      summary: Recover a Campaign Package status without GPT Action authentication
+      description: Read-only lookup. Performs no campaign submission, publication, activation, external write, or Meta spend.
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Stable status envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionStatusEnvelope'
+components:
+  schemas:
+    NoWriteBoundaries:
+      type: object
+      additionalProperties: true
+      required:
+        - publication_authorized
+        - external_writes_allowed
+        - external_writes_performed
+        - meta_write_performed
+      properties:
+        publication_authorized: { type: boolean, enum: [false] }
+        external_writes_allowed: { type: boolean, enum: [false] }
+        external_writes_performed: { type: boolean, enum: [false] }
+        meta_write_performed: { type: boolean, enum: [false] }
+    ActionStatusEnvelope:
+      type: object
+      additionalProperties: true
+      required: [action_status, boundaries]
+      properties:
+        action_status:
+          type: string
+          enum: [FOUND, NOT_FOUND, REJECTED]
+        http_status: { type: integer }
+        package_id: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+        next_action: { type: string }
+        error:
+          type: object
+          additionalProperties: true
+        boundaries:
+          $ref: '#/components/schemas/NoWriteBoundaries'
