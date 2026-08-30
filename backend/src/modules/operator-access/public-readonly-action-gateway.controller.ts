@@ -8,9 +8,17 @@ import {
 } from '@nestjs/common';
 import { CampaignPackageStatusService } from '../campaign-package/campaign-package-status.service';
 
+const CANONICAL_PACKAGE_ID = '849547ce-645e-4c7b-a844-451182253fe6';
+
 @Controller('public-action-gateway')
 export class PublicReadonlyActionGatewayController {
   constructor(private readonly status: CampaignPackageStatusService) {}
+
+  @Get('canonical-package-status')
+  @HttpCode(200)
+  async recoverCanonical(): Promise<any> {
+    return this.recover(CANONICAL_PACKAGE_ID);
+  }
 
   @Get('campaign-packages/v1/:packageId/status')
   @HttpCode(200)
