@@ -1,0 +1,37 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Static Public Recovery
+  version: 1.0.18
+  description: Minimal static GET for the canonical Campaign Package. No authentication, parameters, request body, submission, or Meta execution.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+paths:
+  /public-action-gateway/canonical-package-status:
+    get:
+      operationId: recoverCanonicalCampaignPackageStatus
+      summary: Recover the canonical Campaign Package status
+      description: Read-only static lookup with no external effects.
+      responses:
+        '200':
+          description: Stable status envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required:
+                  - action_status
+                  - boundaries
+                properties:
+                  action_status:
+                    type: string
+                  http_status:
+                    type: integer
+                  package_id:
+                    type: string
+                  error:
+                    type: object
+                    additionalProperties: true
+                  boundaries:
+                    type: object
+                    additionalProperties: true
