@@ -9,6 +9,16 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/frontend.yml'
+  push:
+    branches:
+      - agent/hosted-meta-oauth-validation
+    paths:
+      - 'app/**'
+      - 'lib/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/frontend.yml'
 
 jobs:
   test:
