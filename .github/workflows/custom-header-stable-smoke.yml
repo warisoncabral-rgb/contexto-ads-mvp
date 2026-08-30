@@ -1,0 +1,110 @@
+name: Stable Custom Header Action Smoke
+
+on:
+  push:
+    branches:
+      - agent/custom-header-stable-smoke
+    paths:
+      - '.github/workflows/custom-header-stable-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      PACKAGE_ID: 849547ce-645e-4c7b-a844-451182253fe6
+    steps:
+      - name: Require stable operator secret
+        run: test -n "$OPERATOR_TOKEN"
+
+      - name: Wait for custom-header deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            CODE=$(curl --max-time 45 --silent --show-error \
+              -D /tmp/get.headers \
+              -o /tmp/get.json \
+              -w '%{http_code}' \
+              -H "X-Contexto-Operator-Key: $OPERATOR_TOKEN" \
+              "$BASE_URL/operator/action-ping" || true)
+            echo "custom-header GET attempt $attempt: HTTP $CODE"
+            if [ "$CODE" = "200" ]; then
+              cat /tmp/get.json | jq .
+              if jq -e '
+                .action_status == "OK" and
+                .authenticated == true and
+                .authorized_tenant_count >= 1 and
+                .boundaries.publication_authorized == false and
+                .boundaries.external_writes_allowed == false and
+                .boundaries.external_writes_performed == false and
+                .boundaries.meta_write_performed == false
+              ' /tmp/get.json >/dev/null; then
+                break
+              fi
+            fi
+            if [ "$attempt" = "24" ]; then exit 1; fi
+            sleep 15
+          done
+
+      - name: Verify custom-header authenticated POST
+        shell: bash
+        run: |
+          set -euo pipefail
+          CODE=$(curl --max-time 45 --silent --show-error \
+            -D /tmp/post.headers \
+            -o /tmp/post.json \
+            -w '%{http_code}' \
+            -H "X-Contexto-Operator-Key: $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -X POST \
+            --data '{"probe":"ok"}' \
+            "$BASE_URL/operator/action-post-ping")
+          echo "custom-header POST: HTTP $CODE"
+          cat /tmp/post.json | jq .
+          test "$CODE" = "200"
+          jq -e '
+            .action_status == "OK" and
+            .method == "POST" and
+            .authenticated == true and
+            .probe == "ok" and
+            .authorized_tenant_count >= 1 and
+            .boundaries.publication_authorized == false and
+            .boundaries.external_writes_allowed == false and
+            .boundaries.external_writes_performed == false and
+            .boundaries.meta_write_performed == false
+          ' /tmp/post.json >/dev/null
+
+      - name: Verify custom-header canonical recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          CODE=$(curl --max-time 45 --silent --show-error \
+            -D /tmp/recovery.headers \
+            -o /tmp/recovery.json \
+            -w '%{http_code}' \
+            -H "X-Contexto-Operator-Key: $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -X POST \
+            --data "{\"package_id\":\"$PACKAGE_ID\"}" \
+            "$BASE_URL/operator/campaign-packages/v1/action-status")
+          echo "custom-header recovery: HTTP $CODE"
+          cat /tmp/recovery.json | jq .
+          test "$CODE" = "200"
+          jq -e --arg package_id "$PACKAGE_ID" '
+            .action_status == "NOT_FOUND" and
+            .http_status == 404 and
+            .error.code == "campaign_package_not_found" and
+            .error.packageId == $package_id and
+            .boundaries.publication_authorized == false and
+            .boundaries.external_writes_allowed == false and
+            .boundaries.external_writes_performed == false and
+            .boundaries.meta_write_performed == false
+          ' /tmp/recovery.json >/dev/null
+
+      - name: Confirm no external execution
+        run: echo 'Custom-header GET/POST/recovery only; no campaign submit, Meta execution, publication, activation or spend endpoint called.'
