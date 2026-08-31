@@ -32,6 +32,7 @@ export class MetaInsightsService {
     if (!/^\d+$/.test(campaignId)) {
       throw new BadRequestException('campaignId must contain only digits');
     }
+    this.assertPeriod(periodStart, periodEnd);
 
     const connection = await this.connections.latestReadyForTenant(tenantId);
     if (!connection || !connection.credentialRef) {
@@ -65,6 +66,19 @@ export class MetaInsightsService {
       periodEnd,
       currency,
     );
+  }
+
+  private assertPeriod(periodStart: string, periodEnd: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(periodEnd)) {
+      throw new BadRequestException('Insight period must use YYYY-MM-DD');
+    }
+    const start = Date.parse(`${periodStart}T00:00:00Z`);
+    const end = Date.parse(`${periodEnd}T00:00:00Z`);
+    const days = Math.floor((end - start) / 86_400_000) + 1;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start || days < 1 || days > 31) {
+      throw new BadRequestException('Insight period must contain between 1 and 31 days');
+    }
   }
 
   private assertUuid(value: string, field: string) {
