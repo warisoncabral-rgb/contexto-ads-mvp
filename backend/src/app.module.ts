@@ -19,6 +19,7 @@ import { OperatorAccessModule } from './modules/operator-access/operator-access.
 import { HealthModule } from './modules/health/health.module';
 import { MetaExecutionModule } from './modules/meta-execution/meta-execution.module';
 import { AnalystModule } from './modules/analyst/analyst.module';
+import { MetaInsightsModule } from './modules/meta-insights/meta-insights.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { AnalystModule } from './modules/analyst/analyst.module';
     HealthModule,
     MetaExecutionModule,
     AnalystModule,
+    MetaInsightsModule,
   ],
 })
 export class AppModule {}
