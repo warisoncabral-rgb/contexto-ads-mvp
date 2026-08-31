@@ -1,6 +1,10 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
+import {
+  AnalystAnalysisV1,
+  AnalystRecommendedAction,
+} from '../../domain/contracts/analyst';
 import { AuditEvent } from '../../domain/contracts/audit-event';
 import {
   AnalystEssentialAlertV1,
@@ -17,12 +21,10 @@ import { AnalystPresenter } from './analyst.presenter';
 import { AnalystService } from './analyst.service';
 
 interface DecisionRow {
-  event_type: string;
   actor_id: string | null;
   new_state: {
     decision?: AnalystRecommendationDecision;
     reason?: string | null;
-    recommendedAction?: string;
     handoffTarget?: AnalystRecommendationHandoffTarget;
   } | null;
   created_at: Date;
@@ -44,39 +46,21 @@ export class AnalystGovernanceService {
     actor: string,
     reasonValue?: unknown,
   ): Promise<AnalystRecommendationDecisionV1> {
-    const decision = this.decision(decisionValue);
-    const reason = this.reason(reasonValue);
-    const latest = await this.analyst.latest(tenantId, campaignId);
-    const analysis = latest.analysis;
+    const decision = this.parseDecision(decisionValue);
+    const reason = this.parseReason(reasonValue);
+    const analysis = (await this.analyst.latest(tenantId, campaignId)).analysis;
     if (!analysis) return this.noRecommendation(tenantId, campaignId);
-    if (!analysis.requiresApproval) {
-      return {
-        ...this.baseBoundaries(),
-        actionStatus: 'NO_APPROVAL_REQUIRED',
-        tenantId,
-        campaignId,
-        analysisId: analysis.analysisId,
-        recommendedAction: analysis.recommendedAction,
-        decision: null,
-        reason: null,
-        handoffTarget: null,
-        decidedBy: null,
-        decidedAt: null,
-        userMessage: 'A recomendação atual não exige aprovação do usuário.',
-        nextStep: 'Siga o acompanhamento indicado pelo Analista. Nenhuma execução foi autorizada.',
-      };
-    }
+    if (!analysis.requiresApproval) return this.noApprovalRequired(analysis);
 
     const previous = await this.latestDecisionRow(tenantId, analysis.analysisId);
     if (previous?.new_state?.decision === decision) {
-      return this.fromRow(tenantId, campaignId, analysis.analysisId,
-        analysis.recommendedAction, previous);
+      return this.fromRow(analysis, previous);
     }
 
-    const decidedAt = new Date().toISOString();
     const handoffTarget = decision === 'approve'
       ? this.handoffTarget(analysis.recommendedAction)
       : null;
+    const decidedAt = new Date().toISOString();
     const event: AuditEvent = {
       auditEventId: randomUUID(),
       tenantId,
@@ -104,7 +88,7 @@ export class AnalystGovernanceService {
     await this.audit.append(event);
 
     return {
-      ...this.baseBoundaries(),
+      ...this.boundaries(),
       actionStatus: decision === 'approve'
         ? 'APPROVED_RECOMMENDATION'
         : 'REJECTED_RECOMMENDATION',
@@ -120,7 +104,7 @@ export class AnalystGovernanceService {
       userMessage: decision === 'approve'
         ? 'A recomendação foi aprovada e registrada. Nenhuma alteração foi executada.'
         : 'A recomendação foi rejeitada e registrada. Nenhuma alteração foi executada.',
-      nextStep: decision === 'approve'
+      nextStep: handoffTarget
         ? this.handoffCopy(handoffTarget)
         : 'Mantenha a campanha sob acompanhamento e aguarde a próxima análise.',
     };
@@ -130,54 +114,34 @@ export class AnalystGovernanceService {
     tenantId: string,
     campaignId: string,
   ): Promise<AnalystRecommendationDecisionV1> {
-    const latest = await this.analyst.latest(tenantId, campaignId);
-    const analysis = latest.analysis;
+    const analysis = (await this.analyst.latest(tenantId, campaignId)).analysis;
     if (!analysis) return this.noRecommendation(tenantId, campaignId);
-    if (!analysis.requiresApproval) {
-      return {
-        ...this.baseBoundaries(),
-        actionStatus: 'NO_APPROVAL_REQUIRED',
-        tenantId,
-        campaignId,
-        analysisId: analysis.analysisId,
-        recommendedAction: analysis.recommendedAction,
-        decision: null,
-        reason: null,
-        handoffTarget: null,
-        decidedBy: null,
-        decidedAt: null,
-        userMessage: 'A recomendação atual não exige aprovação do usuário.',
-        nextStep: 'Siga o acompanhamento indicado pelo Analista.',
-      };
-    }
+    if (!analysis.requiresApproval) return this.noApprovalRequired(analysis);
     const row = await this.latestDecisionRow(tenantId, analysis.analysisId);
-    if (!row) {
-      return {
-        ...this.baseBoundaries(),
-        actionStatus: 'NO_RECOMMENDATION',
-        tenantId,
-        campaignId,
-        analysisId: analysis.analysisId,
-        recommendedAction: analysis.recommendedAction,
-        decision: null,
-        reason: null,
-        handoffTarget: null,
-        decidedBy: null,
-        decidedAt: null,
-        userMessage: 'Existe uma recomendação aguardando sua decisão.',
-        nextStep: 'Aprove ou rejeite a recomendação. Isso não autoriza execução na Meta.',
-      };
-    }
-    return this.fromRow(tenantId, campaignId, analysis.analysisId,
-      analysis.recommendedAction, row);
+    if (row) return this.fromRow(analysis, row);
+    return {
+      ...this.boundaries(),
+      actionStatus: 'NO_RECOMMENDATION',
+      tenantId,
+      campaignId,
+      analysisId: analysis.analysisId,
+      recommendedAction: analysis.recommendedAction,
+      decision: null,
+      reason: null,
+      handoffTarget: null,
+      decidedBy: null,
+      decidedAt: null,
+      userMessage: 'Existe uma recomendação aguardando sua decisão.',
+      nextStep: 'Aprove ou rejeite a recomendação. Isso não autoriza execução na Meta.',
+    };
   }
 
   async essentialAlert(
     tenantId: string,
     campaignId: string,
   ): Promise<AnalystEssentialAlertV1> {
-    const latest = await this.analyst.latest(tenantId, campaignId);
-    if (!latest.analysis) {
+    const analysis = (await this.analyst.latest(tenantId, campaignId)).analysis;
+    if (!analysis) {
       return {
         actionStatus: 'NO_ANALYSIS',
         level: 'none',
@@ -191,34 +155,33 @@ export class AnalystGovernanceService {
         boundaries: this.alertBoundaries(),
       };
     }
-    const analysis = latest.analysis;
     const brief = this.presenter.present(analysis);
     if (brief.operationalState === 'PAUSED') {
-      return this.alert('info', 'Campanha pausada', brief.situation, brief.nextStep,
-        false, analysis.analysisId, campaignId, analysis.nextReview);
+      return this.alert(analysis, 'info', 'Campanha pausada', brief.situation,
+        brief.nextStep, false);
     }
     if (analysis.healthStatus === 'OPERATIONAL_PROBLEM') {
-      return this.alert('critical', 'Problema operacional', brief.situation, brief.nextStep,
-        true, analysis.analysisId, campaignId, analysis.nextReview);
+      return this.alert(analysis, 'critical', 'Problema operacional', brief.situation,
+        brief.nextStep, true);
     }
     if (analysis.healthStatus === 'INTERVENTION_RECOMMENDED') {
-      return this.alert('action_required', 'Decisão recomendada', brief.recommendation,
-        brief.nextStep, true, analysis.analysisId, campaignId, analysis.nextReview);
+      return this.alert(analysis, 'action_required', 'Decisão recomendada',
+        brief.recommendation, brief.nextStep, true);
     }
     if (analysis.healthStatus === 'ATTENTION') {
-      return this.alert('watch', 'Sinal em observação', brief.situation, brief.nextStep,
-        false, analysis.analysisId, campaignId, analysis.nextReview);
+      return this.alert(analysis, 'watch', 'Sinal em observação', brief.situation,
+        brief.nextStep, false);
     }
-    return this.alert('none', 'Sem alerta relevante', brief.situation, brief.nextStep,
-      false, analysis.analysisId, campaignId, analysis.nextReview);
+    return this.alert(analysis, 'none', 'Sem alerta relevante', brief.situation,
+      brief.nextStep, false);
   }
 
-  private decision(value: string): AnalystRecommendationDecision {
+  private parseDecision(value: string): AnalystRecommendationDecision {
     if (value === 'approve' || value === 'reject') return value;
     throw new BadRequestException('decision must be approve or reject');
   }
 
-  private reason(value: unknown): string | null {
+  private parseReason(value: unknown): string | null {
     if (value === undefined || value === null || value === '') return null;
     if (typeof value !== 'string') throw new BadRequestException('reason must be a string');
     const normalized = value.replace(/\s+/g, ' ').trim();
@@ -227,7 +190,7 @@ export class AnalystGovernanceService {
     return normalized;
   }
 
-  private handoffTarget(action: string): AnalystRecommendationHandoffTarget {
+  private handoffTarget(action: AnalystRecommendedAction): AnalystRecommendationHandoffTarget {
     if (action === 'GERAR_NOVA_VARIACAO') return 'generator';
     if (action === 'REAVALIAR_ESTRATEGIA') return 'contexto_ads';
     return 'operational_review';
@@ -248,7 +211,7 @@ export class AnalystGovernanceService {
     analysisId: string,
   ): Promise<DecisionRow | null> {
     const result = await this.pool.query<DecisionRow>(
-      `select event_type, actor_id, new_state, created_at
+      `select actor_id, new_state, created_at
        from audit_events
        where tenant_id = $1 and object_id = $2
          and event_type in ('analyst_recommendation_approved','analyst_recommendation_rejected')
@@ -259,23 +222,20 @@ export class AnalystGovernanceService {
   }
 
   private fromRow(
-    tenantId: string,
-    campaignId: string,
-    analysisId: string,
-    recommendedAction: any,
+    analysis: AnalystAnalysisV1,
     row: DecisionRow,
   ): AnalystRecommendationDecisionV1 {
     const decision = row.new_state?.decision ?? null;
     const handoffTarget = row.new_state?.handoffTarget ?? null;
     return {
-      ...this.baseBoundaries(),
+      ...this.boundaries(),
       actionStatus: decision === 'approve'
         ? 'APPROVED_RECOMMENDATION'
         : 'REJECTED_RECOMMENDATION',
-      tenantId,
-      campaignId,
-      analysisId,
-      recommendedAction,
+      tenantId: analysis.tenantId,
+      campaignId: analysis.campaignId,
+      analysisId: analysis.analysisId,
+      recommendedAction: analysis.recommendedAction,
       decision,
       reason: row.new_state?.reason ?? null,
       handoffTarget,
@@ -290,9 +250,27 @@ export class AnalystGovernanceService {
     };
   }
 
+  private noApprovalRequired(analysis: AnalystAnalysisV1): AnalystRecommendationDecisionV1 {
+    return {
+      ...this.boundaries(),
+      actionStatus: 'NO_APPROVAL_REQUIRED',
+      tenantId: analysis.tenantId,
+      campaignId: analysis.campaignId,
+      analysisId: analysis.analysisId,
+      recommendedAction: analysis.recommendedAction,
+      decision: null,
+      reason: null,
+      handoffTarget: null,
+      decidedBy: null,
+      decidedAt: null,
+      userMessage: 'A recomendação atual não exige aprovação do usuário.',
+      nextStep: 'Siga o acompanhamento indicado pelo Analista. Nenhuma execução foi autorizada.',
+    };
+  }
+
   private noRecommendation(tenantId: string, campaignId: string): AnalystRecommendationDecisionV1 {
     return {
-      ...this.baseBoundaries(),
+      ...this.boundaries(),
       actionStatus: 'NO_RECOMMENDATION',
       tenantId,
       campaignId,
@@ -308,7 +286,7 @@ export class AnalystGovernanceService {
     };
   }
 
-  private baseBoundaries() {
+  private boundaries() {
     return {
       boundaries: {
         decisionIsExecutionAuthorization: false as const,
@@ -322,14 +300,12 @@ export class AnalystGovernanceService {
   }
 
   private alert(
+    analysis: AnalystAnalysisV1,
     level: AnalystEssentialAlertV1['level'],
     title: string,
     message: string,
     nextStep: string,
     userActionRequired: boolean,
-    analysisId: string,
-    campaignId: string,
-    nextReviewAt: string,
   ): AnalystEssentialAlertV1 {
     return {
       actionStatus: 'OK',
@@ -338,9 +314,9 @@ export class AnalystGovernanceService {
       message,
       nextStep,
       userActionRequired,
-      analysisId,
-      campaignId,
-      nextReviewAt,
+      analysisId: analysis.analysisId,
+      campaignId: analysis.campaignId,
+      nextReviewAt: analysis.nextReview,
       boundaries: this.alertBoundaries(),
     };
   }
