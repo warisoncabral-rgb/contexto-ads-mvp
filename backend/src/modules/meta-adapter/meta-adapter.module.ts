@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { CredentialVaultPort } from '../../domain/ports/credential-vault.port';
 import { CredentialVaultModule } from '../../infrastructure/vault/credential-vault.module';
 import { CREDENTIAL_VAULT } from '../../infrastructure/vault/credential-vault.tokens';
+import { MetaInsightsReadonlyAdapter } from './meta-insights-readonly.adapter';
 import { MetaReadonlyAdapter } from './meta-readonly.adapter';
 import { MetaWriteAdapter } from './meta-write.adapter';
 
@@ -14,11 +15,16 @@ import { MetaWriteAdapter } from './meta-write.adapter';
     useFactory: (config: ConfigService, vault: CredentialVaultPort) =>
       new MetaReadonlyAdapter(config, vault),
   }, {
+    provide: MetaInsightsReadonlyAdapter,
+    inject: [ConfigService, CREDENTIAL_VAULT],
+    useFactory: (config: ConfigService, vault: CredentialVaultPort) =>
+      new MetaInsightsReadonlyAdapter(config, vault),
+  }, {
     provide: MetaWriteAdapter,
     inject: [ConfigService, CREDENTIAL_VAULT],
     useFactory: (config: ConfigService, vault: CredentialVaultPort) =>
       new MetaWriteAdapter(config, vault),
   }],
-  exports: [MetaReadonlyAdapter, MetaWriteAdapter],
+  exports: [MetaReadonlyAdapter, MetaInsightsReadonlyAdapter, MetaWriteAdapter],
 })
 export class MetaAdapterModule {}
