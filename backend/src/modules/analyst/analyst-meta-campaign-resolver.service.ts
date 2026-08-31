@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { AnalystTrackingRegistrationV1 } from '../../domain/contracts/analyst-tracking';
 import {
   ExecutionManifestRepository,
   ExecutionPlanRepository,
@@ -49,9 +50,7 @@ export class AnalystMetaCampaignResolverService {
     return ensured ? this.fromRegistration(ensured) : null;
   }
 
-  private fromRegistration(registration: Awaited<ReturnType<AnalystTrackingService['find']>> extends infer T
-    ? NonNullable<T>
-    : never): ResolvedMetaCampaignV1 {
+  private fromRegistration(registration: AnalystTrackingRegistrationV1): ResolvedMetaCampaignV1 {
     return {
       externalCampaignId: registration.externalCampaignId,
       executionPlanId: registration.executionPlanId,
