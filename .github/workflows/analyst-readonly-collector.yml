@@ -1,0 +1,58 @@
+name: Analista Ads Readonly Collector
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/scripts/analyst-readonly-collector.mjs'
+      - '.github/workflows/analyst-readonly-collector.yml'
+  pull_request:
+    paths:
+      - 'backend/scripts/analyst-readonly-collector.mjs'
+      - '.github/workflows/analyst-readonly-collector.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analyst-readonly-collector
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate collector syntax
+        run: node --check backend/scripts/analyst-readonly-collector.mjs
+
+  collect:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ANALYST_API_BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      CONTEXT_ADS_OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      ANALYST_COLLECTION_LOOKBACK_DAYS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Require stable operator secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CONTEXT_ADS_OPERATOR_TOKEN"
+      - name: Collect and analyze authorized campaigns
+        run: node backend/scripts/analyst-readonly-collector.mjs
+      - name: Confirm collection boundaries
+        run: echo "Analista collection completed in read-only shadow mode; no publication, activation, budget mutation or recommendation execution was requested."
