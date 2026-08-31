@@ -6,8 +6,8 @@ export type OfferType = 'product' | 'service' | 'catalog' | 'promotion' | 'lead_
 export type CampaignPackageObjective = 'LEADS';
 export type ConversionDestination = 'WHATSAPP';
 export type AdCallToAction = 'WHATSAPP_MESSAGE';
-export type MediaType = 'image';
-export type ImageMimeType = 'image/jpeg' | 'image/png';
+export type MediaType = 'image' | 'video';
+export type CampaignPackageMimeType = 'image/jpeg' | 'image/png' | 'video/mp4';
 
 export interface CampaignPackageLocationV1 {
   city: string;
@@ -33,7 +33,7 @@ export interface CampaignPackageMediaV1 {
   source: string;
   file_reference: string;
   checksum: string;
-  mime_type: ImageMimeType;
+  mime_type: CampaignPackageMimeType;
   width: number;
   height: number;
 }
