@@ -1,6 +1,5 @@
 import { MetaAssetBinding } from '../contracts/meta-connection';
 import { MetaCapabilityType } from '../contracts/capability';
-import { MetaCampaignInsightsV1 } from '../contracts/meta-insights';
 
 export interface MetaAdapterResult<T> {
   success: boolean;
@@ -37,13 +36,4 @@ export interface MetaAdapterPort {
     requested: MetaCapabilityType[],
   ): Promise<MetaAdapterResult<MetaCapabilityEvidence[]>>;
   readAdAccount(tenantId: string, credentialRef: string, adAccountId: string): Promise<MetaAdapterResult<Record<string, unknown>>>;
-  readCampaignInsights(
-    tenantId: string,
-    credentialRef: string,
-    expectedAdAccountId: string,
-    campaignId: string,
-    periodStart: string,
-    periodEnd: string,
-    currency: string,
-  ): Promise<MetaAdapterResult<MetaCampaignInsightsV1>>;
 }
