@@ -1,0 +1,7 @@
+trigger=2026-08-31T22:56:00Z
+scope=contexto-generator-meta-analyst-feedback-certification
+campaign_id=b8f16916-cf4c-4e80-894e-dcc56fbd9564
+meta_write=false
+publication=false
+activation=false
+budget_mutation=false
