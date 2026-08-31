@@ -11,6 +11,7 @@ on:
       - main
       - agent/contexto-gerador-integration-v1
       - agent/hosted-meta-oauth-validation
+      - agent/action-custom-header-auth
     paths:
       - 'backend/**'
       - 'render.yaml'
