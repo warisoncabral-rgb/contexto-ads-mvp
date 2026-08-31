@@ -6,6 +6,7 @@ import { PostgresAnalystRepository } from '../../infrastructure/database/postgre
 import { MetaInsightsModule } from '../meta-insights/meta-insights.module';
 import { OperatorAccessModule } from '../operator-access/operator-access.module';
 import { AnalystController } from './analyst.controller';
+import { AnalystPresenter } from './analyst.presenter';
 import { AnalystService } from './analyst.service';
 import { ANALYST_REPOSITORY } from './analyst.tokens';
 
@@ -19,7 +20,8 @@ import { ANALYST_REPOSITORY } from './analyst.tokens';
       useFactory: (pool: Pool) => new PostgresAnalystRepository(pool),
     },
     AnalystService,
+    AnalystPresenter,
   ],
-  exports: [AnalystService],
+  exports: [AnalystService, AnalystPresenter],
 })
 export class AnalystModule {}
