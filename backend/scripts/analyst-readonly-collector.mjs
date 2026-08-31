@@ -59,20 +59,33 @@ function uniqueTargets(portfolio) {
 
 function assertSafeBoundaries(result) {
   const boundaries = result?.boundaries ?? {};
-  const forbiddenTrue = [
+  for (const key of [
     'meta_write_performed',
     'external_writes_allowed',
     'recommendation_auto_executed',
     'financial_action_authorized',
-  ];
-  for (const key of forbiddenTrue) {
-    if (boundaries[key] === true) {
-      throw new Error(`Unsafe analyst boundary detected: ${key}=true`);
-    }
+  ]) {
+    if (boundaries[key] === true) throw new Error(`Unsafe analyst boundary detected: ${key}=true`);
   }
 }
 
-function sanitize(result, target) {
+function assertSafeLearning(learning) {
+  const boundaries = learning?.boundaries ?? {};
+  if (learning?.actionStatus === 'RECORDED' && boundaries.contextualOnly !== true) {
+    throw new Error('Recorded learning is not marked contextual-only');
+  }
+  for (const key of [
+    'universalRuleCreated',
+    'autonomousTrainingPerformed',
+    'metaWritePerformed',
+    'externalWritesAllowed',
+    'recommendationAutoExecuted',
+  ]) {
+    if (boundaries[key] === true) throw new Error(`Unsafe learning boundary detected: ${key}=true`);
+  }
+}
+
+function sanitize(result, target, learning = null) {
   const brief = result?.user_brief ?? null;
   return {
     tenantId: target.tenantId,
@@ -88,6 +101,9 @@ function sanitize(result, target) {
       result?.meta_campaign_resolution?.technical_id_required_from_user
       ?? result?.technical_id_required_from_user
       ?? null,
+    learningStatus: learning?.actionStatus ?? null,
+    learning: learning?.learning ?? null,
+    learningConfidence: learning?.confidence ?? null,
   };
 }
 
@@ -104,6 +120,9 @@ export async function collectPortfolio(options = {}) {
     unavailable: 0,
     skipped: 0,
     failed: 0,
+    learningRecorded: 0,
+    learningNoLearning: 0,
+    learningFailed: 0,
   };
   const results = [];
 
@@ -114,18 +133,39 @@ export async function collectPortfolio(options = {}) {
         token,
         `/operator/tenants/${encodeURIComponent(target.tenantId)}`
           + `/campaigns/${encodeURIComponent(target.campaignId)}/analyst/collect-meta`,
-        {
-          method: 'POST',
-          body: JSON.stringify(window),
-        },
+        { method: 'POST', body: JSON.stringify(window) },
       );
       assertSafeBoundaries(result);
       const status = result?.action_status;
-      if (status === 'ANALYZED') totals.analyzed += 1;
-      else if (status === 'AWAITING_META_LINK') totals.awaitingMetaLink += 1;
+      let learning = null;
+
+      if (status === 'ANALYZED') {
+        totals.analyzed += 1;
+        try {
+          learning = await request(
+            baseUrl,
+            token,
+            `/operator/tenants/${encodeURIComponent(target.tenantId)}`
+              + `/campaigns/${encodeURIComponent(target.campaignId)}/analyst/learning/refresh`,
+            { method: 'POST' },
+          );
+          assertSafeLearning(learning);
+          if (learning?.actionStatus === 'RECORDED') totals.learningRecorded += 1;
+          else totals.learningNoLearning += 1;
+        } catch (error) {
+          totals.learningFailed += 1;
+          learning = {
+            actionStatus: 'FAILED',
+            learning: null,
+            confidence: null,
+            error: error instanceof Error ? error.message : 'Unknown learning refresh error',
+          };
+        }
+      } else if (status === 'AWAITING_META_LINK') totals.awaitingMetaLink += 1;
       else if (status === 'UNAVAILABLE') totals.unavailable += 1;
       else totals.skipped += 1;
-      const safe = sanitize(result, target);
+
+      const safe = sanitize(result, target, learning);
       results.push(safe);
       console.log(JSON.stringify(safe));
     } catch (error) {
@@ -147,6 +187,8 @@ export async function collectPortfolio(options = {}) {
     boundaries: {
       portfolioReadOnly: true,
       metaCollectionReadOnly: true,
+      contextualLearningOnly: true,
+      autonomousTrainingPerformed: false,
       publicationAuthorized: false,
       externalWritesAllowed: false,
       recommendationAutoExecuted: false,
@@ -155,8 +197,6 @@ export async function collectPortfolio(options = {}) {
   };
   console.log(JSON.stringify({ collectorSummary: summary }, null, 2));
 
-  // A transient failure in one campaign must not block snapshots for every other
-  // campaign. The collector fails only if nothing could be inspected at all.
   if (targets.length > 0 && totals.failed === targets.length) {
     throw new Error('Analyst collector could not inspect any discovered campaign');
   }
