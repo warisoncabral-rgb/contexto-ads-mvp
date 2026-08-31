@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { DATABASE_POOL } from '../../infrastructure/database/database.tokens';
 import { PostgresAnalystRepository } from '../../infrastructure/database/postgres-analyst.repository';
+import { AnalystTrackingModule } from '../analyst-tracking/analyst-tracking.module';
 import { MetaInsightsModule } from '../meta-insights/meta-insights.module';
 import { OperatorAccessModule } from '../operator-access/operator-access.module';
 import { AnalystController } from './analyst.controller';
@@ -15,7 +16,7 @@ import { AnalystService } from './analyst.service';
 import { ANALYST_REPOSITORY } from './analyst.tokens';
 
 @Module({
-  imports: [DatabaseModule, OperatorAccessModule, MetaInsightsModule],
+  imports: [DatabaseModule, OperatorAccessModule, MetaInsightsModule, AnalystTrackingModule],
   controllers: [AnalystController, AnalystLearningController],
   providers: [
     {

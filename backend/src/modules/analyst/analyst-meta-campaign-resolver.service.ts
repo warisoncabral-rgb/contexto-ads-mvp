@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { AnalystTrackingRegistrationV1 } from '../../domain/contracts/analyst-tracking';
 import {
   ExecutionManifestRepository,
   ExecutionPlanRepository,
@@ -9,6 +10,7 @@ import {
   EXECUTION_PLAN_REPOSITORY,
   META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
 } from '../../infrastructure/database/database.tokens';
+import { AnalystTrackingService } from '../analyst-tracking/analyst-tracking.service';
 
 export interface ResolvedMetaCampaignV1 {
   externalCampaignId: string;
@@ -27,9 +29,13 @@ export class AnalystMetaCampaignResolverService {
     private readonly manifests: ExecutionManifestRepository,
     @Inject(META_WRITE_VALIDATION_PROTOCOL_REPOSITORY)
     private readonly protocols: MetaWriteValidationProtocolRepository,
+    private readonly tracking: AnalystTrackingService,
   ) {}
 
   async resolve(tenantId: string, campaignId: string): Promise<ResolvedMetaCampaignV1 | null> {
+    const registered = await this.tracking.find(tenantId, campaignId);
+    if (registered) return this.fromRegistration(registered);
+
     const plan = await this.plans.latest(tenantId, campaignId);
     if (!plan) return null;
     const manifest = await this.manifests.latestForPlan(tenantId, plan.executionPlanId);
@@ -38,37 +44,19 @@ export class AnalystMetaCampaignResolverService {
       tenantId,
       manifest.executionManifestId,
     );
-    if (!protocol) return null;
+    if (!protocol || protocol.status !== 'external_validation_succeeded') return null;
 
-    const executed = protocol.execution?.operations.find((operation) =>
-      operation.objectType === 'campaign'
-      && operation.status === 'succeeded'
-      && typeof operation.externalObjectId === 'string'
-      && /^\d+$/.test(operation.externalObjectId));
-    if (executed?.externalObjectId) {
-      return {
-        externalCampaignId: executed.externalObjectId,
-        executionPlanId: plan.executionPlanId,
-        executionManifestId: manifest.executionManifestId,
-        protocolId: protocol.metaWriteValidationProtocolId,
-        source: 'execution_operation',
-      };
-    }
+    const ensured = await this.tracking.ensureFromProtocol(protocol);
+    return ensured ? this.fromRegistration(ensured) : null;
+  }
 
-    const reconciled = protocol.reconciledOperations?.find((operation) =>
-      operation.objectType === 'campaign'
-      && typeof operation.externalObjectId === 'string'
-      && /^\d+$/.test(operation.externalObjectId));
-    if (reconciled?.externalObjectId) {
-      return {
-        externalCampaignId: reconciled.externalObjectId,
-        executionPlanId: plan.executionPlanId,
-        executionManifestId: manifest.executionManifestId,
-        protocolId: protocol.metaWriteValidationProtocolId,
-        source: 'reconciled_operation',
-      };
-    }
-
-    return null;
+  private fromRegistration(registration: AnalystTrackingRegistrationV1): ResolvedMetaCampaignV1 {
+    return {
+      externalCampaignId: registration.externalCampaignId,
+      executionPlanId: registration.executionPlanId,
+      executionManifestId: registration.executionManifestId,
+      protocolId: registration.metaWriteValidationProtocolId,
+      source: registration.source,
+    };
   }
 }
