@@ -1,5 +1,8 @@
 import { AnalystAnalysisV1 } from '../../domain/contracts/analyst';
-import { AnalystUserBriefV1 } from '../../domain/contracts/analyst-user-brief';
+import {
+  AnalystUserBriefV1,
+  AnalystUserOperationalState,
+} from '../../domain/contracts/analyst-user-brief';
 
 const DECISION_TEXT: Record<AnalystAnalysisV1['recommendedAction'], string> = {
   MANTER: 'Mantenha a campanha como está.',
@@ -36,19 +39,29 @@ export class AnalystPresenter {
       : analysis.urgency === 'medium'
         ? 'Acompanhar'
         : 'Sem urgência';
-    const recommendation = DECISION_TEXT[analysis.recommendedAction];
-    const userAction = this.userAction(analysis);
-    const situation = HEALTH_TEXT[analysis.healthStatus];
-    const primaryEvidence = this.primaryEvidence(analysis);
+    const operationalState = this.operationalState(analysis);
+    const paused = operationalState === 'PAUSED';
+    const recommendation = paused
+      ? 'Não avalie desempenho enquanto a campanha estiver pausada.'
+      : DECISION_TEXT[analysis.recommendedAction];
+    const userAction = this.userAction(analysis, operationalState);
+    const situation = paused
+      ? 'A campanha está pausada e não está gerando nova entrega.'
+      : HEALTH_TEXT[analysis.healthStatus];
+    const interpretation = paused
+      ? 'Enquanto a campanha permanecer pausada, não surgirão novos dados de entrega para avaliar desempenho.'
+      : this.trimSentence(analysis.diagnosis, 240);
+    const decision = paused ? 'OBSERVAR' as const : analysis.recommendedAction;
     const simpleMessage = [situation, recommendation, userAction].filter(Boolean).join(' ');
 
     return {
       locale: 'pt-BR',
+      operationalState,
       situation,
-      primaryEvidence,
-      interpretation: this.trimSentence(analysis.diagnosis, 240),
+      primaryEvidence: this.primaryEvidence(analysis),
+      interpretation,
       recommendation,
-      nextStep: this.nextStep(analysis),
+      nextStep: this.nextStep(analysis, operationalState),
       confidence: {
         level: analysis.confidence,
         label: confidenceLabel,
@@ -58,13 +71,27 @@ export class AnalystPresenter {
         label: urgencyLabel,
       },
       nextReviewAt: analysis.nextReview,
-      userActionRequired: analysis.requiresApproval,
+      userActionRequired: paused ? false : analysis.requiresApproval,
       userAction,
       healthStatus: analysis.healthStatus,
-      decision: analysis.recommendedAction,
+      decision,
       simpleMessage,
       technicalDetailsAvailable: true,
     };
+  }
+
+  private operationalState(analysis: AnalystAnalysisV1): AnalystUserOperationalState {
+    const status = analysis.evidence
+      .find((item) => item.startsWith('campaign_status='))
+      ?.split('=', 2)[1]
+      ?.trim()
+      .toUpperCase();
+    if (status === 'PAUSED' || status === 'CAMPAIGN_PAUSED' || status === 'INACTIVE') {
+      return 'PAUSED';
+    }
+    if (analysis.healthStatus === 'OPERATIONAL_PROBLEM') return 'BLOCKED';
+    if (status === 'ACTIVE') return 'RUNNING';
+    return 'UNKNOWN';
   }
 
   private primaryEvidence(analysis: AnalystAnalysisV1): string {
@@ -104,7 +131,13 @@ export class AnalystPresenter {
     return `${label}: ${raw}`;
   }
 
-  private nextStep(analysis: AnalystAnalysisV1): string {
+  private nextStep(
+    analysis: AnalystAnalysisV1,
+    operationalState: AnalystUserOperationalState,
+  ): string {
+    if (operationalState === 'PAUSED') {
+      return 'Se a pausa foi intencional, mantenha como está. Se a campanha deveria estar rodando, revise primeiro o status antes de analisar desempenho.';
+    }
     if (analysis.healthStatus === 'INSUFFICIENT_DATA') {
       return 'Aguarde a próxima janela de análise. Não altere público, criativo ou orçamento antes disso.';
     }
@@ -123,7 +156,13 @@ export class AnalystPresenter {
     return 'Siga a recomendação somente pelo fluxo oficial do Ecossistema Ads.';
   }
 
-  private userAction(analysis: AnalystAnalysisV1): string {
+  private userAction(
+    analysis: AnalystAnalysisV1,
+    operationalState: AnalystUserOperationalState,
+  ): string {
+    if (operationalState === 'PAUSED') {
+      return 'Confirme apenas se a pausa é intencional. Nenhuma otimização deve ser feita enquanto a campanha estiver pausada.';
+    }
     if (analysis.requiresApproval) {
       return 'Sua decisão é necessária: aprovar ou rejeitar a recomendação.';
     }
