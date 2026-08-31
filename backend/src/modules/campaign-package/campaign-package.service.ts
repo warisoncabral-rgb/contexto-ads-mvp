@@ -102,13 +102,20 @@ export class CampaignPackageService {
         if (!this.nonEmptyString(media?.media_id)) missing.push(`media[${index}].media_id`);
         else if (mediaIds.has(media.media_id)) blockers.push(`duplicate media_id: ${media.media_id}`);
         else mediaIds.add(media.media_id);
-        if (media?.media_type !== 'image') blockers.push(`media[${index}].media_type must be image in V1`);
+
+        if (media?.media_type !== 'image' && media?.media_type !== 'video') {
+          blockers.push(`media[${index}].media_type must be image or video in V1`);
+        }
         if (!this.nonEmptyString(media?.source)) missing.push(`media[${index}].source`);
         if (!this.nonEmptyString(media?.file_reference)) missing.push(`media[${index}].file_reference`);
         if (!this.nonEmptyString(media?.checksum)) missing.push(`media[${index}].checksum`);
         else if (!SHA256_PATTERN.test(media.checksum)) blockers.push(`media[${index}].checksum must be SHA-256`);
-        if (media?.mime_type !== 'image/jpeg' && media?.mime_type !== 'image/png') {
-          blockers.push(`media[${index}].mime_type must be image/jpeg or image/png`);
+
+        const validImageMime = media?.media_type === 'image'
+          && (media?.mime_type === 'image/jpeg' || media?.mime_type === 'image/png');
+        const validVideoMime = media?.media_type === 'video' && media?.mime_type === 'video/mp4';
+        if (!validImageMime && !validVideoMime) {
+          blockers.push(`media[${index}].mime_type must match media_type (image/jpeg, image/png or video/mp4)`);
         }
         if (!Number.isInteger(media?.width) || Number(media?.width) < 1) missing.push(`media[${index}].width`);
         if (!Number.isInteger(media?.height) || Number(media?.height) < 1) missing.push(`media[${index}].height`);
