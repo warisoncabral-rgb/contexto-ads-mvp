@@ -83,14 +83,24 @@
         "required": ["media_id", "media_type", "source", "file_reference", "checksum", "mime_type", "width", "height"],
         "properties": {
           "media_id": { "type": "string", "minLength": 1 },
-          "media_type": { "const": "image" },
+          "media_type": { "enum": ["image", "video"] },
           "source": { "type": "string", "minLength": 1 },
           "file_reference": { "type": "string", "minLength": 1 },
           "checksum": { "type": "string", "pattern": "^(sha256:)?[a-fA-F0-9]{64}$" },
-          "mime_type": { "enum": ["image/jpeg", "image/png"] },
+          "mime_type": { "enum": ["image/jpeg", "image/png", "video/mp4"] },
           "width": { "type": "integer", "minimum": 1 },
           "height": { "type": "integer", "minimum": 1 }
-        }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "media_type": { "const": "image" } }, "required": ["media_type"] },
+            "then": { "properties": { "mime_type": { "enum": ["image/jpeg", "image/png"] } } }
+          },
+          {
+            "if": { "properties": { "media_type": { "const": "video" } }, "required": ["media_type"] },
+            "then": { "properties": { "mime_type": { "const": "video/mp4" } } }
+          }
+        ]
       }
     },
     "constraints": { "type": ["object", "string"] },
