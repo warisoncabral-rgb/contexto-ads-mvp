@@ -1,0 +1,160 @@
+name: Ecosystem E2E Intersection Discovery
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-e2e-discovery.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+
+      - name: Discover full-flow campaign intersection
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const base = process.env.BASE_URL.replace(/\/$/, '');
+          const token = process.env.OPERATOR_TOKEN;
+          const headers = { Authorization: `Bearer ${token}` };
+          const safe = (x) => JSON.stringify(x, null, 2);
+
+          async function request(path, options = {}) {
+            const response = await fetch(`${base}${path}`, {
+              ...options,
+              headers: {
+                ...headers,
+                ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+                ...(options.headers || {}),
+              },
+            });
+            const text = await response.text();
+            let body = null;
+            try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text.slice(0, 300) }; }
+            return { status: response.status, ok: response.ok, body };
+          }
+
+          const health = await request('/health');
+          if (!health.ok) throw new Error(`Health failed: HTTP ${health.status}`);
+
+          const portfolioRes = await request('/operator/portfolio');
+          if (!portfolioRes.ok) throw new Error(`Portfolio failed: HTTP ${portfolioRes.status}`);
+          const items = Array.isArray(portfolioRes.body?.items) ? portfolioRes.body.items : [];
+          const unique = new Map();
+          for (const item of items) {
+            if (!item?.tenantId || !item?.campaignId) continue;
+            unique.set(`${item.tenantId}:${item.campaignId}`, {
+              tenantId: item.tenantId,
+              campaignId: item.campaignId,
+              tenantDisplayName: item.tenantDisplayName ?? null,
+            });
+          }
+
+          const inspected = [];
+          const candidates = [];
+          for (const target of unique.values()) {
+            const pkg = await request(`/operator/campaign-packages/v1/${encodeURIComponent(target.campaignId)}/status`);
+            if (pkg.status === 404) {
+              inspected.push({ ...target, packageStatus: 'NOT_FOUND', analystStatus: null });
+              continue;
+            }
+            if (!pkg.ok) {
+              inspected.push({ ...target, packageStatus: `HTTP_${pkg.status}`, analystStatus: null });
+              continue;
+            }
+            if (pkg.body?.package_id !== target.campaignId || pkg.body?.campaign_id !== target.campaignId) {
+              throw new Error(`Package/campaign identity mismatch for ${target.campaignId}`);
+            }
+            const executionPlanId = pkg.body?.execution_plan?.execution_plan_id;
+            if (!executionPlanId) throw new Error(`Missing execution plan for ${target.campaignId}`);
+
+            const timeline = await request(
+              `/operator/tenants/${encodeURIComponent(target.tenantId)}`
+                + `/campaigns/${encodeURIComponent(target.campaignId)}`
+                + `/timeline?executionPlanId=${encodeURIComponent(executionPlanId)}`,
+            );
+            if (!timeline.ok) throw new Error(`Timeline failed for ${target.campaignId}: HTTP ${timeline.status}`);
+
+            const analyst = await request(
+              `/operator/tenants/${encodeURIComponent(target.tenantId)}`
+                + `/campaigns/${encodeURIComponent(target.campaignId)}/analyst/collect-meta`,
+              { method: 'POST', body: JSON.stringify({ since: '2026-08-30', until: '2026-08-31' }) },
+            );
+            if (!analyst.ok) {
+              inspected.push({ ...target, packageStatus: 'FOUND', analystStatus: `HTTP_${analyst.status}` });
+              continue;
+            }
+            const analystStatus = analyst.body?.action_status ?? 'UNKNOWN';
+            inspected.push({
+              ...target,
+              packageStatus: 'FOUND',
+              executionPlanId,
+              analystStatus,
+              metaResolution: analyst.body?.meta_campaign_resolution?.source ?? null,
+            });
+
+            if (analystStatus !== 'ANALYZED') continue;
+            if (analyst.body?.meta_campaign_resolution?.automatic !== true
+              || analyst.body?.meta_campaign_resolution?.technical_id_required_from_user !== false) {
+              throw new Error(`Analyst did not auto-resolve Meta for ${target.campaignId}`);
+            }
+            const cb = analyst.body?.boundaries ?? {};
+            for (const key of ['meta_write_performed','external_writes_allowed','recommendation_auto_executed','financial_action_authorized']) {
+              if (cb[key] !== false) throw new Error(`Unsafe Analyst boundary ${key} for ${target.campaignId}`);
+            }
+            const pb = pkg.body?.boundaries ?? {};
+            if (pb.publication_authorized !== false || pb.external_writes_allowed !== false) {
+              throw new Error(`Unsafe package boundary for ${target.campaignId}`);
+            }
+            candidates.push({
+              tenantId: target.tenantId,
+              tenantDisplayName: target.tenantDisplayName,
+              campaignId: target.campaignId,
+              packageId: pkg.body.package_id,
+              contextVersion: pkg.body.context?.version ?? null,
+              creativeStatus: pkg.body.creative?.status ?? null,
+              executionPlanId,
+              executionPlanStatus: pkg.body.execution_plan?.status ?? null,
+              targetBindingStatus: pkg.body.execution_plan?.target_binding_status ?? null,
+              planApprovalStatus: pkg.body.plan_approval?.status ?? null,
+              packageNextAction: pkg.body.next_action ?? null,
+              metaResolutionSource: analyst.body.meta_campaign_resolution?.source ?? null,
+              analystOperationalState: analyst.body.user_brief?.operationalState ?? null,
+              analystDecision: analyst.body.user_brief?.decision ?? null,
+            });
+          }
+
+          console.log('ECOSYSTEM_DISCOVERY_INSPECTED');
+          console.log(safe(inspected));
+          console.log('ECOSYSTEM_DISCOVERY_CANDIDATES');
+          console.log(safe(candidates));
+          if (candidates.length === 0) {
+            throw new Error('NO_FULL_ECOSYSTEM_INTERSECTION_FOUND');
+          }
+          console.log(safe({
+            ECOSYSTEM_INTERSECTION_DISCOVERY: 'PASSED',
+            candidateCount: candidates.length,
+            selected: candidates[0],
+            boundaries: {
+              meta_write_performed: false,
+              publication_authorized: false,
+              activation_authorized: false,
+              budget_mutation_authorized: false,
+              recommendation_auto_executed: false,
+            },
+          }));
+          NODE
