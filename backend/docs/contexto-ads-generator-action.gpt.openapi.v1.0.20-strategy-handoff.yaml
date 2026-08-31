@@ -20,12 +20,9 @@ paths:
       operationId: submitCampaignPackage
       summary: Send an approved campaign strategy to the Generator
       description: >-
-        Call automatically after the campaign strategy is approved. Send only known approved strategy
-        facts. Never invent technical media metadata and never postpone submission merely because media
-        integrity fields or internal IDs are unavailable. The server resolves the tenant and Meta target,
-        generates the canonical package/campaign identity, persists the campaign context and creates a
-        paused execution plan. Creative/media completion remains a separate review step. No Meta
-        publication, activation or spend occurs.
+        Automatically submit approved strategy facts. Do not invent or wait for package IDs or media
+        checksum/dimensions. The server resolves tenant/Meta target, generates identity, persists context
+        and creates a paused plan. Creative completion is separate. No Meta write or spend.
       x-openai-isConsequential: false
       requestBody:
         required: true
