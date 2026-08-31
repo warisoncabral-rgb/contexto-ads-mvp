@@ -4,8 +4,15 @@ import {
   AnalystRecommendedAction,
 } from './analyst';
 
+export type AnalystUserOperationalState =
+  | 'RUNNING'
+  | 'PAUSED'
+  | 'BLOCKED'
+  | 'UNKNOWN';
+
 export interface AnalystUserBriefV1 {
   locale: 'pt-BR';
+  operationalState: AnalystUserOperationalState;
   situation: string;
   primaryEvidence: string;
   interpretation: string;
