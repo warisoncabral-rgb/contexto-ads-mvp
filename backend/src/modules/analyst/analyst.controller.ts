@@ -5,6 +5,7 @@ import {
 } from '../../domain/contracts/analyst';
 import { MetaInsightsService } from '../meta-insights/meta-insights.service';
 import { OperatorAccessService } from '../operator-access/operator-access.service';
+import { AnalystPresenter } from './analyst.presenter';
 import { AnalystService } from './analyst.service';
 
 interface CollectMetaBody {
@@ -20,6 +21,7 @@ export class AnalystController {
     private readonly access: OperatorAccessService,
     private readonly analyst: AnalystService,
     private readonly metaInsights: MetaInsightsService,
+    private readonly presenter: AnalystPresenter,
   ) {}
 
   @Post('analyze')
@@ -33,7 +35,11 @@ export class AnalystController {
       authorization,
       tenantId,
     );
-    return this.analyst.analyze(tenantId, campaignId, body, operator.subject);
+    const analyzed = await this.analyst.analyze(tenantId, campaignId, body, operator.subject);
+    return {
+      ...analyzed,
+      user_brief: this.presenter.present(analyzed.analysis),
+    };
   }
 
   @Post('collect-meta')
@@ -56,6 +62,10 @@ export class AnalystController {
     if (!meta.success || !meta.data) {
       return {
         action_status: 'UNAVAILABLE',
+        user_message: this.unavailableMessage(meta.normalizedError),
+        next_step: meta.retryable
+          ? 'Aguarde e tente a leitura novamente. Nenhuma alteração na campanha foi realizada.'
+          : 'Revise a conexão e as permissões de leitura da Meta antes de uma nova análise.',
         meta_insights: meta,
         analysis: null,
         boundaries: {
@@ -112,6 +122,7 @@ export class AnalystController {
 
     return {
       action_status: 'ANALYZED',
+      user_brief: this.presenter.present(analyzed.analysis),
       meta_insights: meta.data,
       ...analyzed,
       boundaries: {
@@ -124,6 +135,28 @@ export class AnalystController {
     };
   }
 
+  @Get('summary')
+  async summary(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    const latest = await this.analyst.latest(tenantId, campaignId);
+    if (!latest.analysis) {
+      return {
+        action_status: 'NO_ANALYSIS',
+        situation: 'Ainda não existe análise suficiente para esta campanha.',
+        next_step: 'Colete os dados da campanha para iniciar o acompanhamento.',
+        user_action_required: false,
+      };
+    }
+    return {
+      action_status: 'OK',
+      ...this.presenter.present(latest.analysis),
+    };
+  }
+
   @Get('latest')
   async latest(
     @Param('tenantId') tenantId: string,
@@ -131,7 +164,24 @@ export class AnalystController {
     @Headers('authorization') authorization: string | undefined,
   ) {
     await this.access.authorizeCampaignPreparation(authorization, tenantId);
-    return this.analyst.latest(tenantId, campaignId);
+    const latest = await this.analyst.latest(tenantId, campaignId);
+    return {
+      ...latest,
+      user_brief: latest.analysis ? this.presenter.present(latest.analysis) : null,
+    };
+  }
+
+  private unavailableMessage(error: string | undefined): string {
+    if (error === 'AUTH_PERMISSION') {
+      return 'Não foi possível ler os dados da Meta com a autorização atual.';
+    }
+    if (error === 'TRANSIENT_API') {
+      return 'A Meta está temporariamente indisponível para esta leitura.';
+    }
+    if (error === 'VALIDATION') {
+      return 'Os dados recebidos da Meta não puderam ser validados com segurança.';
+    }
+    return 'Não foi possível concluir a leitura da campanha neste momento.';
   }
 
   private hoursBetween(from: string | undefined, to: string): number {
