@@ -22,6 +22,7 @@ import { MetaExecutionModule } from '../meta-execution/meta-execution.module';
 import { CampaignPackageModule } from '../campaign-package/campaign-package.module';
 import { OperatorCampaignPackageController } from './operator-campaign-package.controller';
 import { OperatorStrategyHandoffController } from './operator-strategy-handoff.controller';
+import { StrategyHandoffPersistenceService } from './strategy-handoff-persistence.service';
 import { OperatorActionPingController } from './operator-action-ping.controller';
 import { OperatorActionTransportController } from './operator-action-transport.controller';
 import { PublicReadonlyActionGatewayController } from './public-readonly-action-gateway.controller';
@@ -56,7 +57,7 @@ import { PublicReadonlyActionGatewayController } from './public-readonly-action-
     OperatorActionTransportController,
     PublicReadonlyActionGatewayController,
   ],
-  providers: [OperatorAccessService],
+  providers: [OperatorAccessService, StrategyHandoffPersistenceService],
   exports: [OperatorAccessService],
 })
 export class OperatorAccessModule {}

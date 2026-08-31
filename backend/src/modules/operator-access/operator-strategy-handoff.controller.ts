@@ -8,18 +8,19 @@ import {
   HttpException,
   Post,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { CampaignContextInput } from '../../domain/contracts/campaign-context';
-import { CampaignContextService } from '../campaign-context/campaign-context.service';
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 import { ExecutionSimulationService } from '../execution-simulation/execution-simulation.service';
 import { MetaConnectionService } from '../meta-connection/meta-connection.service';
 import { OperatorAccessService } from './operator-access.service';
+import { StrategyHandoffPersistenceService } from './strategy-handoff-persistence.service';
 
 @Controller('operator')
 export class OperatorStrategyHandoffController {
   constructor(
     private readonly access: OperatorAccessService,
-    private readonly contexts: CampaignContextService,
+    private readonly strategyPersistence: StrategyHandoffPersistenceService,
     private readonly plans: ExecutionPlanService,
     private readonly simulations: ExecutionSimulationService,
     private readonly connections: MetaConnectionService,
@@ -78,8 +79,10 @@ export class OperatorStrategyHandoffController {
     );
     const target = await this.connections.selectedExecutionTarget(selectedTenant.tenantId);
     const contextInput = this.contextInput(source, businessName);
-    const context = await this.contexts.create(
+    const campaignId = this.deterministicCampaignId(selectedTenant.tenantId, contextInput);
+    const context = await this.strategyPersistence.createOrGet(
       selectedTenant.tenantId,
+      campaignId,
       contextInput,
       operator.subject,
     );
@@ -113,6 +116,7 @@ export class OperatorStrategyHandoffController {
       execution_plan_hash: finalPlan.planHash,
       execution_plan_status: finalPlan.status,
       target_binding_status: 'BOUND',
+      idempotency_status: 'DETERMINISTIC_RETRY_SAFE',
       next_action: 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE',
       strategy_snapshot: {
         business_name: businessName,
@@ -244,6 +248,35 @@ export class OperatorStrategyHandoffController {
     return geography;
   }
 
+  private deterministicCampaignId(
+    tenantId: string,
+    contextInput: CampaignContextInput,
+  ): string {
+    const identity = this.stableStringify({
+      tenant_id: tenantId,
+      strategy: contextInput,
+      identity_version: 1,
+    });
+    const hex = createHash('sha256').update(identity).digest('hex').slice(0, 32).split('');
+    hex[12] = '4';
+    hex[16] = ['8', '9', 'a', 'b'][parseInt(hex[16], 16) % 4];
+    const normalized = hex.join('');
+    return `${normalized.slice(0, 8)}-${normalized.slice(8, 12)}-${normalized.slice(12, 16)}-${normalized.slice(16, 20)}-${normalized.slice(20)}`;
+  }
+
+  private stableStringify(value: unknown): string {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableStringify(item)).join(',')}]`;
+    }
+    if (value && typeof value === 'object') {
+      return `{${Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, item]) => `${JSON.stringify(key)}:${this.stableStringify(item)}`)
+        .join(',')}}`;
+    }
+    return JSON.stringify(value) ?? 'null';
+  }
+
   private record(value: unknown, field: string): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new BadRequestException(`${field} must be an object`);
@@ -289,7 +322,7 @@ export class OperatorStrategyHandoffController {
   private compactJson(value: unknown, field: string, max: number): string {
     let result: string;
     try {
-      result = typeof value === 'string' ? value.trim() : JSON.stringify(value);
+      result = typeof value === 'string' ? value.trim() : this.stableStringify(value);
     } catch {
       throw new BadRequestException(`${field} must be JSON-serializable`);
     }
@@ -320,17 +353,33 @@ export class OperatorStrategyHandoffController {
   }
 
   private httpEnvelope(error: unknown) {
-    if (!(error instanceof HttpException)) throw error;
+    if (error instanceof HttpException) {
+      return {
+        action_status: 'REJECTED',
+        http_status: error.getStatus(),
+        error: error.getResponse(),
+        boundaries: this.noWriteBoundaries(),
+      };
+    }
     return {
       action_status: 'REJECTED',
-      http_status: error.getStatus(),
-      error: error.getResponse(),
-      boundaries: {
-        publication_authorized: false,
-        external_writes_allowed: false,
-        external_writes_performed: false,
-        meta_write_performed: false,
+      http_status: 500,
+      error: {
+        code: 'strategy_handoff_internal_error',
+        message: error instanceof Error ? error.message : 'Unexpected strategy handoff error',
       },
+      boundaries: this.noWriteBoundaries(),
+    };
+  }
+
+  private noWriteBoundaries() {
+    return {
+      publication_authorized: false,
+      external_writes_allowed: false,
+      external_writes_performed: false,
+      meta_write_performed: false,
+      spend_authorized: false,
+      delivery_authorized: false,
     };
   }
 }

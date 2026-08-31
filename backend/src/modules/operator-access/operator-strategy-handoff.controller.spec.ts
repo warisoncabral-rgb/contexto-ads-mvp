@@ -46,11 +46,14 @@ describe('OperatorStrategyHandoffController', () => {
         membership: { role: 'owner' },
       })),
     };
-    const contexts = {
-      create: jest.fn(async () => ({
+    const strategyPersistence = {
+      createOrGet: jest.fn(async (
+        tenantId: string,
+        campaignId: string,
+      ) => ({
         packageId: '99999999-9999-4999-8999-999999999999',
-        tenantId: '22222222-2222-4222-8222-222222222222',
-        campaignId: '11111111-1111-4111-8111-111111111111',
+        tenantId,
+        campaignId,
         version: 1,
         status: 'ready_for_generation',
         contentHash: 'a'.repeat(64),
@@ -84,16 +87,23 @@ describe('OperatorStrategyHandoffController', () => {
     };
     const controller = new OperatorStrategyHandoffController(
       access as any,
-      contexts as any,
+      strategyPersistence as any,
       plans as any,
       simulations as any,
       connections as any,
     );
-    return { controller, access, contexts, plans, simulations, connections };
+    return {
+      controller,
+      access,
+      strategyPersistence,
+      plans,
+      simulations,
+      connections,
+    };
   }
 
   it('accepts the approved strategy without client id, package id, copy or media metadata', async () => {
-    const { controller, contexts, plans, simulations } = dependencies();
+    const { controller, strategyPersistence, plans, simulations } = dependencies();
 
     const result = await controller.submitActionEnvelope(
       currentStrategy,
@@ -103,12 +113,12 @@ describe('OperatorStrategyHandoffController', () => {
 
     expect(result).toMatchObject({
       action_status: 'ACCEPTED',
-      package_id: '11111111-1111-4111-8111-111111111111',
-      campaign_id: '11111111-1111-4111-8111-111111111111',
+      package_version: 1,
       creative_package_id: null,
       creative_package_status: 'PENDING_CREATIVE_PACKAGE',
       execution_plan_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       target_binding_status: 'BOUND',
+      idempotency_status: 'DETERMINISTIC_RETRY_SAFE',
       next_action: 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE',
       boundaries: {
         persisted: true,
@@ -123,9 +133,16 @@ describe('OperatorStrategyHandoffController', () => {
         delivery_authorized: false,
       },
     });
+    expect(result.package_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(result.campaign_id).toBe(result.package_id);
 
-    expect(contexts.create).toHaveBeenCalledWith(
+    const persistenceCall = strategyPersistence.createOrGet.mock.calls[0];
+    const deterministicCampaignId = persistenceCall[1];
+    expect(strategyPersistence.createOrGet).toHaveBeenCalledWith(
       '22222222-2222-4222-8222-222222222222',
+      deterministicCampaignId,
       expect.objectContaining({
         businessName: 'Rosa VIP Calçados',
         objective: 'leads',
@@ -140,21 +157,60 @@ describe('OperatorStrategyHandoffController', () => {
     );
     expect(plans.generate).toHaveBeenCalledWith(
       '22222222-2222-4222-8222-222222222222',
-      '11111111-1111-4111-8111-111111111111',
+      deterministicCampaignId,
       1,
       'operator:test',
     );
     expect(simulations.bindTarget).toHaveBeenCalledWith(
       '22222222-2222-4222-8222-222222222222',
-      '11111111-1111-4111-8111-111111111111',
+      deterministicCampaignId,
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       '673dbb65-e187-4d80-8751-772d6e0156b3',
       'act_929361834160386',
     );
   });
 
+  it('derives the same campaign identity when the exact approved strategy is retried', async () => {
+    const { controller, strategyPersistence } = dependencies();
+
+    const first = await controller.submitActionEnvelope(
+      currentStrategy,
+      undefined,
+      'stable-operator-key',
+    );
+    const second = await controller.submitActionEnvelope(
+      currentStrategy,
+      undefined,
+      'stable-operator-key',
+    );
+
+    expect(first.action_status).toBe('ACCEPTED');
+    expect(second.action_status).toBe('ACCEPTED');
+    expect(first.package_id).toBe(second.package_id);
+    expect(first.campaign_id).toBe(second.campaign_id);
+    expect(strategyPersistence.createOrGet.mock.calls[0][1])
+      .toBe(strategyPersistence.createOrGet.mock.calls[1][1]);
+  });
+
+  it('changes campaign identity when an approved strategy fact changes', async () => {
+    const { controller } = dependencies();
+
+    const current = await controller.submitActionEnvelope(
+      currentStrategy,
+      undefined,
+      'stable-operator-key',
+    );
+    const changed = await controller.submitActionEnvelope(
+      { ...currentStrategy, budget_amount: 25 },
+      undefined,
+      'stable-operator-key',
+    );
+
+    expect(current.package_id).not.toBe(changed.package_id);
+  });
+
   it('returns a readable rejection without side effects when the strategy is incomplete', async () => {
-    const { controller, contexts, plans, simulations } = dependencies();
+    const { controller, strategyPersistence, plans, simulations } = dependencies();
 
     const result = await controller.submitActionEnvelope(
       { ...currentStrategy, strategy_status: 'IN_REVIEW' },
@@ -171,13 +227,13 @@ describe('OperatorStrategyHandoffController', () => {
         meta_write_performed: false,
       },
     });
-    expect(contexts.create).not.toHaveBeenCalled();
+    expect(strategyPersistence.createOrGet).not.toHaveBeenCalled();
     expect(plans.generate).not.toHaveBeenCalled();
     expect(simulations.bindTarget).not.toHaveBeenCalled();
   });
 
   it('rejects invalid budgets before persistence', async () => {
-    const { controller, contexts } = dependencies();
+    const { controller, strategyPersistence } = dependencies();
 
     const result = await controller.submitActionEnvelope(
       { ...currentStrategy, budget_amount: 0 },
@@ -186,6 +242,34 @@ describe('OperatorStrategyHandoffController', () => {
 
     expect(result.action_status).toBe('REJECTED');
     expect(result.http_status).toBe(400);
-    expect(contexts.create).not.toHaveBeenCalled();
+    expect(strategyPersistence.createOrGet).not.toHaveBeenCalled();
+  });
+
+  it('converts unexpected runtime failures into a readable 200-style rejection envelope', async () => {
+    const { controller, strategyPersistence } = dependencies();
+    strategyPersistence.createOrGet.mockRejectedValueOnce(new Error('database temporarily unavailable'));
+
+    const result = await controller.submitActionEnvelope(
+      currentStrategy,
+      undefined,
+      'stable-operator-key',
+    );
+
+    expect(result).toMatchObject({
+      action_status: 'REJECTED',
+      http_status: 500,
+      error: {
+        code: 'strategy_handoff_internal_error',
+        message: 'database temporarily unavailable',
+      },
+      boundaries: {
+        publication_authorized: false,
+        external_writes_allowed: false,
+        external_writes_performed: false,
+        meta_write_performed: false,
+        spend_authorized: false,
+        delivery_authorized: false,
+      },
+    });
   });
 });
