@@ -6,6 +6,7 @@ import { PostgresAnalystRepository } from '../../infrastructure/database/postgre
 import { MetaInsightsModule } from '../meta-insights/meta-insights.module';
 import { OperatorAccessModule } from '../operator-access/operator-access.module';
 import { AnalystController } from './analyst.controller';
+import { AnalystMetaCampaignResolverService } from './analyst-meta-campaign-resolver.service';
 import { AnalystPresenter } from './analyst.presenter';
 import { AnalystService } from './analyst.service';
 import { ANALYST_REPOSITORY } from './analyst.tokens';
@@ -21,7 +22,8 @@ import { ANALYST_REPOSITORY } from './analyst.tokens';
     },
     AnalystService,
     AnalystPresenter,
+    AnalystMetaCampaignResolverService,
   ],
-  exports: [AnalystService, AnalystPresenter],
+  exports: [AnalystService, AnalystPresenter, AnalystMetaCampaignResolverService],
 })
 export class AnalystModule {}

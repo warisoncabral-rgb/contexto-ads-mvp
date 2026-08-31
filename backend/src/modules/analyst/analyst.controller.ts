@@ -5,11 +5,12 @@ import {
 } from '../../domain/contracts/analyst';
 import { MetaInsightsService } from '../meta-insights/meta-insights.service';
 import { OperatorAccessService } from '../operator-access/operator-access.service';
+import { AnalystMetaCampaignResolverService } from './analyst-meta-campaign-resolver.service';
 import { AnalystPresenter } from './analyst.presenter';
 import { AnalystService } from './analyst.service';
 
 interface CollectMetaBody {
-  metaCampaignId: string;
+  metaCampaignId?: string;
   since: string;
   until: string;
   businessConstraints?: AnalystBusinessConstraintsV1;
@@ -22,6 +23,7 @@ export class AnalystController {
     private readonly analyst: AnalystService,
     private readonly metaInsights: MetaInsightsService,
     private readonly presenter: AnalystPresenter,
+    private readonly metaCampaignResolver: AnalystMetaCampaignResolverService,
   ) {}
 
   @Post('analyze')
@@ -53,9 +55,36 @@ export class AnalystController {
       authorization,
       tenantId,
     );
+
+    const suppliedMetaCampaignId = typeof body?.metaCampaignId === 'string'
+      && /^\d+$/.test(body.metaCampaignId)
+      ? body.metaCampaignId
+      : null;
+    const resolved = suppliedMetaCampaignId
+      ? null
+      : await this.metaCampaignResolver.resolve(tenantId, campaignId);
+    const metaCampaignId = suppliedMetaCampaignId ?? resolved?.externalCampaignId ?? null;
+
+    if (!metaCampaignId) {
+      return {
+        action_status: 'AWAITING_META_LINK',
+        situation: 'A campanha ainda não possui um vínculo Meta confirmado no sistema.',
+        next_step: 'Conclua o vínculo da campanha com a Meta. Depois disso, a coleta será feita automaticamente.',
+        user_action_required: true,
+        technical_id_required_from_user: false,
+        analysis: null,
+        boundaries: {
+          shadow_mode: true,
+          meta_write_performed: false,
+          external_writes_allowed: false,
+          recommendation_auto_executed: false,
+        },
+      };
+    }
+
     const meta = await this.metaInsights.readSelectedCampaign(
       tenantId,
-      body?.metaCampaignId,
+      metaCampaignId,
       body?.since,
       body?.until,
     );
@@ -66,6 +95,11 @@ export class AnalystController {
         next_step: meta.retryable
           ? 'Aguarde e tente a leitura novamente. Nenhuma alteração na campanha foi realizada.'
           : 'Revise a conexão e as permissões de leitura da Meta antes de uma nova análise.',
+        meta_campaign_resolution: {
+          automatic: !suppliedMetaCampaignId,
+          source: suppliedMetaCampaignId ? 'integration_input' : resolved?.source ?? 'unknown',
+          technical_id_required_from_user: false,
+        },
         meta_insights: meta,
         analysis: null,
         boundaries: {
@@ -123,6 +157,11 @@ export class AnalystController {
     return {
       action_status: 'ANALYZED',
       user_brief: this.presenter.present(analyzed.analysis),
+      meta_campaign_resolution: {
+        automatic: !suppliedMetaCampaignId,
+        source: suppliedMetaCampaignId ? 'integration_input' : resolved?.source ?? 'unknown',
+        technical_id_required_from_user: false,
+      },
       meta_insights: meta.data,
       ...analyzed,
       boundaries: {
