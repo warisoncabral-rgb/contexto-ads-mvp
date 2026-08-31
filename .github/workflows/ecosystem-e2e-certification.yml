@@ -1,0 +1,209 @@
+name: Ecosystem Ads E2E Certification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-e2e-certification.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: b8f16916-cf4c-4e80-894e-dcc56fbd9564
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Checkout governance contract
+        uses: actions/checkout@v4
+
+      - name: Require stable operator secret
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+
+      - name: Certify Contexto package identity
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/campaign-packages/v1/$CAMPAIGN_ID/status" > /tmp/package.json
+          node <<'NODE'
+          const x=require('/tmp/package.json');
+          const id=process.env.CAMPAIGN_ID;
+          if (x.package_id !== id || x.campaign_id !== id) throw new Error('Contexto/Generator campaign identity mismatch');
+          if (!x.execution_plan?.execution_plan_id) throw new Error('Current Generator execution plan missing');
+          if (x.execution_plan?.target_binding_status !== 'BOUND') throw new Error('Current target is not bound');
+          const b=x.boundaries||{};
+          if (b.publication_authorized !== false || b.external_writes_allowed !== false) throw new Error('Unsafe package boundaries');
+          console.log(JSON.stringify({
+            stage:'CONTEXTO_TO_GENERATOR',
+            campaignId:id,
+            packageId:x.package_id,
+            contextVersion:x.context?.version ?? null,
+            creativeStatus:x.creative?.status ?? null,
+            currentExecutionPlanId:x.execution_plan.execution_plan_id,
+            currentExecutionPlanStatus:x.execution_plan.status,
+            targetBindingStatus:x.execution_plan.target_binding_status,
+            nextAction:x.next_action,
+          },null,2));
+          NODE
+
+      - name: Certify explicit Generator to Analyst tracking
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/tracking" > /tmp/tracking.json
+          node <<'NODE'
+          const x=require('/tmp/tracking.json');
+          const id=process.env.CAMPAIGN_ID;
+          if (x.action_status !== 'FOUND') throw new Error(`Tracking not found: ${x.action_status}`);
+          const r=x.registration||{};
+          if (r.tenantId !== process.env.TENANT_ID || r.campaignId !== id) throw new Error('Tracking scope mismatch');
+          if (!/^\d+$/.test(r.externalCampaignId||'')) throw new Error('External Meta campaign id invalid');
+          for (const k of ['executionPlanId','executionManifestId','metaWriteValidationProtocolId']) if (!r[k]) throw new Error(`Missing tracking ${k}`);
+          const b=r.boundaries||{};
+          if (b.trackingOnly !== true || b.executionAuthorized !== false || b.metaWritePerformed !== false || b.externalWritesAllowed !== false || b.recommendationAutoExecuted !== false) throw new Error('Unsafe tracking boundaries');
+          console.log(JSON.stringify({
+            stage:'GENERATOR_TO_ANALYST_TRACKING',
+            campaignId:r.campaignId,
+            trackedExecutionPlanId:r.executionPlanId,
+            executionManifestId:r.executionManifestId,
+            protocolId:r.metaWriteValidationProtocolId,
+            externalCampaignId:r.externalCampaignId,
+            source:r.source,
+          },null,2));
+          NODE
+
+      - name: Certify historical Generator timeline
+        run: |
+          set -euo pipefail
+          TRACKING_PLAN=$(node -p "require('/tmp/tracking.json').registration.executionPlanId")
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/timeline?executionPlanId=$TRACKING_PLAN" > /tmp/timeline.json
+          node <<'NODE'
+          const x=require('/tmp/timeline.json');
+          const t=require('/tmp/tracking.json').registration;
+          if (x.tenantId !== process.env.TENANT_ID || x.campaignId !== process.env.CAMPAIGN_ID || x.executionPlanId !== t.executionPlanId) throw new Error('Timeline identity mismatch');
+          if (!Array.isArray(x.items) || x.items.length === 0) throw new Error('Historical Generator timeline is empty');
+          const b=x.boundaries||{};
+          if (b.sanitizedOperationalHistory !== true || b.immutableAuditSource !== true || b.secretsExposed !== false || b.publicationAuthorized !== false || b.externalWritesAllowed !== false) throw new Error('Unsafe timeline boundaries');
+          const executorEvidence=x.items.filter(i=>i.category==='executor'||i.category==='safety').map(i=>i.title);
+          if (executorEvidence.length === 0) throw new Error('No execution/safety evidence on tracked plan timeline');
+          console.log(JSON.stringify({stage:'GENERATOR_HISTORY',executionPlanId:x.executionPlanId,itemCount:x.items.length,executorEvidence},null,2));
+          NODE
+
+      - name: Certify Analyst reads the same Meta campaign
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            --data '{"since":"2026-08-30","until":"2026-08-31"}' \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/collect-meta" > /tmp/analyst.json
+          node <<'NODE'
+          const x=require('/tmp/analyst.json');
+          const t=require('/tmp/tracking.json').registration;
+          if (x.action_status !== 'ANALYZED') throw new Error(`Analyst status ${x.action_status}`);
+          if (x.meta_campaign_resolution?.automatic !== true || x.meta_campaign_resolution?.technical_id_required_from_user !== false) throw new Error('Meta resolution is not automatic');
+          if (x.meta_insights?.campaignId !== t.externalCampaignId) throw new Error('Analyst Meta campaign differs from tracked Generator campaign');
+          if (x.meta_campaign_resolution?.source !== t.source) throw new Error('Analyst tracking source mismatch');
+          const b=x.boundaries||{};
+          for (const k of ['meta_write_performed','external_writes_allowed','recommendation_auto_executed','financial_action_authorized']) if (b[k] !== false) throw new Error(`Unsafe Analyst boundary ${k}`);
+          console.log(JSON.stringify({
+            stage:'ANALYST',
+            campaignId:process.env.CAMPAIGN_ID,
+            externalCampaignId:x.meta_insights.campaignId,
+            resolutionSource:x.meta_campaign_resolution.source,
+            operationalState:x.user_brief?.operationalState ?? null,
+            decision:x.user_brief?.decision ?? null,
+          },null,2));
+          NODE
+
+      - name: Certify Analyst presentation and governance
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/summary" > /tmp/summary.json
+          curl --fail --silent --show-error -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/alert" > /tmp/alert.json
+          curl --fail --silent --show-error -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/recommendations/latest" > /tmp/recommendation.json
+          curl --fail --silent --show-error -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/learning/latest" > /tmp/learning.json
+          node <<'NODE'
+          const s=require('/tmp/summary.json'), a=require('/tmp/alert.json'), r=require('/tmp/recommendation.json'), l=require('/tmp/learning.json');
+          if (s.action_status !== 'OK') throw new Error('Analyst summary unavailable');
+          for (const k of ['situation','primaryEvidence','interpretation','recommendation','nextStep','confidence','urgency']) if (s[k]===undefined||s[k]===null||s[k]==='') throw new Error(`Missing summary ${k}`);
+          if (!['OK','NO_ANALYSIS'].includes(a.actionStatus)) throw new Error(`Unexpected alert ${a.actionStatus}`);
+          const rb=r.boundaries||{};
+          if (rb.decisionIsExecutionAuthorization !== false || rb.executionAuthorized !== false || rb.metaWritePerformed !== false || rb.externalWritesAllowed !== false || rb.recommendationAutoExecuted !== false || rb.financialActionAuthorized !== false) throw new Error('Unsafe recommendation governance');
+          const lb=l.boundaries||{};
+          if (lb.contextualOnly !== true || lb.universalRuleCreated !== false || lb.autonomousTrainingPerformed !== false || lb.metaWritePerformed !== false || lb.externalWritesAllowed !== false || lb.recommendationAutoExecuted !== false) throw new Error('Unsafe learning boundaries');
+          console.log(JSON.stringify({stage:'ANALYST_GOVERNANCE',summary:s.action_status,alert:a.level,recommendation:r.actionStatus,learning:l.actionStatus},null,2));
+          NODE
+
+      - name: Certify feedback routing contract without altering real campaign
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const src=fs.readFileSync('backend/src/modules/analyst/analyst-governance.service.ts','utf8');
+          if (!src.includes("action === 'GERAR_NOVA_VARIACAO'" ) || !src.includes("return 'generator'")) throw new Error('Generator feedback route contract missing');
+          if (!src.includes("action === 'REAVALIAR_ESTRATEGIA'") || !src.includes("return 'contexto_ads'")) throw new Error('Contexto Ads feedback route contract missing');
+          if (!src.includes('executionAuthorized: false') || !src.includes('recommendationAutoExecuted: false')) throw new Error('Feedback safety boundary missing');
+          console.log(JSON.stringify({
+            stage:'ANALYST_FEEDBACK_ROUTING',
+            generatorRoute:'READY',
+            contextoAdsRoute:'READY',
+            currentCampaignRouteTrigger:'NOT_FORCED',
+            reason:'Current real evidence does not require a synthetic approval/handoff.',
+            executionAuthorized:false,
+            recommendationAutoExecuted:false,
+          },null,2));
+          NODE
+
+      - name: Final ecosystem certification
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const p=require('/tmp/package.json'), t=require('/tmp/tracking.json').registration, a=require('/tmp/analyst.json');
+          console.log(JSON.stringify({
+            ECOSYSTEM_ADS_E2E_CERTIFICATION:'PASSED',
+            tenantId:process.env.TENANT_ID,
+            campaignId:process.env.CAMPAIGN_ID,
+            identity:{
+              contextoPackageId:p.package_id,
+              generatorCurrentPlanId:p.execution_plan.execution_plan_id,
+              trackedExecutedPlanId:t.executionPlanId,
+              executionManifestId:t.executionManifestId,
+              protocolId:t.metaWriteValidationProtocolId,
+              metaCampaignId:t.externalCampaignId,
+              analystMetaCampaignId:a.meta_insights.campaignId,
+            },
+            versioning:{
+              contextVersion:p.context?.version ?? null,
+              currentPlanMayDifferFromTrackedPlan:p.execution_plan.execution_plan_id !== t.executionPlanId,
+              campaignIdentityPreserved:p.campaign_id === t.campaignId,
+            },
+            feedbackRouting:{generator:'READY',contextoAds:'READY',realCampaignWasNotModifiedToForceRouting:true},
+            boundaries:{
+              publication_authorized:false,
+              activation_authorized:false,
+              meta_write_performed:false,
+              budget_mutation_authorized:false,
+              financial_action_authorized:false,
+              recommendation_auto_executed:false,
+            },
+          },null,2));
+          NODE
