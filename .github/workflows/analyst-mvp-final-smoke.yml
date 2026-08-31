@@ -1,0 +1,143 @@
+name: Analista Ads MVP Final Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/analyst-mvp-final-smoke.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  final-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: b8f16916-cf4c-4e80-894e-dcc56fbd9564
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+
+      - name: Confirm API health
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$BASE_URL/health" > /tmp/health.json
+          node -e "const x=require('/tmp/health.json'); if (!x) process.exit(1);"
+
+      - name: Collect Meta data and analyze
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            --data '{"since":"2026-08-30","until":"2026-08-31"}' \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/collect-meta" \
+            > /tmp/collect.json
+          node <<'NODE'
+          const x=require('/tmp/collect.json');
+          if (x.action_status !== 'ANALYZED') throw new Error(`Unexpected collect status: ${x.action_status}`);
+          if (x.meta_campaign_resolution?.automatic !== true) throw new Error('Meta campaign link was not resolved automatically');
+          if (x.meta_campaign_resolution?.technical_id_required_from_user !== false) throw new Error('Technical Meta id is still required from user');
+          const b=x.boundaries||{};
+          for (const k of ['meta_write_performed','external_writes_allowed','recommendation_auto_executed','financial_action_authorized']) {
+            if (b[k] !== false) throw new Error(`Unsafe collect boundary: ${k}`);
+          }
+          console.log(JSON.stringify({action_status:x.action_status,operational_state:x.user_brief?.operationalState,decision:x.user_brief?.decision,resolution:x.meta_campaign_resolution,boundaries:x.boundaries},null,2));
+          NODE
+
+      - name: Validate objective summary
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/summary" \
+            > /tmp/summary.json
+          node <<'NODE'
+          const x=require('/tmp/summary.json');
+          if (x.action_status !== 'OK') throw new Error(`Unexpected summary status: ${x.action_status}`);
+          for (const key of ['situation','primaryEvidence','interpretation','recommendation','nextStep','confidence','urgency']) {
+            if (x[key] === undefined || x[key] === null || x[key] === '') throw new Error(`Missing summary field: ${key}`);
+          }
+          console.log(JSON.stringify({situation:x.situation,recommendation:x.recommendation,nextStep:x.nextStep,operationalState:x.operationalState,decision:x.decision},null,2));
+          NODE
+
+      - name: Validate essential alert
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/alert" \
+            > /tmp/alert.json
+          node <<'NODE'
+          const x=require('/tmp/alert.json');
+          if (x.actionStatus !== 'OK') throw new Error(`Unexpected alert status: ${x.actionStatus}`);
+          if (!['none','info','watch','action_required','critical'].includes(x.level)) throw new Error(`Invalid alert level: ${x.level}`);
+          const b=x.boundaries||{};
+          if (b.alertIsExecutionCommand !== false || b.metaWritePerformed !== false || b.externalWritesAllowed !== false || b.recommendationAutoExecuted !== false) throw new Error('Unsafe alert boundaries');
+          console.log(JSON.stringify({level:x.level,title:x.title,message:x.message,nextStep:x.nextStep,userActionRequired:x.userActionRequired,boundaries:x.boundaries},null,2));
+          NODE
+
+      - name: Validate recommendation governance
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/recommendations/latest" \
+            > /tmp/recommendation.json
+          node <<'NODE'
+          const x=require('/tmp/recommendation.json');
+          if (!['NO_APPROVAL_REQUIRED','NO_RECOMMENDATION','APPROVED_RECOMMENDATION','REJECTED_RECOMMENDATION'].includes(x.actionStatus)) throw new Error(`Unexpected recommendation status: ${x.actionStatus}`);
+          const b=x.boundaries||{};
+          if (b.decisionIsExecutionAuthorization !== false || b.executionAuthorized !== false || b.metaWritePerformed !== false || b.externalWritesAllowed !== false || b.recommendationAutoExecuted !== false || b.financialActionAuthorized !== false) throw new Error('Unsafe recommendation boundaries');
+          console.log(JSON.stringify({actionStatus:x.actionStatus,recommendedAction:x.recommendedAction,decision:x.decision,handoffTarget:x.handoffTarget,nextStep:x.nextStep,boundaries:x.boundaries},null,2));
+          NODE
+
+      - name: Refresh and validate contextual learning
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/learning/refresh" \
+            > /tmp/learning.json
+          node <<'NODE'
+          const x=require('/tmp/learning.json');
+          if (!['RECORDED','NO_LEARNING'].includes(x.actionStatus)) throw new Error(`Unexpected learning status: ${x.actionStatus}`);
+          const b=x.boundaries||{};
+          if (b.contextualOnly !== true || b.universalRuleCreated !== false || b.autonomousTrainingPerformed !== false || b.metaWritePerformed !== false || b.externalWritesAllowed !== false || b.recommendationAutoExecuted !== false) throw new Error('Unsafe learning boundaries');
+          console.log(JSON.stringify({actionStatus:x.actionStatus,learning:x.learning,confidence:x.confidence,nextStep:x.nextStep,boundaries:x.boundaries},null,2));
+          NODE
+
+      - name: Confirm final safe state
+        run: |
+          node <<'NODE'
+          const collect=require('/tmp/collect.json');
+          const summary=require('/tmp/summary.json');
+          const alert=require('/tmp/alert.json');
+          const recommendation=require('/tmp/recommendation.json');
+          const learning=require('/tmp/learning.json');
+          console.log(JSON.stringify({
+            ANALISTA_MVP_FINAL_SMOKE:'PASSED',
+            collect:collect.action_status,
+            summary:summary.action_status,
+            alert:alert.level,
+            recommendation:recommendation.actionStatus,
+            learning:learning.actionStatus,
+            boundaries:{
+              meta_write_performed:false,
+              external_writes_allowed:false,
+              recommendation_auto_executed:false,
+              financial_action_authorized:false,
+              autonomous_training_performed:false
+            }
+          },null,2));
+          NODE
