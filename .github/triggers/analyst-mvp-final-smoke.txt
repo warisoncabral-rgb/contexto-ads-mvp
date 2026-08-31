@@ -1,5 +1,5 @@
-trigger=2026-08-31T22:21:00Z
-scope=analista-ads-mvp-final-hosted-smoke
+trigger=2026-08-31T22:42:00Z
+scope=generator-to-analyst-explicit-tracking-postdeploy-smoke
 meta_write=false
 publication=false
 activation=false
