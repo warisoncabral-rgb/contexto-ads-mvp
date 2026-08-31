@@ -5,6 +5,7 @@ import {
 } from '../../domain/contracts/analyst';
 import { MetaInsightsService } from '../meta-insights/meta-insights.service';
 import { OperatorAccessService } from '../operator-access/operator-access.service';
+import { AnalystGovernanceService } from './analyst-governance.service';
 import { AnalystMetaCampaignResolverService } from './analyst-meta-campaign-resolver.service';
 import { AnalystPresenter } from './analyst.presenter';
 import { AnalystService } from './analyst.service';
@@ -24,6 +25,7 @@ export class AnalystController {
     private readonly metaInsights: MetaInsightsService,
     private readonly presenter: AnalystPresenter,
     private readonly metaCampaignResolver: AnalystMetaCampaignResolverService,
+    private readonly governance: AnalystGovernanceService,
   ) {}
 
   @Post('analyze')
@@ -186,7 +188,7 @@ export class AnalystController {
       return {
         action_status: 'NO_ANALYSIS',
         situation: 'Ainda não existe análise suficiente para esta campanha.',
-        next_step: 'Colete os dados da campanha para iniciar o acompanhamento.',
+        next_step: 'A coleta automática fará o acompanhamento quando houver dados disponíveis.',
         user_action_required: false,
       };
     }
@@ -194,6 +196,47 @@ export class AnalystController {
       action_status: 'OK',
       ...this.presenter.present(latest.analysis),
     };
+  }
+
+  @Get('alert')
+  async alert(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    return this.governance.essentialAlert(tenantId, campaignId);
+  }
+
+  @Get('recommendations/latest')
+  async latestRecommendationDecision(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    return this.governance.latestDecision(tenantId, campaignId);
+  }
+
+  @Post('recommendations/:decision')
+  async decideRecommendation(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Param('decision') decision: string,
+    @Body() body: { reason?: string },
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    const { operator } = await this.access.authorizeCampaignPreparation(
+      authorization,
+      tenantId,
+    );
+    return this.governance.decideLatest(
+      tenantId,
+      campaignId,
+      decision,
+      operator.subject,
+      body?.reason,
+    );
   }
 
   @Get('latest')
