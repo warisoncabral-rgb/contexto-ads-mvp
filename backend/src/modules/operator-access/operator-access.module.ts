@@ -55,5 +55,6 @@ import { PublicReadonlyActionGatewayController } from './public-readonly-action-
     PublicReadonlyActionGatewayController,
   ],
   providers: [OperatorAccessService],
+  exports: [OperatorAccessService],
 })
 export class OperatorAccessModule {}
