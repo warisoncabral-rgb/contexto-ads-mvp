@@ -18,6 +18,7 @@ import { MetaWriteValidationModule } from './modules/meta-write-validation/meta-
 import { OperatorAccessModule } from './modules/operator-access/operator-access.module';
 import { HealthModule } from './modules/health/health.module';
 import { MetaExecutionModule } from './modules/meta-execution/meta-execution.module';
+import { AnalystModule } from './modules/analyst/analyst.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { MetaExecutionModule } from './modules/meta-execution/meta-execution.mod
     OperatorAccessModule,
     HealthModule,
     MetaExecutionModule,
+    AnalystModule,
   ],
 })
 export class AppModule {}

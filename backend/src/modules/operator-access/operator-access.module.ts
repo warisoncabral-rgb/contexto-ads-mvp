@@ -53,5 +53,6 @@ import { OperatorActionTransportController } from './operator-action-transport.c
     OperatorActionTransportController,
   ],
   providers: [OperatorAccessService],
+  exports: [OperatorAccessService],
 })
 export class OperatorAccessModule {}
