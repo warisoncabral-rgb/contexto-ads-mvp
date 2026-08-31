@@ -3,6 +3,7 @@ import {
   AnalystAnalyzeInputV1,
   AnalystBusinessConstraintsV1,
 } from '../../domain/contracts/analyst';
+import { AnalystTrackingService } from '../analyst-tracking/analyst-tracking.service';
 import { MetaInsightsService } from '../meta-insights/meta-insights.service';
 import { OperatorAccessService } from '../operator-access/operator-access.service';
 import { AnalystGovernanceService } from './analyst-governance.service';
@@ -26,6 +27,7 @@ export class AnalystController {
     private readonly presenter: AnalystPresenter,
     private readonly metaCampaignResolver: AnalystMetaCampaignResolverService,
     private readonly governance: AnalystGovernanceService,
+    private readonly tracking: AnalystTrackingService,
   ) {}
 
   @Post('analyze')
@@ -173,6 +175,36 @@ export class AnalystController {
         recommendation_auto_executed: false,
         financial_action_authorized: false,
       },
+    };
+  }
+
+  @Get('tracking')
+  async trackingEvidence(
+    @Param('tenantId') tenantId: string,
+    @Param('campaignId') campaignId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    const registration = await this.tracking.find(tenantId, campaignId);
+    if (!registration) {
+      return {
+        action_status: 'NOT_FOUND',
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        technical_id_required_from_user: false,
+        boundaries: {
+          tracking_only: true,
+          execution_authorized: false,
+          meta_write_performed: false,
+          external_writes_allowed: false,
+          recommendation_auto_executed: false,
+        },
+      };
+    }
+    return {
+      action_status: 'FOUND',
+      registration,
+      technical_id_required_from_user: false,
     };
   }
 
