@@ -66,6 +66,33 @@ describe('CampaignPackageService', () => {
     });
   });
 
+  it('accepts an MP4 video referenced by an ad', () => {
+    const result = service.validate({
+      ...validPackage,
+      media: [{
+        ...validPackage.media[0],
+        media_type: 'video',
+        mime_type: 'video/mp4',
+        file_reference: 'asset://rosa-vip/video-01',
+      }],
+    });
+
+    expect(result.validation_status).toBe('VALID');
+    expect(result.handoff_status).toBe('ACCEPTED_BY_GENERATOR');
+  });
+
+  it('rejects media_type and mime_type mismatches', () => {
+    const result = service.validate({
+      ...validPackage,
+      media: [{ ...validPackage.media[0], media_type: 'video', mime_type: 'image/jpeg' }],
+    });
+
+    expect(result.validation_status).toBe('INVALID');
+    expect(result.blocking_reasons).toContain(
+      'media[0].mime_type must match media_type (image/jpeg, image/png or video/mp4)',
+    );
+  });
+
   it('rejects handoff while strategy is not complete', () => {
     const result = service.validate({ ...validPackage, strategy_status: 'IN_REVIEW' });
 
