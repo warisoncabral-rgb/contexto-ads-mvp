@@ -1,0 +1,6 @@
+trigger=2026-08-31T22:45:00Z
+scope=contexto-generator-analyst-existing-campaign-intersection
+meta_write=false
+publication=false
+activation=false
+budget_mutation=false
