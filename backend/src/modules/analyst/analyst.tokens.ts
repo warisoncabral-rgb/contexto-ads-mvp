@@ -1,0 +1,1 @@
+export const ANALYST_REPOSITORY = Symbol('ANALYST_REPOSITORY');
