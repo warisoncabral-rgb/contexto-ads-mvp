@@ -18,7 +18,7 @@ describe('StrategyHandoffPersistenceService', () => {
   it('persists the deterministic campaign context on first submit', async () => {
     const repository = {
       findVersion: jest.fn(async () => null),
-      create: jest.fn(async () => undefined),
+      create: jest.fn(async (_context: unknown, _event?: unknown) => undefined),
     };
     const service = new StrategyHandoffPersistenceService(repository as any);
 
@@ -49,14 +49,14 @@ describe('StrategyHandoffPersistenceService', () => {
   it('returns the existing version for an identical retry instead of creating a duplicate', async () => {
     const seedRepository = {
       findVersion: jest.fn(async () => null),
-      create: jest.fn(async () => undefined),
+      create: jest.fn(async (_context: unknown, _event?: unknown) => undefined),
     };
     const seedService = new StrategyHandoffPersistenceService(seedRepository as any);
     const existing = await seedService.createOrGet(tenantId, campaignId, input, 'operator:test');
 
     const repository = {
       findVersion: jest.fn(async () => existing),
-      create: jest.fn(async () => undefined),
+      create: jest.fn(async (_context: unknown, _event?: unknown) => undefined),
     };
     const service = new StrategyHandoffPersistenceService(repository as any);
     const retry = await service.createOrGet(tenantId, campaignId, input, 'operator:test');
@@ -68,14 +68,14 @@ describe('StrategyHandoffPersistenceService', () => {
   it('fails closed if the same deterministic identity points to different content', async () => {
     const seedRepository = {
       findVersion: jest.fn(async () => null),
-      create: jest.fn(async () => undefined),
+      create: jest.fn(async (_context: unknown, _event?: unknown) => undefined),
     };
     const seedService = new StrategyHandoffPersistenceService(seedRepository as any);
     const existing = await seedService.createOrGet(tenantId, campaignId, input, 'operator:test');
 
     const repository = {
       findVersion: jest.fn(async () => existing),
-      create: jest.fn(async () => undefined),
+      create: jest.fn(async (_context: unknown, _event?: unknown) => undefined),
     };
     const service = new StrategyHandoffPersistenceService(repository as any);
 
@@ -91,7 +91,7 @@ describe('StrategyHandoffPersistenceService', () => {
   it('recovers safely from a concurrent insert race when the persisted content matches', async () => {
     const seedRepository = {
       findVersion: jest.fn(async () => null),
-      create: jest.fn(async () => undefined),
+      create: jest.fn(async (_context: unknown, _event?: unknown) => undefined),
     };
     const seedService = new StrategyHandoffPersistenceService(seedRepository as any);
     const existing = await seedService.createOrGet(tenantId, campaignId, input, 'operator:test');
@@ -101,7 +101,7 @@ describe('StrategyHandoffPersistenceService', () => {
         .fn()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(existing),
-      create: jest.fn(async () => {
+      create: jest.fn(async (_context: unknown, _event?: unknown) => {
         throw new Error('duplicate key');
       }),
     };
