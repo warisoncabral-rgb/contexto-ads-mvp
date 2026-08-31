@@ -40,11 +40,7 @@ export class AnalystPresenter {
     const userAction = this.userAction(analysis);
     const situation = HEALTH_TEXT[analysis.healthStatus];
     const primaryEvidence = this.primaryEvidence(analysis);
-    const simpleMessage = [
-      situation,
-      recommendation,
-      userAction,
-    ].filter(Boolean).join(' ');
+    const simpleMessage = [situation, recommendation, userAction].filter(Boolean).join(' ');
 
     return {
       locale: 'pt-BR',
@@ -96,9 +92,9 @@ export class AnalystPresenter {
       const numeric = Number(raw);
       if (Number.isFinite(numeric)) {
         return `${label}: ${(numeric / 100).toLocaleString('pt-BR', {
-          style: 'currency',
-          currency: 'BRL',
-        })}`;
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })} na moeda da conta`;
       }
     }
     if (key.endsWith('_hours')) {
