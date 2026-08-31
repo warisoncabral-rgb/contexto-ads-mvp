@@ -43,6 +43,23 @@ export interface AnalystSnapshotInputV1 {
   metrics: AnalystMetricsV1;
 }
 
+export interface AnalystBusinessConstraintsV1 {
+  targetCostPerResultMinor?: number;
+  maximumDailyBudgetMinor?: number;
+  minimumObservationHours?: number;
+}
+
+export interface AnalystAnalyzeInputV1 {
+  clientContext?: Record<string, unknown>;
+  campaignStrategy?: Record<string, unknown>;
+  campaignConfiguration?: Record<string, unknown>;
+  campaignStatus?: Record<string, unknown>;
+  changeHistory?: Array<Record<string, unknown>>;
+  approvedActions?: Array<Record<string, unknown>>;
+  businessConstraints?: AnalystBusinessConstraintsV1;
+  snapshot: AnalystSnapshotInputV1;
+}
+
 export interface AnalystSnapshotV1 {
   snapshotId: string;
   snapshotHash: string;
