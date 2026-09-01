@@ -4,7 +4,10 @@ const TENANT = '22222222-2222-4222-8222-222222222222';
 const CAMPAIGN = 'b8f16916-cf4c-4e80-894e-dcc56fbd9564';
 const PLAN = '90e39a0f-3cbc-4405-80c0-31045af22550';
 
-function packageStatus(nextAction = 'REQUEST_EXECUTION_PLAN_APPROVAL') {
+function packageStatus(
+  nextAction = 'REQUEST_EXECUTION_PLAN_APPROVAL',
+  targetBindingStatus = 'BOUND',
+) {
   return {
     package_id: CAMPAIGN,
     campaign_id: CAMPAIGN,
@@ -14,7 +17,7 @@ function packageStatus(nextAction = 'REQUEST_EXECUTION_PLAN_APPROVAL') {
       execution_plan_id: PLAN,
       plan_hash: 'plan-hash',
       status: 'draft',
-      target_binding_status: 'BOUND',
+      target_binding_status: targetBindingStatus,
       maximum_planned_spend_minor: 14000,
       currency: 'BRL',
     },
@@ -35,7 +38,16 @@ function setup() {
       items: [{ tenantId: TENANT, campaignId: CAMPAIGN, executionPlanId: PLAN }],
     }),
     bindExecutionTarget: jest.fn(),
-    requestPlanApproval: jest.fn().mockResolvedValue({ approvalId: 'approval-1', status: 'pending' }),
+    requestPlanApproval: jest.fn().mockResolvedValue({
+      approval: { approvalId: 'approval-1', status: 'pending' },
+      readiness: {},
+      boundaries: {
+        approvalIsExecutionAuthorization: false,
+        publicationAuthorized: false,
+        externalWritesAllowed: false,
+        externalWritesPerformed: false,
+      },
+    }),
   } as any;
   const packages = { get: jest.fn().mockResolvedValue(packageStatus()) } as any;
   const analyst = { latest: jest.fn().mockResolvedValue({ analysis: null }) } as any;
@@ -101,8 +113,9 @@ describe('EcosystemOrchestratorService', () => {
       'Bearer test', TENANT, CAMPAIGN, PLAN,
     );
     expect(result).toEqual(expect.objectContaining({
-      actionStatus: 'SAFE_STEP_COMPLETED',
+      actionStatus: 'SAFE_STEPS_COMPLETED',
       userActionRequired: true,
+      completedSteps: ['PLAN_APPROVAL_REQUEST_PREPARED'],
     }));
     expect(result.boundaries).toEqual(expect.objectContaining({
       publicationAuthorized: false,
@@ -110,6 +123,27 @@ describe('EcosystemOrchestratorService', () => {
       externalWritesAllowed: false,
       financialActionAuthorized: false,
     }));
+  });
+
+  it('chains target resolution and approval preparation in one safe advance', async () => {
+    const { service, access, packages, connections } = setup();
+    packages.get
+      .mockResolvedValueOnce(packageStatus('RESOLVE_META_TARGET', 'PENDING_RESOLUTION'))
+      .mockResolvedValueOnce(packageStatus('REQUEST_EXECUTION_PLAN_APPROVAL', 'BOUND'));
+
+    const result = await service.advanceSafe('Bearer test', CAMPAIGN);
+
+    expect(connections.selectedExecutionTarget).toHaveBeenCalledWith(TENANT);
+    expect(access.bindExecutionTarget).toHaveBeenCalled();
+    expect(access.requestPlanApproval).toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({
+      actionStatus: 'SAFE_STEPS_COMPLETED',
+      completedSteps: ['META_TARGET_RESOLVED', 'PLAN_APPROVAL_REQUEST_PREPARED'],
+      userActionRequired: true,
+      userAction: 'Aprovar ou rejeitar o plano de campanha.',
+    }));
+    expect(result.boundaries.publicationAuthorized).toBe(false);
+    expect(result.boundaries.activationAuthorized).toBe(false);
   });
 
   it('stops for real creative review instead of auto-approving visual fidelity', async () => {
