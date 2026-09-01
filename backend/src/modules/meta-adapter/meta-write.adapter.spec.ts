@@ -93,4 +93,38 @@ describe('MetaWriteAdapter', () => {
     }));
     expect(JSON.stringify(result)).not.toContain('sensitive raw detail');
   });
+
+  it('uploads a remote HTTPS ad video and reads its encoding status', async () => {
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: '998877665544' }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: '998877665544', status: { video_status: 'ready' },
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const adapter = new MetaWriteAdapter(new ConfigService({
+      META_WRITE_ADAPTER_ENABLED: 'true',
+      META_GRAPH_BASE_URL: 'https://graph.facebook.com',
+      META_GRAPH_API_VERSION: 'v26.0',
+      META_APP_SECRET: 'app-secret',
+    }), vault, fetchImpl as unknown as typeof fetch);
+
+    await expect(adapter.createVideo(
+      '22222222-2222-4222-8222-222222222222', 'vault/ref', 'act_123',
+      'https://media.example/video.mp4', 'Controlled video',
+    )).resolves.toEqual(expect.objectContaining({
+      success: true, data: { id: '998877665544' },
+    }));
+    const uploadBody = fetchImpl.mock.calls[0][1].body as URLSearchParams;
+    expect(String(fetchImpl.mock.calls[0][0]))
+      .toBe('https://graph.facebook.com/v26.0/act_123/advideos');
+    expect(uploadBody.get('file_url')).toBe('https://media.example/video.mp4');
+
+    await expect(adapter.readVideoStatus(
+      '22222222-2222-4222-8222-222222222222', 'vault/ref', '998877665544',
+    )).resolves.toEqual(expect.objectContaining({
+      success: true,
+      data: { id: '998877665544', videoStatus: 'ready' },
+    }));
+  });
 });
