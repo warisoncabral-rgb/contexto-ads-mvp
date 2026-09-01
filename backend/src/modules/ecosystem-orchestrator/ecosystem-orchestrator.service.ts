@@ -10,6 +10,9 @@ import { CampaignPackageStatusService } from '../campaign-package/campaign-packa
 import { MetaConnectionService } from '../meta-connection/meta-connection.service';
 import { OperatorAccessService } from '../operator-access/operator-access.service';
 
+type PackageStatus = Awaited<ReturnType<CampaignPackageStatusService['get']>>;
+type AnalystBrief = ReturnType<AnalystPresenter['present']>;
+
 @Injectable()
 export class EcosystemOrchestratorService {
   constructor(
@@ -29,26 +32,20 @@ export class EcosystemOrchestratorService {
     const monitoringCount = campaigns.filter((item) =>
       item.stage === 'MONITORING' || item.stage === 'ANALYSIS_WAITING').length;
     const blockedCount = campaigns.filter((item) => item.stage === 'BLOCKED').length;
-    const headline = campaigns.length === 0
-      ? 'Nenhuma campanha está em preparação ou acompanhamento.'
-      : userActionCount > 0
-        ? `Ecossistema funcionando. ${userActionCount} campanha(s) precisam de uma decisão sua.`
-        : 'Ecossistema funcionando. Nenhuma ação sua é necessária agora.';
 
     return {
       actionStatus: 'OK',
-      headline,
+      headline: campaigns.length === 0
+        ? 'Nenhuma campanha está em preparação ou acompanhamento.'
+        : userActionCount > 0
+          ? `Ecossistema funcionando. ${userActionCount} campanha(s) precisam de uma decisão sua.`
+          : 'Ecossistema funcionando. Nenhuma ação sua é necessária agora.',
       simpleMessage: campaigns.length === 0
         ? 'Quando uma campanha for concluída no Contexto Ads, o restante do fluxo aparecerá aqui automaticamente.'
-        : 'Contexto Ads, Gerador e Analista estão sendo apresentados como um único fluxo. Os detalhes técnicos ficam escondidos, mas continuam rastreáveis.',
+        : 'Contexto Ads, Gerador e Analista estão sendo apresentados como um único fluxo. Os detalhes técnicos continuam rastreáveis, mas ficam fora do seu caminho.',
       userActionRequired: userActionCount > 0,
       campaigns,
-      summary: {
-        campaignCount: campaigns.length,
-        monitoringCount,
-        userActionCount,
-        blockedCount,
-      },
+      summary: { campaignCount: campaigns.length, monitoringCount, userActionCount, blockedCount },
       boundaries: this.boundaries(),
     };
   }
@@ -57,24 +54,15 @@ export class EcosystemOrchestratorService {
     authorization: string | undefined,
     campaignId: string,
   ): Promise<EcosystemCampaignHumanStatusV1> {
-    const portfolio = await this.access.portfolio(authorization);
-    const target = portfolio.items.find((item) => item.campaignId === campaignId);
-    if (!target) throw new NotFoundException('Campaign was not found in the authorized workspace');
+    const target = await this.authorizedCampaign(authorization, campaignId);
     return this.describeCampaign(target.tenantId, target.campaignId, target.executionPlanId);
   }
 
-  async advanceSafe(
-    authorization: string | undefined,
-    campaignId: string,
-  ) {
-    const portfolio = await this.access.portfolio(authorization);
-    const target = portfolio.items.find((item) => item.campaignId === campaignId);
-    if (!target) throw new NotFoundException('Campaign was not found in the authorized workspace');
-
+  async advanceSafe(authorization: string | undefined, campaignId: string) {
+    const target = await this.authorizedCampaign(authorization, campaignId);
     const status = await this.packages.get(target.tenantId, campaignId);
-    const next = status.next_action;
 
-    if (next === 'RESOLVE_META_TARGET') {
+    if (status.next_action === 'RESOLVE_META_TARGET') {
       const selected = await this.connections.selectedExecutionTarget(target.tenantId);
       await this.access.bindExecutionTarget(
         authorization,
@@ -84,18 +72,17 @@ export class EcosystemOrchestratorService {
         selected.connectionId,
         selected.adAccountId,
       );
-      return {
-        actionStatus: 'SAFE_STEP_COMPLETED',
-        headline: 'O alvo da Meta foi resolvido automaticamente.',
-        simpleMessage: 'Usei a conta de anúncios já selecionada no ambiente. Você não precisou informar nenhum ID técnico.',
-        nextStep: 'Vou seguir até o próximo ponto que exija revisão ou aprovação humana.',
-        userActionRequired: false,
-        userAction: 'Nenhuma ação sua é necessária agora.',
-        boundaries: this.boundaries(),
-      };
+      return this.safeStep(
+        'SAFE_STEP_COMPLETED',
+        'O alvo da Meta foi resolvido automaticamente.',
+        'Usei a conta de anúncios já selecionada. Você não precisou informar nenhum ID técnico.',
+        'Vou seguir até o próximo ponto que exija revisão ou aprovação humana.',
+        false,
+        'Nenhuma ação sua é necessária agora.',
+      );
     }
 
-    if (next === 'REQUEST_EXECUTION_PLAN_APPROVAL') {
+    if (status.next_action === 'REQUEST_EXECUTION_PLAN_APPROVAL') {
       const approval = await this.access.requestPlanApproval(
         authorization,
         target.tenantId,
@@ -103,53 +90,55 @@ export class EcosystemOrchestratorService {
         status.execution_plan.execution_plan_id,
       );
       return {
-        actionStatus: 'SAFE_STEP_COMPLETED',
-        headline: 'O Gerador terminou o plano e a aprovação já está pronta para você.',
-        simpleMessage: 'Nenhuma campanha foi publicada. Apenas preparei internamente a decisão humana que vem antes de qualquer efeito externo.',
-        nextStep: 'Revise e aprove ou rejeite o plano quando quiser continuar.',
-        userActionRequired: true,
-        userAction: 'Aprovar ou rejeitar o plano de campanha.',
-        technicalDetails: {
-          approvalId: approval.approvalId,
-          approvalStatus: approval.status,
-        },
-        boundaries: this.boundaries(),
+        ...this.safeStep(
+          'SAFE_STEP_COMPLETED',
+          'O Gerador terminou o plano e a aprovação já está pronta para você.',
+          'Nenhuma campanha foi publicada. Apenas preparei a decisão humana que vem antes de qualquer efeito externo.',
+          'Revise e aprove ou rejeite o plano quando quiser continuar.',
+          true,
+          'Aprovar ou rejeitar o plano de campanha.',
+        ),
+        technicalDetails: { approvalId: approval.approvalId, approvalStatus: approval.status },
       };
     }
 
-    if (next === 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE') {
-      return {
-        actionStatus: 'USER_DECISION_REQUIRED',
-        headline: 'O criativo precisa da sua revisão.',
-        simpleMessage: 'O sistema não vai fingir que viu ou aprovou uma peça visual por você.',
-        nextStep: 'Revise a peça e confirme se ela está fiel ao que foi aprovado.',
-        userActionRequired: true,
-        userAction: 'Aprovar ou pedir ajuste no criativo.',
-        boundaries: this.boundaries(),
-      };
+    if (status.next_action === 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE') {
+      return this.safeStep(
+        'USER_DECISION_REQUIRED',
+        'O criativo precisa da sua revisão.',
+        'O sistema não vai fingir que viu ou aprovou uma peça visual por você.',
+        'Revise a peça e confirme se ela está fiel ao que foi aprovado.',
+        true,
+        'Aprovar ou pedir ajuste no criativo.',
+      );
     }
 
-    if (next === 'DECIDE_EXECUTION_PLAN_APPROVAL') {
-      return {
-        actionStatus: 'USER_DECISION_REQUIRED',
-        headline: 'O plano está aguardando sua decisão.',
-        simpleMessage: 'Todo o trabalho técnico anterior já foi feito. Agora só falta a decisão humana de aprovar ou rejeitar este plano.',
-        nextStep: 'Aprove ou rejeite o plano. Isso ainda não publica nem ativa campanha.',
-        userActionRequired: true,
-        userAction: 'Aprovar ou rejeitar o plano de campanha.',
-        boundaries: this.boundaries(),
-      };
+    if (status.next_action === 'DECIDE_EXECUTION_PLAN_APPROVAL') {
+      return this.safeStep(
+        'USER_DECISION_REQUIRED',
+        'O plano está aguardando sua decisão.',
+        'Todo o trabalho técnico anterior já foi feito. Agora só falta aprovar ou rejeitar este plano.',
+        'Aprove ou rejeite o plano. Isso ainda não publica nem ativa campanha.',
+        true,
+        'Aprovar ou rejeitar o plano de campanha.',
+      );
     }
 
-    return {
-      actionStatus: 'EXTERNAL_GATE_REACHED',
-      headline: 'Chegamos ao limite da automação segura.',
-      simpleMessage: 'O ecossistema concluiu o que podia fazer sem autorização de efeito externo.',
-      nextStep: 'Qualquer criação, publicação, ativação ou ação financeira continua exigindo autorização específica.',
-      userActionRequired: true,
-      userAction: 'Decidir se deseja avançar pelo gate externo apropriado.',
-      boundaries: this.boundaries(),
-    };
+    return this.safeStep(
+      'EXTERNAL_GATE_REACHED',
+      'Chegamos ao limite da automação segura.',
+      'O ecossistema concluiu o que podia fazer sem autorização de efeito externo.',
+      'Qualquer criação, publicação, ativação ou ação financeira continua exigindo autorização específica.',
+      true,
+      'Decidir se deseja avançar pelo gate externo apropriado.',
+    );
+  }
+
+  private async authorizedCampaign(authorization: string | undefined, campaignId: string) {
+    const portfolio = await this.access.portfolio(authorization);
+    const target = portfolio.items.find((item) => item.campaignId === campaignId);
+    if (!target) throw new NotFoundException('Campaign was not found in the authorized workspace');
+    return target;
   }
 
   private async describeCampaign(
@@ -157,48 +146,36 @@ export class EcosystemOrchestratorService {
     campaignId: string,
     fallbackExecutionPlanId: string,
   ): Promise<EcosystemCampaignHumanStatusV1> {
-    let packageStatus: Awaited<ReturnType<CampaignPackageStatusService['get']>> | null = null;
+    let status: PackageStatus;
     try {
-      packageStatus = await this.packages.get(tenantId, campaignId);
+      status = await this.packages.get(tenantId, campaignId);
     } catch {
-      return {
-        tenantId,
-        campaignId,
-        activeModule: 'contexto_ads',
-        stage: 'CONTEXT_REQUIRED',
-        progressPercent: 20,
+      return this.baseStatus(tenantId, campaignId, {
+        activeModule: 'contexto_ads', stage: 'CONTEXT_REQUIRED', progressPercent: 20,
         headline: 'A estratégia ainda precisa ser concluída no Contexto Ads.',
-        simpleMessage: 'Ainda não existe um pacote de campanha completo para o Gerador trabalhar.',
+        simpleMessage: 'Ainda não existe um pacote completo para o Gerador trabalhar.',
         whatSystemDid: 'Preservei o que já existe e não inventei informações para preencher lacunas.',
         nextStep: 'Concluir apenas as informações realmente necessárias no Contexto Ads.',
         userActionRequired: true,
         userAction: 'Responder às pendências materiais do Contexto Ads.',
-        technicalDetails: {
-          executionPlanId: fallbackExecutionPlanId ?? null,
-          packageNextAction: null,
-          creativeStatus: null,
-          targetBindingStatus: null,
-          planApprovalStatus: null,
-          trackingRegistered: false,
-          analystDecision: null,
-          analystOperationalState: null,
-        },
-        boundaries: this.boundaries(),
-      };
+      }, {
+        executionPlanId: fallbackExecutionPlanId ?? null,
+        packageNextAction: null, creativeStatus: null, targetBindingStatus: null,
+        planApprovalStatus: null, trackingRegistered: false,
+        analystDecision: null, analystOperationalState: null,
+      });
     }
 
     const tracking = await this.tracking.find(tenantId, campaignId);
     const latest = await this.analyst.latest(tenantId, campaignId);
-    const brief = latest.analysis ? this.presenter.present(latest.analysis) : null;
+    const brief: AnalystBrief | null = latest.analysis ? this.presenter.present(latest.analysis) : null;
 
     if (tracking && latest.analysis?.requiresApproval) {
-      return this.humanStatus(packageStatus, tracking !== null, brief, {
-        activeModule: 'user',
-        stage: 'ANALYST_DECISION',
-        progressPercent: 100,
+      return this.fromPackage(tenantId, status, true, brief, {
+        activeModule: 'user', stage: 'ANALYST_DECISION', progressPercent: 100,
         headline: 'O Analista encontrou uma decisão que merece sua aprovação.',
         simpleMessage: brief?.simpleMessage ?? 'Existe uma recomendação pronta para sua decisão.',
-        whatSystemDid: 'O Analista coletou os dados, comparou o histórico e preparou uma recomendação sem executá-la.',
+        whatSystemDid: 'O Analista coletou dados, comparou o histórico e preparou uma recomendação sem executá-la.',
         nextStep: brief?.nextStep ?? 'Revise a recomendação antes de qualquer alteração.',
         userActionRequired: true,
         userAction: brief?.userAction ?? 'Aprovar ou rejeitar a recomendação.',
@@ -206,10 +183,8 @@ export class EcosystemOrchestratorService {
     }
 
     if (tracking && brief) {
-      return this.humanStatus(packageStatus, true, brief, {
-        activeModule: 'analyst',
-        stage: 'MONITORING',
-        progressPercent: 100,
+      return this.fromPackage(tenantId, status, true, brief, {
+        activeModule: 'analyst', stage: 'MONITORING', progressPercent: 100,
         headline: brief.situation,
         simpleMessage: brief.simpleMessage,
         whatSystemDid: 'A campanha foi vinculada ao Analista e está sendo acompanhada automaticamente.',
@@ -220,12 +195,10 @@ export class EcosystemOrchestratorService {
     }
 
     if (tracking) {
-      return this.humanStatus(packageStatus, true, brief, {
-        activeModule: 'analyst',
-        stage: 'ANALYSIS_WAITING',
-        progressPercent: 90,
+      return this.fromPackage(tenantId, status, true, brief, {
+        activeModule: 'analyst', stage: 'ANALYSIS_WAITING', progressPercent: 90,
         headline: 'A campanha já chegou ao Analista.',
-        simpleMessage: 'O vínculo com a campanha real está pronto; falta apenas uma janela de dados suficiente para uma análise útil.',
+        simpleMessage: 'O vínculo com a campanha real está pronto; falta apenas uma janela de dados útil.',
         whatSystemDid: 'O Gerador concluiu o vínculo técnico e o Analista já sabe qual campanha acompanhar.',
         nextStep: 'A coleta automática fará a análise quando houver dados disponíveis.',
         userActionRequired: false,
@@ -233,13 +206,11 @@ export class EcosystemOrchestratorService {
       });
     }
 
-    if (packageStatus.creative?.status !== 'approved') {
-      return this.humanStatus(packageStatus, false, brief, {
-        activeModule: 'user',
-        stage: 'CREATIVE_REVIEW',
-        progressPercent: 45,
+    if (status.creative?.status !== 'approved') {
+      return this.fromPackage(tenantId, status, false, brief, {
+        activeModule: 'user', stage: 'CREATIVE_REVIEW', progressPercent: 45,
         headline: 'A estratégia já chegou ao Gerador; falta revisar o criativo.',
-        simpleMessage: 'Os dados da campanha estão preservados. O sistema parou porque a fidelidade visual precisa de confirmação real.',
+        simpleMessage: 'Os dados estão preservados. A fidelidade visual precisa de confirmação real.',
         whatSystemDid: 'O Contexto Ads entregou a estratégia e o Gerador preparou o pacote técnico sem publicar nada.',
         nextStep: 'Revise o criativo e confirme se está correto.',
         userActionRequired: true,
@@ -247,39 +218,33 @@ export class EcosystemOrchestratorService {
       });
     }
 
-    if (packageStatus.execution_plan.target_binding_status !== 'BOUND') {
-      return this.humanStatus(packageStatus, false, brief, {
-        activeModule: 'generator',
-        stage: 'TARGET_RESOLUTION',
-        progressPercent: 55,
+    if (status.execution_plan.target_binding_status !== 'BOUND') {
+      return this.fromPackage(tenantId, status, false, brief, {
+        activeModule: 'generator', stage: 'TARGET_RESOLUTION', progressPercent: 55,
         headline: 'O Gerador está resolvendo onde a campanha será criada.',
-        simpleMessage: 'Conta de anúncios e ativos técnicos podem ser resolvidos pelo sistema a partir da conexão já selecionada.',
-        whatSystemDid: 'A estratégia e o criativo já estão prontos; nenhum dado será pedido novamente se o sistema já puder recuperá-lo.',
+        simpleMessage: 'Conta de anúncios e ativos técnicos podem ser recuperados da conexão já selecionada.',
+        whatSystemDid: 'A estratégia e o criativo já estão prontos; não vou pedir novamente o que o sistema já sabe.',
         nextStep: 'Executar o próximo passo seguro para resolver o alvo Meta.',
         userActionRequired: false,
         userAction: 'Nenhuma ação sua é necessária agora.',
       });
     }
 
-    if (packageStatus.next_action === 'REQUEST_EXECUTION_PLAN_APPROVAL') {
-      return this.humanStatus(packageStatus, false, brief, {
-        activeModule: 'generator',
-        stage: 'PLAN_APPROVAL_PREPARATION',
-        progressPercent: 65,
+    if (status.next_action === 'REQUEST_EXECUTION_PLAN_APPROVAL') {
+      return this.fromPackage(tenantId, status, false, brief, {
+        activeModule: 'generator', stage: 'PLAN_APPROVAL_PREPARATION', progressPercent: 65,
         headline: 'O Gerador terminou o plano técnico.',
-        simpleMessage: 'O plano está pronto e o sistema pode abrir a aprovação para você sem publicar nada.',
-        whatSystemDid: 'Estruturei campanha, orçamento, ativos e plano de execução com base na estratégia aprovada.',
+        simpleMessage: 'O sistema pode abrir a aprovação para você sem publicar nada.',
+        whatSystemDid: 'Estruturei campanha, orçamento, ativos e plano com base na estratégia aprovada.',
         nextStep: 'Executar o próximo passo seguro para preparar a aprovação.',
         userActionRequired: false,
         userAction: 'Nenhuma ação sua é necessária até a aprovação ser aberta.',
       });
     }
 
-    if (packageStatus.next_action === 'DECIDE_EXECUTION_PLAN_APPROVAL') {
-      return this.humanStatus(packageStatus, false, brief, {
-        activeModule: 'user',
-        stage: 'PLAN_APPROVAL_REQUIRED',
-        progressPercent: 70,
+    if (status.next_action === 'DECIDE_EXECUTION_PLAN_APPROVAL') {
+      return this.fromPackage(tenantId, status, false, brief, {
+        activeModule: 'user', stage: 'PLAN_APPROVAL_REQUIRED', progressPercent: 70,
         headline: 'O plano está pronto para sua decisão.',
         simpleMessage: 'Você só precisa dizer se aprova ou rejeita. Isso ainda não coloca campanha no ar.',
         whatSystemDid: 'O Gerador concluiu todas as etapas internas anteriores à decisão humana.',
@@ -289,41 +254,59 @@ export class EcosystemOrchestratorService {
       });
     }
 
-    return this.humanStatus(packageStatus, false, brief, {
-      activeModule: 'user',
-      stage: 'EXTERNAL_EXECUTION_GATE',
-      progressPercent: 80,
+    return this.fromPackage(tenantId, status, false, brief, {
+      activeModule: 'user', stage: 'EXTERNAL_EXECUTION_GATE', progressPercent: 80,
       headline: 'A preparação interna terminou.',
-      simpleMessage: 'Chegamos ao ponto em que qualquer avanço pode produzir efeito externo. O sistema parou corretamente.',
-      whatSystemDid: 'Contexto Ads e Gerador concluíram a preparação segura e preservaram todas as aprovações e versões.',
+      simpleMessage: 'Qualquer avanço daqui pode produzir efeito externo, então o sistema parou corretamente.',
+      whatSystemDid: 'Contexto Ads e Gerador concluíram a preparação segura e preservaram versões e aprovações.',
       nextStep: 'Só avançar mediante a autorização externa específica prevista para esta etapa.',
       userActionRequired: true,
       userAction: 'Decidir se deseja avançar pelo gate externo.',
     });
   }
 
-  private humanStatus(
-    packageStatus: Awaited<ReturnType<CampaignPackageStatusService['get']>>,
+  private fromPackage(
+    tenantId: string,
+    status: PackageStatus,
     trackingRegistered: boolean,
-    brief: ReturnType<AnalystPresenter['present']> | null,
+    brief: AnalystBrief | null,
     human: Pick<EcosystemCampaignHumanStatusV1,
       'activeModule' | 'stage' | 'progressPercent' | 'headline' | 'simpleMessage'
       | 'whatSystemDid' | 'nextStep' | 'userActionRequired' | 'userAction'>,
   ): EcosystemCampaignHumanStatusV1 {
+    return this.baseStatus(tenantId, status.campaign_id, human, {
+      executionPlanId: status.execution_plan.execution_plan_id ?? null,
+      packageNextAction: status.next_action ?? null,
+      creativeStatus: status.creative?.status ?? null,
+      targetBindingStatus: status.execution_plan.target_binding_status ?? null,
+      planApprovalStatus: status.plan_approval?.status ?? null,
+      trackingRegistered,
+      analystDecision: brief?.decision ?? null,
+      analystOperationalState: brief?.operationalState ?? null,
+    });
+  }
+
+  private baseStatus(
+    tenantId: string,
+    campaignId: string,
+    human: Pick<EcosystemCampaignHumanStatusV1,
+      'activeModule' | 'stage' | 'progressPercent' | 'headline' | 'simpleMessage'
+      | 'whatSystemDid' | 'nextStep' | 'userActionRequired' | 'userAction'>,
+    technicalDetails: EcosystemCampaignHumanStatusV1['technicalDetails'],
+  ): EcosystemCampaignHumanStatusV1 {
+    return { tenantId, campaignId, ...human, technicalDetails, boundaries: this.boundaries() };
+  }
+
+  private safeStep(
+    actionStatus: string,
+    headline: string,
+    simpleMessage: string,
+    nextStep: string,
+    userActionRequired: boolean,
+    userAction: string,
+  ) {
     return {
-      tenantId: packageStatus.context ? packageStatus.resolved_context?.tenant_id ?? '' : '',
-      campaignId: packageStatus.campaign_id,
-      ...human,
-      technicalDetails: {
-        executionPlanId: packageStatus.execution_plan.execution_plan_id ?? null,
-        packageNextAction: packageStatus.next_action ?? null,
-        creativeStatus: packageStatus.creative?.status ?? null,
-        targetBindingStatus: packageStatus.execution_plan.target_binding_status ?? null,
-        planApprovalStatus: packageStatus.plan_approval?.status ?? null,
-        trackingRegistered,
-        analystDecision: brief?.decision ?? null,
-        analystOperationalState: brief?.operationalState ?? null,
-      },
+      actionStatus, headline, simpleMessage, nextStep, userActionRequired, userAction,
       boundaries: this.boundaries(),
     };
   }
