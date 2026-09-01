@@ -1,0 +1,87 @@
+name: Ecosystem First Supervised Pilot Brief
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-brief.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  pilot-brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Build human pilot brief without technical input
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+          H="x-contexto-operator-key: $OPERATOR_TOKEN"
+
+          curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/ecosystem/overview" > /tmp/overview.json
+          curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/portfolio" > /tmp/portfolio.json
+
+          node <<'NODE' > /tmp/selection.env
+          const overview=require('/tmp/overview.json');
+          const portfolio=require('/tmp/portfolio.json');
+          const pilot=overview.campaigns.find(c=>c.stage==='PLAN_APPROVAL_REQUIRED');
+          if(!pilot) throw new Error('No campaign is ready for plan approval pilot');
+          const item=portfolio.items.find(i=>i.campaignId===pilot.campaignId);
+          if(!item) throw new Error('Pilot campaign not found in authorized portfolio');
+          console.log(`TENANT_ID=${item.tenantId}`);
+          console.log(`CAMPAIGN_ID=${item.campaignId}`);
+          console.log(`PLAN_ID=${item.executionPlanId}`);
+          NODE
+          source /tmp/selection.env
+
+          curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/tenants/$TENANT_ID/campaign-contexts" > /tmp/contexts.json
+          curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/tenants/$TENANT_ID/plans" > /tmp/plans.json
+          curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/ecosystem/campaigns/$CAMPAIGN_ID" > /tmp/human.json
+          curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/timeline?executionPlanId=$PLAN_ID" > /tmp/timeline.json
+
+          node <<'NODE'
+          const selection=Object.fromEntries(require('fs').readFileSync('/tmp/selection.env','utf8').trim().split('\n').map(x=>x.split('=')));
+          const contexts=require('/tmp/contexts.json');
+          const plans=require('/tmp/plans.json');
+          const human=require('/tmp/human.json');
+          const timeline=require('/tmp/timeline.json');
+          const ctx=contexts.contexts.find(c=>c.campaignId===selection.CAMPAIGN_ID);
+          const plan=plans.plans.find(p=>p.campaignId===selection.CAMPAIGN_ID);
+          if(!ctx||!plan) throw new Error('Pilot context or plan not found');
+          const v=(f)=>ctx.facts?.[f]?.value ?? null;
+          const money=(minor,currency)=> minor==null?null:new Intl.NumberFormat('pt-BR',{style:'currency',currency:currency||'BRL'}).format(minor/100);
+          const out={
+            PILOT_PRODUCT_OPERATION:'READY_FOR_HUMAN_PLAN_DECISION',
+            whereWeAre: human.headline,
+            whatSystemDid: human.whatSystemDid,
+            nextStep: human.nextStep,
+            userActionRequired: human.userActionRequired,
+            userAction: human.userAction,
+            business: v('businessName'),
+            offer: v('offer'),
+            objective: v('objective'),
+            audience: v('audience'),
+            destination: v('destination'),
+            geography: v('geography'),
+            budget: v('budget'),
+            durationDays: v('durationDays'),
+            maximumPlannedSpend: money(plan.maximumPlannedSpendMinor,plan.currency),
+            calculation: plan.calculation,
+            creativeStatus: human.technicalDetails?.creativeStatus,
+            targetBindingStatus: human.technicalDetails?.targetBindingStatus,
+            planApprovalStatus: human.technicalDetails?.planApprovalStatus,
+            recentHistory: (timeline.items||[]).slice(-8).map(i=>({title:i.title,detail:i.detail,category:i.category})),
+            boundaries: human.boundaries,
+          };
+          for(const k of ['publicationAuthorized','activationAuthorized','externalWritesAllowed','financialActionAuthorized','recommendationAutoExecuted']) {
+            if(out.boundaries?.[k]!==false) throw new Error(`Unsafe pilot boundary: ${k}`);
+          }
+          console.log(JSON.stringify(out,null,2));
+          NODE
