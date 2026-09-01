@@ -1,0 +1,95 @@
+name: Ecosystem Orchestrator Safe Batch Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-orchestrator-safe-batch-smoke.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  safe-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+
+      - name: Advance all safe internal steps using custom auth header
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "x-contexto-operator-key: $OPERATOR_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "$BASE_URL/operator/ecosystem/advance-safe" > /tmp/batch.json
+          node <<'NODE'
+          const x=require('/tmp/batch.json');
+          if (x.actionStatus !== 'SAFE_BATCH_COMPLETED') throw new Error(`Unexpected batch status: ${x.actionStatus}`);
+          for (const key of ['advancedCount','failedCount','campaignCount','results','boundaries']) {
+            if (x[key] === undefined || x[key] === null) throw new Error(`Missing batch field: ${key}`);
+          }
+          if (!Array.isArray(x.results)) throw new Error('results must be an array');
+          const b=x.boundaries||{};
+          for (const k of ['publicationAuthorized','activationAuthorized','externalWritesAllowed','financialActionAuthorized','recommendationAutoExecuted']) {
+            if (b[k] !== false) throw new Error(`Unsafe batch boundary ${k}`);
+          }
+          for (const r of x.results) {
+            const rb=r.boundaries;
+            if (rb) {
+              for (const k of ['publicationAuthorized','activationAuthorized','externalWritesAllowed','financialActionAuthorized','recommendationAutoExecuted']) {
+                if (rb[k] !== false) throw new Error(`Unsafe result boundary ${k}`);
+              }
+            }
+          }
+          console.log(JSON.stringify({
+            ECOSYSTEM_SAFE_BATCH_SMOKE:'PASSED',
+            headline:x.headline,
+            simpleMessage:x.simpleMessage,
+            advancedCount:x.advancedCount,
+            failedCount:x.failedCount,
+            campaignCount:x.campaignCount,
+            results:x.results.map(r=>({
+              campaignId:r.campaignId,
+              actionStatus:r.actionStatus,
+              completedSteps:r.completedSteps,
+              userActionRequired:r.userActionRequired,
+              userAction:r.userAction,
+              nextAction:r.nextAction,
+              simpleMessage:r.simpleMessage,
+            })),
+            boundaries:x.boundaries,
+          },null,2));
+          NODE
+
+      - name: Confirm overview after safe batch
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "x-contexto-operator-key: $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/ecosystem/overview" > /tmp/overview.json
+          node <<'NODE'
+          const x=require('/tmp/overview.json');
+          if (x.actionStatus !== 'OK') throw new Error(`Unexpected overview status: ${x.actionStatus}`);
+          const b=x.boundaries||{};
+          for (const k of ['publicationAuthorized','activationAuthorized','externalWritesAllowed','financialActionAuthorized','recommendationAutoExecuted']) {
+            if (b[k] !== false) throw new Error(`Unsafe overview boundary ${k}`);
+          }
+          console.log(JSON.stringify({
+            ECOSYSTEM_OVERVIEW_AFTER_BATCH:'PASSED',
+            headline:x.headline,
+            userActionRequired:x.userActionRequired,
+            summary:x.summary,
+            campaigns:x.campaigns.map(c=>({stage:c.stage,activeModule:c.activeModule,userActionRequired:c.userActionRequired,headline:c.headline})),
+            boundaries:x.boundaries,
+          },null,2));
+          NODE
