@@ -887,6 +887,14 @@ describeWithPostgres('PostgreSQL integration', () => {
             creativePackageId,
             creativePackageVersion: 1,
             creativeContentHash,
+            asset: {
+              assetId: 'integration-creative-1',
+              mimeType: 'image/jpeg',
+              storageRef: 'https://example.test/media/integration-creative-1.jpg',
+              sha256: 'a'.repeat(64),
+              width: 1080,
+              height: 1350,
+            },
           },
         },
         {
