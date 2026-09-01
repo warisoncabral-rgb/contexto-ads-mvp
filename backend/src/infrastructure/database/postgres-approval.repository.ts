@@ -38,6 +38,55 @@ export class PostgresApprovalRepository implements ApprovalRepository {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
+
+      // A timed-out approval may still be stored as pending/approved until it is read.
+      // Expire it first so the partial unique index cannot incorrectly block a fresh request.
+      const timedOut = await client.query<ApprovalRow>(
+        `select ${COLUMNS} from plan_approvals
+        where tenant_id = $1 and execution_plan_id = $2
+          and approved_plan_hash = $3
+          and status in ('pending', 'approved')
+          and expires_at <= $4
+        for update`,
+        [
+          approval.tenantId,
+          approval.executionPlanId,
+          approval.approvedPlanHash,
+          approval.createdAt,
+        ],
+      );
+      if (timedOut.rows.length > 0) {
+        await client.query(
+          `update plan_approvals
+          set status = 'expired', decision_reason = 'approval_expired', updated_at = $4
+          where tenant_id = $1 and execution_plan_id = $2
+            and approved_plan_hash = $3
+            and status in ('pending', 'approved')
+            and expires_at <= $4`,
+          [
+            approval.tenantId,
+            approval.executionPlanId,
+            approval.approvedPlanHash,
+            approval.createdAt,
+          ],
+        );
+        for (const row of timedOut.rows) {
+          await insertAuditEvent(client, {
+            auditEventId: randomUUID(),
+            tenantId: row.tenant_id,
+            correlationId: row.correlation_id,
+            actorType: 'system',
+            eventType: 'campaign_plan_approval_expired',
+            objectType: 'plan_approval',
+            objectId: row.approval_id,
+            previousState: { status: row.status },
+            newState: { status: 'expired', reason: 'approval_expired' },
+            result: 'info',
+            createdAt: approval.createdAt,
+          });
+        }
+      }
+
       const inserted = await client.query<ApprovalRow>(
         `insert into plan_approvals (
           approval_id, tenant_id, execution_plan_id, campaign_id,
