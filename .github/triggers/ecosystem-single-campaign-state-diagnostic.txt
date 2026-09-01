@@ -1,0 +1,5 @@
+trigger=2026-09-01T14:21:00Z
+scope=campaign-state-readonly
+meta_write=false
+publication=false
+activation=false
