@@ -1,6 +1,10 @@
 name: Controlled Active Pilot
 
 on:
+  push:
+    branches: [agent/action-custom-header-auth]
+    paths:
+      - '.github/triggers/controlled-active-pilot-*.trigger'
   workflow_dispatch:
     inputs:
       command:
@@ -30,7 +34,7 @@ jobs:
       META_CAMPAIGN_ID: '120253398726520359'
       MAX_SPEND_MINOR: '14000'
       PILOT_STOP_AT: '2026-09-08T17:30:00Z'
-      COMMAND: ${{ github.event_name == 'schedule' && 'monitor' || inputs.command }}
+      COMMAND: ${{ github.event_name == 'schedule' && 'monitor' || github.event_name == 'push' && contains(github.event.head_commit.message, '[activate]') && 'activate' || github.event_name == 'push' && 'preflight' || inputs.command }}
     steps:
       - name: Require protected operator secret
         run: test -n "$OPERATOR_TOKEN"
