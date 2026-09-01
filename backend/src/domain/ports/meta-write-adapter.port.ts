@@ -14,6 +14,12 @@ export interface MetaWriteAdapterPort {
     edgePath: string,
     params: Record<string, string | number | boolean | object | unknown[]>,
   ): Promise<MetaAdapterResult<MetaWriteObjectResult>>;
+  updateStatus(
+    tenantId: string,
+    credentialRef: string,
+    externalObjectId: string,
+    status: 'ACTIVE' | 'PAUSED',
+  ): Promise<MetaAdapterResult<MetaWriteObjectResult>>;
   read(
     tenantId: string,
     credentialRef: string,
