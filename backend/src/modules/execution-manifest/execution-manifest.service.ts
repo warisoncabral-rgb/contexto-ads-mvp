@@ -48,6 +48,7 @@ export class ExecutionManifestService {
     if (approvalId !== undefined) this.assertUuid(approvalId, 'approvalId');
 
     const plan = await this.currentPlan(tenantId, campaignId, executionPlanId);
+    this.assertExecutableCreativeMedia(plan);
     const decision = await this.readiness.generate(
       tenantId, campaignId, executionPlanId, approvalId,
     );
@@ -188,6 +189,33 @@ export class ExecutionManifestService {
       throw new ConflictException('Only the current execution plan can be prepared');
     }
     return plan;
+  }
+
+  private assertExecutableCreativeMedia(plan: ExecutionPlanV1): void {
+    const creatives = plan.objectsToCreate.filter((object) => object.type === 'creative');
+    for (const creative of creatives) {
+      const asset = creative.logicalConfig.asset;
+      const storageRef = asset && typeof asset === 'object' && !Array.isArray(asset)
+        ? (asset as Record<string, unknown>).storageRef
+        : undefined;
+      if (typeof storageRef !== 'string' || !storageRef.trim()) {
+        throw new ConflictException({
+          code: 'creative_media_not_executable',
+          message: 'O arquivo do criativo não está disponível para a criação segura na Meta.',
+          nextAction: 'Anexe novamente o arquivo criativo aprovado. Nada será criado na Meta até o arquivo estar disponível.',
+        });
+      }
+      try {
+        const url = new URL(storageRef);
+        if (url.protocol !== 'https:') throw new Error('not_https');
+      } catch {
+        throw new ConflictException({
+          code: 'creative_media_not_executable',
+          message: 'O arquivo do criativo não está disponível para a criação segura na Meta.',
+          nextAction: 'Anexe novamente o arquivo criativo aprovado. Nada será criado na Meta até o arquivo estar disponível.',
+        });
+      }
+    }
   }
 
   private operations(
