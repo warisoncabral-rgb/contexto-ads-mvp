@@ -21,33 +21,32 @@ jobs:
       - name: Inventory creative media references
         run: |
           set -euo pipefail
-          H="Authorization: Bearer $OPERATOR_TOKEN"
-          curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/portfolio" > /tmp/portfolio.json
-          node - <<'NODE' > /tmp/campaigns.txt
-          const x=require('/tmp/portfolio.json');
-          for(const i of x.items||[]) console.log(`${i.tenantId}|${i.campaignId}`);
-          NODE
-          echo '[' > /tmp/out.jsonl
-          first=1
-          while IFS='|' read -r tenant campaign; do
-            [ -n "$campaign" ] || continue
-            code=$(curl --silent --show-error -o /tmp/creative.json -w '%{http_code}' -H "$H" "$BASE_URL/operator/tenants/$tenant/campaigns/$campaign/creative-packages/latest" || true)
-            if [ "$code" = "200" ]; then
-              node - "$tenant" "$campaign" <<'NODE' > /tmp/item.json
-              const fs=require('fs'); const x=require('/tmp/creative.json');
-              const [tenant,campaign]=process.argv.slice(2);
-              console.log(JSON.stringify({tenantId:tenant,campaignId:campaign,status:x.status,version:x.version,assets:(x.assets||[]).map(a=>({assetId:a.assetId,mimeType:a.mimeType,storageRef:a.storageRef,sha256:a.sha256,width:a.width,height:a.height}))}));
-              NODE
-            else
-              printf '{"tenantId":"%s","campaignId":"%s","http":%s}' "$tenant" "$campaign" "$code" > /tmp/item.json
-            fi
-            if [ "$first" = 0 ]; then echo ',' >> /tmp/out.jsonl; fi
-            cat /tmp/item.json >> /tmp/out.jsonl
-            first=0
-          done < /tmp/campaigns.txt
-          echo ']' >> /tmp/out.jsonl
           node <<'NODE'
-          const x=JSON.parse(require('fs').readFileSync('/tmp/out.jsonl','utf8'));
-          const clean=x.map(i=>({...i,assets:(i.assets||[]).map(a=>({...a,sha256:a.sha256?`${a.sha256.slice(0,8)}…`:null}))}));
-          console.log(JSON.stringify({REAL_MEDIA_INVENTORY:'READ_ONLY',campaigns:clean,httpsMedia:clean.filter(i=>(i.assets||[]).some(a=>/^https:\/\//.test(a.storageRef||''))).map(i=>i.campaignId)},null,2));
+          const base=process.env.BASE_URL;
+          const headers={Authorization:`Bearer ${process.env.OPERATOR_TOKEN}`};
+          async function get(path){
+            const r=await fetch(`${base}${path}`,{headers});
+            if(!r.ok) return {http:r.status};
+            return r.json();
+          }
+          (async()=>{
+            const portfolio=await get('/operator/portfolio');
+            if(portfolio.http) throw new Error(`portfolio_http_${portfolio.http}`);
+            const out=[];
+            for(const item of portfolio.items||[]){
+              const x=await get(`/operator/tenants/${item.tenantId}/campaigns/${item.campaignId}/creative-packages/latest`);
+              if(x.http){out.push({campaignId:item.campaignId,http:x.http});continue;}
+              out.push({
+                campaignId:item.campaignId,
+                status:x.status,
+                version:x.version,
+                assets:(x.assets||[]).map(a=>({assetId:a.assetId,mimeType:a.mimeType,storageRef:a.storageRef,sha256:a.sha256?`${a.sha256.slice(0,8)}…`:null,width:a.width,height:a.height})),
+              });
+            }
+            console.log(JSON.stringify({
+              REAL_MEDIA_INVENTORY:'READ_ONLY',
+              campaigns:out,
+              httpsMedia:out.filter(i=>(i.assets||[]).some(a=>/^https:\/\//.test(a.storageRef||''))).map(i=>i.campaignId),
+            },null,2));
+          })().catch(e=>{console.error(e);process.exit(1)});
           NODE
