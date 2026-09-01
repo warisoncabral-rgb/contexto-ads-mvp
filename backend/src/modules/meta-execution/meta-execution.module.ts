@@ -4,10 +4,11 @@ import { ExecutionAuthorizationModule } from '../execution-authorization/executi
 import { KillSwitchModule } from '../kill-switch/kill-switch.module';
 import { MetaAdapterModule } from '../meta-adapter/meta-adapter.module';
 import { MetaExecutionService } from './meta-execution.service';
+import { AutomatedMetaPublicationService } from './automated-meta-publication.service';
 
 @Module({
   imports: [DatabaseModule, ExecutionAuthorizationModule, KillSwitchModule, MetaAdapterModule],
-  providers: [MetaExecutionService],
-  exports: [MetaExecutionService],
+  providers: [MetaExecutionService, AutomatedMetaPublicationService],
+  exports: [MetaExecutionService, AutomatedMetaPublicationService],
 })
 export class MetaExecutionModule {}
