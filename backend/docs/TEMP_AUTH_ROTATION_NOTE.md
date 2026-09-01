@@ -1,0 +1,1 @@
+Temporary implementation note: stable operator authentication supports safe credential rotation by accepting an optional secondary SHA-256 digest while preserving the existing primary credential. Remove this note after hosted smoke is green.
