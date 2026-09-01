@@ -30,6 +30,7 @@ import { CampaignMediaService } from './campaign-media.service';
 import { PublicCampaignMediaController } from './public-campaign-media.controller';
 import { CampaignAutomationService } from './campaign-automation.service';
 import { CampaignAutomationController } from './campaign-automation.controller';
+import { IntegrationDiagnosticController } from './integration-diagnostic.controller';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { CampaignAutomationController } from './campaign-automation.controller';
     PublicReadonlyActionGatewayController,
     PublicCampaignMediaController,
     CampaignAutomationController,
+    IntegrationDiagnosticController,
   ],
   providers: [
     OperatorAccessService,
