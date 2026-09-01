@@ -72,7 +72,7 @@ jobs:
             -H 'Content-Type: application/json' \
             --data "{\"package_id\":\"$PACKAGE_ID\",\"confirmation\":\"PUBLISH_CAMPAIGN\"}" \
             -o /tmp/publish.json
-          jq '{action_status, campaign_id, execution_plan_id, meta_publication, boundaries}' /tmp/publish.json
+          jq '{action_status, http_status, error, campaign_id, execution_plan_id, meta_publication, boundaries}' /tmp/publish.json
           jq -e --arg id "$META_CAMPAIGN_ID" \
             '.action_status == "PUBLISHED"
              and .boundaries.campaign_active == true
