@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'node:crypto';
 import { AuditEvent } from '../../domain/contracts/audit-event';
 import {
@@ -30,6 +31,7 @@ import {
 } from '../../infrastructure/database/database.tokens';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
 import { MetaWriteAdapter } from '../meta-adapter/meta-write.adapter';
+import { parseMetaGeography } from '../meta-execution/meta-geography';
 
 const AUTHORIZATION_VALIDITY_MS = 15 * 60 * 1000;
 
@@ -48,6 +50,7 @@ export class ExecutionAuthorizationService {
     @Optional() @Inject(META_CONNECTION_REPOSITORY)
     private readonly connections?: MetaConnectionRepository,
     @Optional() private readonly writeAdapter?: MetaWriteAdapter,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
   async request(
@@ -226,6 +229,12 @@ export class ExecutionAuthorizationService {
     const targetReady = Boolean(plan && connectionId && adAccountReady
       && connectionReady
       && pageReady && whatsappReady);
+    const geography = plan?.objectsToCreate?.find((item) => item.type === 'ad_set')
+      ?.logicalConfig.geography;
+    const geographyCheck = targetReady && connection?.credentialRef
+      ? await this.validateGeography(tenantId, connection.credentialRef, geography)
+      : { passed: false, evidenceRefs: [] as string[],
+        meaning: 'A geografia não pôde ser validada porque o destino Meta ainda não está pronto.' };
     const realMetaReady = protocolReady && targetReady;
     const adapterReady = this.writeAdapter?.enabled() === true;
     const tenantKillSwitchPassed = effectiveKillSwitch.tenant.known
@@ -275,6 +284,12 @@ export class ExecutionAuthorizationService {
           : effectiveKillSwitch.campaign.status === 'engaged'
             ? 'O Kill Switch da campanha está acionado.'
             : 'O Kill Switch da campanha não possui estado; o padrão é bloquear.',
+      },
+      {
+        key: 'meta_geography_resolved',
+        status: geographyCheck.passed ? 'passed' : 'blocked',
+        evidenceRefs: geographyCheck.evidenceRefs,
+        meaning: geographyCheck.meaning,
       },
       {
         key: 'real_meta_write_validation', status: realMetaReady ? 'passed' : 'blocked',
@@ -413,10 +428,50 @@ export class ExecutionAuthorizationService {
       specific_execution_authorization: 'Aprove uma autorização específica ainda válida.',
       tenant_kill_switch: 'Implementar e validar o Kill Switch fail-closed do tenant.',
       campaign_kill_switch: 'Implementar e validar o Kill Switch da campanha.',
+      meta_geography_resolved: 'Corrigir ou selecionar uma geografia reconhecida pela Meta.',
       real_meta_write_validation: 'Validar criação pausada em ambiente Meta controlado.',
       write_adapter_enabled: 'Habilitar o adapter somente após os demais gates.',
     };
     return blocker ? actions[blocker] : 'Nenhuma ação externa foi autorizada.';
+  }
+
+  private async validateGeography(
+    tenantId: string,
+    credentialRef: string,
+    geography: unknown,
+  ): Promise<{ passed: boolean; evidenceRefs: string[]; meaning: string }> {
+    if (typeof geography !== 'string') return {
+      passed: false,
+      evidenceRefs: [],
+      meaning: 'O plano não possui uma geografia executável.',
+    };
+    let targets;
+    try {
+      targets = parseMetaGeography(
+        geography,
+        Number(this.config?.get<string>('META_CITY_RADIUS_KM') ?? '40'),
+      );
+    } catch {
+      return { passed: false, evidenceRefs: [],
+        meaning: 'A geografia do plano está em um formato inválido.' };
+    }
+    const evidenceRefs: string[] = [];
+    for (const target of targets) {
+      const result = await this.writeAdapter?.searchCity(
+        tenantId, credentialRef, target.city, 'BR',
+      );
+      if (!result?.success || !result.data) return {
+        passed: false,
+        evidenceRefs,
+        meaning: `A Meta não reconheceu a cidade ${target.city} para segmentação.`,
+      };
+      evidenceRefs.push(`meta_geography:${result.data.key}:${target.radius}km`);
+    }
+    return {
+      passed: true,
+      evidenceRefs,
+      meaning: 'Todas as cidades e raios foram reconhecidos pela Meta sem realizar escrita.',
+    };
   }
 
   private assertStatus(
