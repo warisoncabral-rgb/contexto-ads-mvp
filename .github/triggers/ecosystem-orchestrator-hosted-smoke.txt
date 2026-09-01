@@ -1,0 +1,6 @@
+trigger=2026-09-01T13:44:20Z
+scope=human-first-ecosystem-orchestrator
+meta_write=false
+publication=false
+activation=false
+budget_mutation=false
