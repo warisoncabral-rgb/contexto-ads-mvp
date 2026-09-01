@@ -50,6 +50,17 @@ jobs:
           jq -e --arg id "$META_CAMPAIGN_ID" \
             '.action_status == "FOUND" and .registration.externalCampaignId == $id' \
             /tmp/tracking.json >/dev/null
+          MANIFEST_ID=$(jq -r '.registration.executionManifestId' /tmp/tracking.json)
+          test -n "$MANIFEST_ID" && test "$MANIFEST_ID" != 'null'
+          curl --retry 3 --retry-all-errors --max-time 70 -fsS \
+            "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/meta-write-validation-protocols/latest" \
+            "${auth[@]}" -o /tmp/protocol.json
+          jq '{status, protocol_id: (.protocolId // .metaWriteValidationProtocolId),
+            operations: [(.execution.operations // [])[] | {
+              object_type: (.objectType // .object_type),
+              external_object_id: (.externalObjectId // .external_object_id),
+              observed_status: (.observedStatus // .observed_status)
+            }]}' /tmp/protocol.json
           curl --retry 3 --retry-all-errors --max-time 70 -fsS -X POST \
             "$BASE_URL/operator/campaigns/v1/action-final-review" \
             "${auth[@]}" -H 'Content-Type: application/json' \
