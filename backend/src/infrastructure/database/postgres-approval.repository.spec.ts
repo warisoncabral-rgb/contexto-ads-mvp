@@ -72,6 +72,7 @@ describe('PostgresApprovalRepository', () => {
   it('persists approval request and audit event in one transaction', async () => {
     clientQuery
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [row], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
@@ -79,6 +80,7 @@ describe('PostgresApprovalRepository', () => {
     await expect(repository.request(approval, event)).resolves.toEqual(approval);
     expect(clientQuery.mock.calls.map(([sql]) => sql)).toEqual([
       'begin',
+      expect.stringContaining('expires_at <= $4'),
       expect.stringContaining('insert into plan_approvals'),
       expect.stringContaining('insert into audit_events'),
       'commit',
@@ -89,6 +91,7 @@ describe('PostgresApprovalRepository', () => {
   it('returns the active approval idempotently without duplicating its audit event', async () => {
     clientQuery
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [row] })
       .mockResolvedValueOnce({ rows: [] });
@@ -96,9 +99,48 @@ describe('PostgresApprovalRepository', () => {
     await expect(repository.request(approval, event)).resolves.toEqual(approval);
     expect(clientQuery.mock.calls.map(([sql]) => sql)).toEqual([
       'begin',
+      expect.stringContaining('expires_at <= $4'),
       expect.stringContaining('insert into plan_approvals'),
       expect.stringContaining("status in ('pending', 'approved')"),
       'commit',
+    ]);
+  });
+
+  it('expires a timed-out active approval before creating a fresh request for the same plan', async () => {
+    const timedOutRow = {
+      ...row,
+      approval_id: '77777777-7777-4777-8777-777777777777',
+      correlation_id: '88888888-8888-4888-8888-888888888888',
+      expires_at: new Date('2026-08-23T09:00:00.000Z'),
+      created_at: new Date('2026-08-22T09:00:00.000Z'),
+      updated_at: new Date('2026-08-22T09:00:00.000Z'),
+    };
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [timedOutRow] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [row], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(repository.request(approval, event)).resolves.toEqual(approval);
+
+    const queries = clientQuery.mock.calls.map(([sql]) => sql);
+    expect(queries).toEqual([
+      'begin',
+      expect.stringContaining('expires_at <= $4'),
+      expect.stringContaining("set status = 'expired'"),
+      expect.stringContaining('insert into audit_events'),
+      expect.stringContaining('insert into plan_approvals'),
+      expect.stringContaining('insert into audit_events'),
+      'commit',
+    ]);
+    expect(clientQuery.mock.calls[2][1]).toEqual([
+      approval.tenantId,
+      approval.executionPlanId,
+      approval.approvedPlanHash,
+      approval.createdAt,
     ]);
   });
 
