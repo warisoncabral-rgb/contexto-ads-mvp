@@ -1,0 +1,41 @@
+name: Ecosystem First Pilot Kill Switch Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-kill-switch-diagnostic.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+    steps:
+      - name: Read effective kill switch
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/kill-switch/effective" > /tmp/result.json
+          node <<'NODE'
+          const x=require('/tmp/result.json');
+          console.log(JSON.stringify({
+            PILOT_KILL_SWITCH_DIAGNOSTIC:'READ_ONLY',
+            decision:x.decision,
+            writesBlocked:x.writesBlocked,
+            tenant:x.tenant,
+            campaign:x.campaign,
+            boundaries:x.boundaries,
+          },null,2));
+          if(x.boundaries?.externalWritesAllowed!==false || x.boundaries?.externalWritesPerformed!==false) throw new Error('Unsafe kill-switch read boundary');
+          NODE
