@@ -45,7 +45,8 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
     params: Record<string, string | number | boolean | object | unknown[]>,
   ): Promise<MetaAdapterResult<MetaWriteObjectResult>> {
     const observedAt = new Date().toISOString();
-    if (!this.enabled() || !/^\/(?:act_\d+)\/(?:campaigns|adsets|adcreatives|ads)$/.test(edgePath)) {
+    if (!this.enabled()
+      || !/^\/(?:act_\d+)\/(?:campaigns|adsets|adcreatives|ads|advideos)$/.test(edgePath)) {
       return this.failure(new MetaWriteRequestError('VALIDATION', false), observedAt);
     }
     try {
@@ -55,6 +56,41 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
         throw new MetaWriteRequestError('VALIDATION', false);
       }
       return this.success({ id: payload.id }, observedAt);
+    } catch (error) {
+      return this.failure(error, observedAt);
+    }
+  }
+
+  async updateStatus(
+    tenantId: string,
+    credentialRef: string,
+    externalObjectId: string,
+    status: 'ACTIVE' | 'PAUSED',
+  ): Promise<MetaAdapterResult<MetaWriteObjectResult>> {
+    const observedAt = new Date().toISOString();
+    if (!this.enabled() || !this.isDigits(externalObjectId)
+      || !['ACTIVE', 'PAUSED'].includes(status)) {
+      return this.failure(new MetaWriteRequestError('VALIDATION', false), observedAt);
+    }
+    try {
+      const accessToken = await this.accessToken(tenantId, credentialRef);
+      const payload = await this.request('POST', `/${externalObjectId}`, { status }, accessToken);
+      if (!this.isObject(payload) || payload.success !== true) {
+        throw new MetaWriteRequestError('VALIDATION', false);
+      }
+      const observed = await this.request('GET', `/${externalObjectId}`, {
+        fields: 'id,status,effective_status',
+      }, accessToken);
+      if (!this.isObject(observed) || observed.id !== externalObjectId) {
+        throw new MetaWriteRequestError('VALIDATION', false);
+      }
+      return this.success({
+        id: externalObjectId,
+        ...(typeof observed.status === 'string'
+          ? { configuredStatus: observed.status } : {}),
+        ...(typeof observed.effective_status === 'string'
+          ? { effectiveStatus: observed.effective_status } : {}),
+      }, observedAt);
     } catch (error) {
       return this.failure(error, observedAt);
     }
