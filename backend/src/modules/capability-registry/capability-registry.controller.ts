@@ -20,4 +20,12 @@ export class CapabilityRegistryController {
   ) {
     return this.service.validateReadOnly(body.tenantId, connectionId);
   }
+
+  @Post(':connectionId/capabilities/validate-execution')
+  validateForExecution(
+    @Param('connectionId') connectionId: string,
+    @Body() body: { tenantId: string },
+  ) {
+    return this.service.validateForExecution(body.tenantId, connectionId);
+  }
 }
