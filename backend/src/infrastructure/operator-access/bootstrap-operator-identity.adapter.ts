@@ -22,10 +22,11 @@ export class BootstrapOperatorIdentityAdapter implements OperatorIdentityPort {
     if (!configuration) throw new OperatorAuthenticationUnavailableError();
     const token = this.bearerToken(authorizationHeader);
     const actual = createHash('sha256').update(token).digest();
-    const expected = Buffer.from(configuration.tokenDigest, 'hex');
-    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-      throw new InvalidOperatorCredentialsError();
-    }
+    const matched = configuration.tokenDigests.some((digest) => {
+      const expected = Buffer.from(digest, 'hex');
+      return actual.length === expected.length && timingSafeEqual(actual, expected);
+    });
+    if (!matched) throw new InvalidOperatorCredentialsError();
     return {
       subject: configuration.subject,
       provider: 'bootstrap_token' as const,
@@ -33,21 +34,25 @@ export class BootstrapOperatorIdentityAdapter implements OperatorIdentityPort {
     };
   }
 
-  private configuration(): { subject: string; tokenDigest: string } | null {
+  private configuration(): { subject: string; tokenDigests: string[] } | null {
     const subject = this.config.get<string>('OPERATOR_BOOTSTRAP_SUBJECT')?.trim();
     const configuredDigest = this.config
       .get<string>('OPERATOR_BOOTSTRAP_TOKEN_SHA256')?.trim().toLowerCase();
+    const secondaryDigest = this.config
+      .get<string>('OPERATOR_BOOTSTRAP_TOKEN_SHA256_SECONDARY')?.trim().toLowerCase();
     const generatedToken = this.config.get<string>('OPERATOR_BOOTSTRAP_TOKEN')?.trim();
-    const tokenDigest =
+    const primaryDigest =
       configuredDigest && SHA256_HEX.test(configuredDigest)
         ? configuredDigest
         : generatedToken && TOKEN.test(generatedToken)
           ? createHash('sha256').update(generatedToken).digest('hex')
           : undefined;
-    if (!subject || !SUBJECT.test(subject) || !tokenDigest || !SHA256_HEX.test(tokenDigest)) {
-      return null;
-    }
-    return { subject, tokenDigest };
+    const tokenDigests = [
+      primaryDigest,
+      secondaryDigest && SHA256_HEX.test(secondaryDigest) ? secondaryDigest : undefined,
+    ].filter((value): value is string => Boolean(value));
+    if (!subject || !SUBJECT.test(subject) || tokenDigests.length === 0) return null;
+    return { subject, tokenDigests: [...new Set(tokenDigests)] };
   }
 
   private bearerToken(header: string | undefined): string {
