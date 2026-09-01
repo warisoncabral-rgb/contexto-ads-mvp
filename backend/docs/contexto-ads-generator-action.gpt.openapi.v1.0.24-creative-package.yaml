@@ -1,0 +1,425 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Generator Creative Package Flow
+  version: 1.0.24-creative-package
+  description: >-
+    Bearer-authenticated Contexto Ads to Generator workflow. Keeps retry-safe campaign handoff and
+    exposes the internal Creative Package create, read and approve steps. Creative approval is internal
+    only and never authorizes Meta publication, activation, delivery or spend.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/transport-post-ping:
+    post:
+      operationId: testGeneratorTransportPost
+      summary: Test raw POST transport
+      security: []
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PingRequest'
+      responses:
+        '200':
+          description: Transport diagnostic response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+  /operator/action-post-ping:
+    post:
+      operationId: testGeneratorAuthenticatedPost
+      summary: Test Bearer-authenticated POST transport
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PingRequest'
+      responses:
+        '200':
+          description: Authenticated transport diagnostic response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+  /operator/campaign-strategies/v1/action-submit:
+    post:
+      operationId: submitCampaignPackage
+      summary: Submit latest explicitly approved campaign strategy
+      description: >-
+        Use only the latest explicit user-approved campaign values. Identical retries are deterministic.
+        Do not publish, activate, deliver or spend on Meta.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovedCampaignStrategyV1'
+      responses:
+        '200':
+          description: Campaign handoff result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+  /operator/campaign-packages/v1/action-status:
+    post:
+      operationId: recoverCampaignPackageStatus
+      summary: Recover a submitted campaign package status
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [package_id]
+              properties:
+                package_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Recovery result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+  /operator/tenants:
+    get:
+      operationId: getAuthorizedTenants
+      summary: Resolve the authenticated operator tenant
+      description: >-
+        Read-only helper. Use automatically before Creative Package actions when tenantId is not already
+        known. Do not ask the user for tenantId when exactly one authorized tenant is returned.
+      x-openai-isConsequential: false
+      responses:
+        '200':
+          description: Authorized tenant workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/plans/{executionPlanId}/creative-packages:
+    post:
+      operationId: createCreativePackage
+      summary: Create a reviewable Creative Package version
+      description: >-
+        Internal persistence only. Creates a needs_review Creative Package and a derived draft execution
+        plan. This does not publish, activate, deliver or spend on Meta. Never fabricate media hashes,
+        MIME types, dimensions or storage references.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/ExecutionPlanId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [creative]
+              properties:
+                creative:
+                  $ref: '#/components/schemas/CreativePackageInputV1'
+      responses:
+        '200':
+          description: Creative Package and derived execution plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/latest:
+    get:
+      operationId: getLatestCreativePackage
+      summary: Read the latest Creative Package
+      description: Read-only. Use after creation and before approval to review the exact version and hash.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/CampaignId'
+      responses:
+        '200':
+          description: Latest Creative Package
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/creative-packages/{version}/approve:
+    post:
+      operationId: approveCreativePackage
+      summary: Approve the exact reviewed Creative Package version and hash
+      description: >-
+        Internal approval only. Call only after the user explicitly approves the exact current version,
+        content hash, copies, claims, assets and completed review checklist. Approval does not authorize
+        Meta publication, activation, delivery or spend.
+      x-openai-isConsequential: true
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/CampaignId'
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [contentHash]
+              properties:
+                contentHash:
+                  type: string
+                  pattern: '^[0-9a-f]{64}$'
+      responses:
+        '200':
+          description: Approved Creative Package and derived execution plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CampaignId:
+      name: campaignId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExecutionPlanId:
+      name: executionPlanId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    GenericEnvelope:
+      type: object
+      additionalProperties: true
+    PingRequest:
+      type: object
+      additionalProperties: false
+      required: [probe]
+      properties:
+        probe:
+          type: string
+          const: ok
+    ApprovedCampaignStrategyV1:
+      type: object
+      additionalProperties: false
+      required:
+        - approval_basis
+        - business_name
+        - offer_name
+        - offer_description
+        - campaign_objective
+        - conversion_destination
+        - audience_description
+        - locations
+        - budget_type
+        - budget_amount
+        - currency
+        - duration_days
+        - strategy_status
+        - handoff_status
+      properties:
+        approval_basis:
+          type: string
+          const: LATEST_EXPLICIT_CONVERSATION_APPROVAL
+        business_name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        business_description:
+          type: string
+          maxLength: 2000
+        offer_name:
+          type: string
+          minLength: 1
+          maxLength: 500
+        offer_description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        commercial_conditions: {}
+        campaign_objective:
+          type: string
+          const: LEADS
+        conversion_destination:
+          type: string
+          const: WHATSAPP
+        campaign_goal_description:
+          type: string
+          maxLength: 2000
+        audience_description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        locations:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [city, country]
+            properties:
+              city: {type: string, minLength: 1}
+              state: {type: string}
+              country: {type: string, minLength: 1}
+              radius_km: {type: number, exclusiveMinimum: 0}
+              include: {type: boolean}
+        budget_type:
+          type: string
+          enum: [DAILY, LIFETIME]
+        budget_amount:
+          type: number
+          exclusiveMinimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        duration_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        creative_brief:
+          type: string
+          maxLength: 4000
+        strategy_notes: {}
+        strategy_status:
+          type: string
+          const: COMPLETE
+        handoff_status:
+          type: string
+          const: READY_FOR_GENERATOR
+    CreativePackageInputV1:
+      type: object
+      additionalProperties: false
+      required: [copies, claims, assets, reviewChecklist]
+      properties:
+        copies:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/CreativeCopyV1'
+        claims:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/CreativeClaimV1'
+        assets:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/CreativeAssetV1'
+        reviewChecklist:
+          $ref: '#/components/schemas/CreativeReviewChecklistV1'
+    CreativeCopyV1:
+      type: object
+      additionalProperties: false
+      required: [copyId, primaryText, headline, callToAction]
+      properties:
+        copyId:
+          type: string
+          minLength: 1
+        primaryText:
+          type: string
+          minLength: 1
+          maxLength: 2200
+        headline:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 500
+        whatsappMessage:
+          type: string
+          maxLength: 1000
+        callToAction:
+          type: string
+          enum: [LEARN_MORE, SHOP_NOW, SIGN_UP, CONTACT_US, SEND_WHATSAPP_MESSAGE]
+    CreativeClaimV1:
+      type: object
+      additionalProperties: false
+      required: [claimId, text, sourceRefs]
+      properties:
+        claimId:
+          type: string
+          minLength: 1
+        text:
+          type: string
+          minLength: 1
+        sourceRefs:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+    CreativeAssetV1:
+      type: object
+      additionalProperties: false
+      required: [assetId, storageRef, sha256, mimeType, width, height]
+      properties:
+        assetId:
+          type: string
+          minLength: 1
+        storageRef:
+          type: string
+          minLength: 1
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        mimeType:
+          type: string
+          enum: [image/jpeg, image/png, video/mp4]
+        width:
+          type: integer
+          minimum: 1
+        height:
+          type: integer
+          minimum: 1
+    CreativeReviewChecklistV1:
+      type: object
+      additionalProperties: false
+      required:
+        - claimsVerifiedAgainstSources
+        - visualFidelityReviewed
+        - safeAreaReviewed
+        - requiredFieldsReviewed
+        - automaticEnhancementsReviewed
+      properties:
+        claimsVerifiedAgainstSources: {type: boolean}
+        visualFidelityReviewed: {type: boolean}
+        safeAreaReviewed: {type: boolean}
+        requiredFieldsReviewed: {type: boolean}
+        automaticEnhancementsReviewed: {type: boolean}

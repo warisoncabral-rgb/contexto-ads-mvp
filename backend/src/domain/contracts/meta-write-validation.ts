@@ -93,6 +93,7 @@ export interface MetaWriteValidationProtocolV1 {
       objectType: SimulatedOperation['objectType'];
       status: 'pending' | 'succeeded' | 'failed' | 'uncertain';
       externalObjectId?: string;
+      mediaExternalObjectId?: string;
       observedStatus?: string;
       sanitizedResponseRef?: string;
       normalizedError?: string;

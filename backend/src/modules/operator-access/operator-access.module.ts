@@ -26,6 +26,10 @@ import { StrategyHandoffPersistenceService } from './strategy-handoff-persistenc
 import { OperatorActionPingController } from './operator-action-ping.controller';
 import { OperatorActionTransportController } from './operator-action-transport.controller';
 import { PublicReadonlyActionGatewayController } from './public-readonly-action-gateway.controller';
+import { CampaignMediaService } from './campaign-media.service';
+import { PublicCampaignMediaController } from './public-campaign-media.controller';
+import { CampaignAutomationService } from './campaign-automation.service';
+import { CampaignAutomationController } from './campaign-automation.controller';
 
 @Module({
   imports: [
@@ -56,8 +60,15 @@ import { PublicReadonlyActionGatewayController } from './public-readonly-action-
     OperatorActionPingController,
     OperatorActionTransportController,
     PublicReadonlyActionGatewayController,
+    PublicCampaignMediaController,
+    CampaignAutomationController,
   ],
-  providers: [OperatorAccessService, StrategyHandoffPersistenceService],
-  exports: [OperatorAccessService],
+  providers: [
+    OperatorAccessService,
+    StrategyHandoffPersistenceService,
+    CampaignMediaService,
+    CampaignAutomationService,
+  ],
+  exports: [OperatorAccessService, CampaignMediaService, CampaignAutomationService],
 })
 export class OperatorAccessModule {}
