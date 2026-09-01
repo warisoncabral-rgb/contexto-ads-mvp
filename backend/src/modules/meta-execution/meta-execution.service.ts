@@ -26,13 +26,9 @@ import {
 import { ExecutionAuthorizationService } from '../execution-authorization/execution-authorization.service';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
 import { MetaWriteAdapter } from '../meta-adapter/meta-write.adapter';
+import { MetaGeographyTarget, parseMetaGeography } from './meta-geography';
 
 type ExternalIds = Record<string, string>;
-
-type GeographyTarget = {
-  city: string;
-  radius: number;
-};
 
 @Injectable()
 export class MetaExecutionService {
@@ -202,6 +198,16 @@ export class MetaExecutionService {
     if (!pageId || !whatsappId) {
       throw new ConflictException('Selected Page and WhatsApp assets are required');
     }
+    let cityKeys: Array<{ key: string; radius: number; distance_unit: 'kilometer' }>;
+    try {
+      cityKeys = await this.cityKeys(tenantId, connection.credentialRef, plan);
+    } catch {
+      throw new ConflictException({
+        code: 'meta_geography_not_executable',
+        message: 'A Meta não reconheceu toda a geografia do plano. Nenhuma escrita foi iniciada.',
+        nextAction: 'Corrija ou selecione as cidades no preflight antes de autorizar outra tentativa.',
+      });
+    }
 
     const startedAt = new Date().toISOString();
     const running: MetaWriteValidationProtocolV1 = {
@@ -250,9 +256,6 @@ export class MetaExecutionService {
       const configs = new Map(plan.objectsToCreate.map((item) => [
         item.internalObjectId, item.logicalConfig,
       ]));
-      const cityKeys = await this.cityKeys(
-        tenantId, connection.credentialRef, plan,
-      );
       const executableKeys = new Set(prepared.operations.map((operation) => operation.operationKey));
       for (const operation of [...manifest.operations]
         .filter((candidate) => executableKeys.has(candidate.operationKey))
@@ -400,39 +403,9 @@ export class MetaExecutionService {
     return results;
   }
 
-  private geographyTargets(geography: string): GeographyTarget[] {
+  private geographyTargets(geography: string): MetaGeographyTarget[] {
     const defaultRadius = Number(this.config.get<string>('META_CITY_RADIUS_KM') ?? '40');
-    if (!Number.isInteger(defaultRadius) || defaultRadius < 1 || defaultRadius > 80) {
-      throw new Error('GEOGRAPHY_RADIUS_INVALID');
-    }
-
-    const segments = geography
-      .split(/\s*;\s*|\s+e\s+/i)
-      .map((item) => item.trim())
-      .filter(Boolean);
-    if (segments.length < 1 || segments.length > 20) throw new Error('GEOGRAPHY_INVALID');
-
-    const targets: GeographyTarget[] = [];
-    const seen = new Set<string>();
-    for (const segment of segments) {
-      const radiusMatch = segment.match(/\(\s*(\d{1,2})\s*km\s*\)\s*$/i);
-      const radius = radiusMatch ? Number(radiusMatch[1]) : defaultRadius;
-      if (!Number.isInteger(radius) || radius < 1 || radius > 80) {
-        throw new Error('GEOGRAPHY_RADIUS_INVALID');
-      }
-      const city = segment
-        .replace(/\(\s*\d{1,2}\s*km\s*\)\s*$/i, '')
-        .replace(/,\s*(?:BR|Brasil|Brazil)\s*$/i, '')
-        .replace(/(?:,|[-/])\s*[A-Z]{2}\s*$/i, '')
-        .trim();
-      if (!city || city.length > 120) throw new Error('GEOGRAPHY_INVALID');
-      const dedupeKey = city.toLocaleLowerCase('pt-BR');
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      targets.push({ city, radius });
-    }
-    if (targets.length < 1 || targets.length > 20) throw new Error('GEOGRAPHY_INVALID');
-    return targets;
+    return parseMetaGeography(geography, defaultRadius);
   }
 
   private requestFor(
