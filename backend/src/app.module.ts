@@ -20,6 +20,7 @@ import { HealthModule } from './modules/health/health.module';
 import { MetaExecutionModule } from './modules/meta-execution/meta-execution.module';
 import { AnalystModule } from './modules/analyst/analyst.module';
 import { MetaInsightsModule } from './modules/meta-insights/meta-insights.module';
+import { EcosystemOrchestratorModule } from './modules/ecosystem-orchestrator/ecosystem-orchestrator.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { MetaInsightsModule } from './modules/meta-insights/meta-insights.module
     MetaExecutionModule,
     AnalystModule,
     MetaInsightsModule,
+    EcosystemOrchestratorModule,
   ],
 })
 export class AppModule {}
