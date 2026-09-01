@@ -1,0 +1,520 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads — Gerador End-to-End
+  version: 1.0.26-end-to-end
+  description: >-
+    Fluxo automatizado do Contexto Ads ao Gerador. O backend resolve tenant, destino Meta,
+    metadados de mídia, versões, hashes, aprovações internas e gates técnicos. O usuário
+    confirma apenas a configuração comercial final e, em etapa separada, a publicação.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/transport-post-ping:
+    post:
+      operationId: testGeneratorTransportPost
+      summary: Testar transporte POST sem autenticação
+      security: []
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [probe]
+              properties:
+                probe:
+                  type: string
+                  const: ok
+      responses:
+        '200':
+          description: Resultado do diagnóstico
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+  /operator/action-post-ping:
+    post:
+      operationId: testGeneratorAuthenticatedPost
+      summary: Testar transporte POST autenticado
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [probe]
+              properties:
+                probe:
+                  type: string
+                  const: ok
+      responses:
+        '200':
+          description: Resultado do diagnóstico autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+  /operator/campaign-strategies/v1/action-submit:
+    post:
+      operationId: submitCampaignPackage
+      summary: Entregar a estratégia final aprovada ao Gerador
+      description: >-
+        Use somente a aprovação explícita mais recente da conversa. Não peça client_id,
+        tenantId, package_id, checksum, MIME, largura ou altura ao usuário. Esta etapa
+        persiste a estratégia e resolve o destino técnico, sem publicar ou gerar gasto.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovedCampaignStrategy'
+      responses:
+        '200':
+          description: Handoff da estratégia
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+  /operator/campaign-packages/v1/action-status:
+    post:
+      operationId: recoverCampaignPackageStatus
+      summary: Confirmar persistência de um handoff
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [package_id]
+              properties:
+                package_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Estado persistido do pacote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+  /operator/creative-packages/v1/action-prepare:
+    post:
+      operationId: prepareCreativePackage
+      summary: Ingerir mídias e preparar o Creative Package automaticamente
+      description: >-
+        Envie os arquivos criativos anexados na conversa usando openaiFileIdRefs. O backend
+        baixa os arquivos imediatamente, calcula SHA-256, MIME e dimensões, persiste uma cópia
+        estável e cria/reutiliza o Creative Package. Não peça esses metadados ao usuário.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - package_id
+                - campaign_id
+                - asset_ids
+                - openaiFileIdRefs
+                - copies
+                - claims
+                - reviewChecklist
+              properties:
+                package_id:
+                  type: string
+                  format: uuid
+                campaign_id:
+                  type: string
+                  format: uuid
+                asset_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  description: IDs semânticos dos assets na mesma ordem de openaiFileIdRefs.
+                  items:
+                    type: string
+                    pattern: '^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,99}$'
+                openaiFileIdRefs:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  description: >-
+                    Arquivos anexados pelo usuário nesta conversa. Use este campo especial
+                    exatamente com este nome; o runtime do GPT substitui os IDs por referências
+                    temporárias contendo download_link para o backend ingerir.
+                  items:
+                    type: string
+                copies:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    $ref: '#/components/schemas/CreativeCopy'
+                claims:
+                  type: array
+                  maxItems: 50
+                  items:
+                    $ref: '#/components/schemas/CreativeClaim'
+                reviewChecklist:
+                  $ref: '#/components/schemas/CreativeReviewChecklist'
+      responses:
+        '200':
+          description: Creative Package preparado ou erro legível
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+  /operator/creative-packages/v1/action-review:
+    post:
+      operationId: reviewCreativePackage
+      summary: Recuperar o Creative Package atual para revisão
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [package_id]
+              properties:
+                package_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Creative Package atual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+  /operator/campaigns/v1/action-final-review:
+    post:
+      operationId: getFinalCampaignReview
+      summary: Gerar a revisão final formal da campanha
+      description: >-
+        Apresente ao usuário, em linguagem clara e formal, somente os pontos de negócio que
+        precisam de confirmação: direcionamento/público, oferta/logística, textos/criativos,
+        orçamento/duração e orientação de cobrança. Não exponha IDs técnicos na pergunta.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [package_id]
+              properties:
+                package_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Revisão final da campanha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+  /operator/campaigns/v1/action-finalize-for-publication:
+    post:
+      operationId: finalizeCampaignForPublication
+      summary: Confirmar configuração e deixar campanha pronta para publicar
+      description: >-
+        Execute somente após o usuário aprovar explicitamente a revisão final atual. A Action
+        aprova internamente o Creative Package e o plano exatos, prepara os gates e cria os
+        objetos reais na Meta em PAUSED, validando zero entrega. Não ativa anúncios e não gera gasto.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [package_id, review_hash, confirmation]
+              properties:
+                package_id:
+                  type: string
+                  format: uuid
+                review_hash:
+                  type: string
+                  pattern: '^[0-9a-f]{64}$'
+                confirmation:
+                  type: string
+                  const: CONFIRM_AND_PREPARE_FOR_PUBLICATION
+                validation_mode:
+                  type: string
+                  enum: [PAUSED_ONLY, FULL_ROUNDTRIP]
+                  default: PAUSED_ONLY
+                  description: >-
+                    FULL_ROUNDTRIP é exclusivo para validação técnica controlada: ativa com
+                    início futuro e retorna imediatamente a PAUSED, sem entrega.
+      responses:
+        '200':
+          description: Campanha pronta para publicar ou erro legível
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+  /operator/campaigns/v1/action-publish:
+    post:
+      operationId: publishCampaign
+      summary: Publicar a campanha já validada
+      description: >-
+        Execute somente quando o usuário der um comando explícito de publicação, como “publica”.
+        Exige campanha previamente validada em PAUSED e não altera orçamento, público, criativos
+        ou duração. Esta operação pode iniciar entrega e gasto na Meta.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [package_id, confirmation]
+              properties:
+                package_id:
+                  type: string
+                  format: uuid
+                confirmation:
+                  type: string
+                  const: PUBLISH_CAMPAIGN
+      responses:
+        '200':
+          description: Resultado da publicação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ActionResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        action_status:
+          type: string
+        package_id:
+          type: string
+        campaign_id:
+          type: string
+        execution_plan_id:
+          type: string
+        next_action:
+          type: string
+        human_message:
+          type: string
+        error:
+          type: object
+          additionalProperties: true
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+        boundaries:
+          type: object
+          additionalProperties: true
+          properties:
+            publication_authorized:
+              type: boolean
+            campaign_active:
+              type: boolean
+            delivery_authorized:
+              type: boolean
+            spend_authorized:
+              type: boolean
+            external_writes_performed:
+              type: boolean
+
+    ApprovedCampaignStrategy:
+      type: object
+      additionalProperties: false
+      required:
+        - approval_basis
+        - business_name
+        - offer_name
+        - offer_description
+        - campaign_objective
+        - conversion_destination
+        - audience_description
+        - locations
+        - budget_type
+        - budget_amount
+        - currency
+        - duration_days
+        - strategy_status
+        - handoff_status
+      properties:
+        approval_basis:
+          type: string
+          const: LATEST_EXPLICIT_CONVERSATION_APPROVAL
+        business_name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        business_description:
+          type: string
+          maxLength: 2000
+        offer_name:
+          type: string
+          minLength: 1
+          maxLength: 500
+        offer_description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        commercial_conditions:
+          type: object
+          additionalProperties: true
+        campaign_objective:
+          type: string
+          const: LEADS
+        conversion_destination:
+          type: string
+          const: WHATSAPP
+        campaign_goal_description:
+          type: string
+          maxLength: 2000
+        audience_description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        locations:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [city, country]
+            properties:
+              city:
+                type: string
+              state:
+                type: string
+              country:
+                type: string
+              radius_km:
+                type: number
+                exclusiveMinimum: 0
+              include:
+                type: boolean
+        budget_type:
+          type: string
+          enum: [DAILY, LIFETIME]
+        budget_amount:
+          type: number
+          exclusiveMinimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        duration_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        creative_brief:
+          type: string
+          maxLength: 4000
+        strategy_notes:
+          type: object
+          additionalProperties: true
+        strategy_status:
+          type: string
+          const: COMPLETE
+        handoff_status:
+          type: string
+          const: READY_FOR_GENERATOR
+
+    CreativeCopy:
+      type: object
+      additionalProperties: false
+      required: [copyId, primaryText, headline, callToAction]
+      properties:
+        copyId:
+          type: string
+          pattern: '^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,99}$'
+        primaryText:
+          type: string
+          minLength: 1
+          maxLength: 2200
+        headline:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 500
+        whatsappMessage:
+          type: string
+          maxLength: 1000
+        callToAction:
+          type: string
+          enum: [LEARN_MORE, SHOP_NOW, SIGN_UP, CONTACT_US, SEND_WHATSAPP_MESSAGE]
+
+    CreativeClaim:
+      type: object
+      additionalProperties: false
+      required: [claimId, text, sourceRefs]
+      properties:
+        claimId:
+          type: string
+          pattern: '^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,99}$'
+        text:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        sourceRefs:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
+
+    CreativeReviewChecklist:
+      type: object
+      additionalProperties: false
+      required:
+        - claimsVerifiedAgainstSources
+        - visualFidelityReviewed
+        - safeAreaReviewed
+        - requiredFieldsReviewed
+        - automaticEnhancementsReviewed
+      properties:
+        claimsVerifiedAgainstSources:
+          type: boolean
+        visualFidelityReviewed:
+          type: boolean
+        safeAreaReviewed:
+          type: boolean
+        requiredFieldsReviewed:
+          type: boolean
+        automaticEnhancementsReviewed:
+          type: boolean
