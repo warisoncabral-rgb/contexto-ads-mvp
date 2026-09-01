@@ -31,6 +31,7 @@ export interface ExecutionPreflightCheckV1 {
     | 'specific_execution_authorization'
     | 'tenant_kill_switch'
     | 'campaign_kill_switch'
+    | 'meta_geography_resolved'
     | 'real_meta_write_validation'
     | 'write_adapter_enabled';
   status: 'passed' | 'blocked';
