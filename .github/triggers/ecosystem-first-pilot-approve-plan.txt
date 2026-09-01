@@ -1,0 +1,7 @@
+trigger=2026-09-01T15:15:30Z
+mode=supervised-pilot-plan-approval
+plan-approved-by-user=true
+publication=false
+activation=false
+meta-write=false
+financial-authorization=false
