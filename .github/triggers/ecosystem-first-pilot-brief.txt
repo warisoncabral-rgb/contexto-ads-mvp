@@ -1,0 +1,6 @@
+trigger=2026-09-01T15:03:00Z
+mode=supervised-pilot
+publication=false
+activation=false
+meta-write=false
+financial-authorization=false
