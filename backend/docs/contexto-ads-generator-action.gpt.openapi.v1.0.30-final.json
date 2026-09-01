@@ -1,0 +1,466 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Contexto Ads Gerador End-to-End",
+    "version": "1.0.30-final",
+    "description": "Fluxo automatizado Contexto Ads para Gerador com diagnostico unico, autenticacao Bearer, handoff, criativos, revisao final, validacao em PAUSED e publicacao separada."
+  },
+  "servers": [{
+    "url": "https://contexto-ads-validation-api.onrender.com/v1"
+  }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/operator/transport-post-ping": {
+      "post": {
+        "operationId": "testGeneratorTransportPost",
+        "summary": "Testar transporte POST sem autenticacao",
+        "security": [],
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["probe"],
+            "properties": { "probe": { "type": "string", "enum": ["ok"] } }
+          } } }
+        },
+        "responses": { "200": { "description": "Resultado", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "service": { "type": "string" },
+            "method": { "type": "string" },
+            "transport": { "type": "string" },
+            "authenticated": { "type": "boolean" },
+            "probe": { "type": "string" }
+          }
+        } } } } }
+      }
+    },
+    "/operator/action-post-ping": {
+      "post": {
+        "operationId": "testGeneratorAuthenticatedPost",
+        "summary": "Testar transporte POST autenticado",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["probe"],
+            "properties": { "probe": { "type": "string", "enum": ["ok"] } }
+          } } }
+        },
+        "responses": { "200": { "description": "Resultado", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "authenticated": { "type": "boolean" },
+            "authorized_tenant_count": { "type": "integer" }
+          }
+        } } } } }
+      }
+    },
+    "/operator/integration/v1/action-diagnose": {
+      "post": {
+        "operationId": "diagnoseGeneratorIntegration",
+        "summary": "Diagnosticar toda a integracao sem escrita externa",
+        "description": "Use esta Action para diagnosticar transporte, autenticacao Bearer, resolucao automatica de tenant e, quando package_id for fornecido, o estado persistido do Campaign Package. Nunca publica, ativa ou gera gasto.",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "package_id": { "type": "string" }
+            }
+          } } }
+        },
+        "responses": { "200": { "description": "Diagnostico estruturado", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "overall_status": { "type": "string" },
+            "transport": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string" },
+                "method": { "type": "string" },
+                "route": { "type": "string" }
+              }
+            },
+            "authentication": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string" },
+                "http_status": { "type": "integer" },
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "server_credential_status": { "type": "string" },
+                "provider": { "type": "string" }
+              }
+            },
+            "tenant_resolution": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string" },
+                "authorized_tenant_count": { "type": "integer" },
+                "role": { "type": "string" },
+                "required_permissions_present": { "type": "boolean" },
+                "reason": { "type": "string" }
+              }
+            },
+            "package": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string" },
+                "package_id": { "type": "string" },
+                "campaign_id": { "type": "string" },
+                "context_status": { "type": "string" },
+                "creative_status": { "type": ["string", "null"] },
+                "execution_plan_id": { "type": "string" },
+                "execution_plan_status": { "type": "string" },
+                "target_binding_status": { "type": "string" },
+                "plan_approval_status": { "type": ["string", "null"] },
+                "next_action": { "type": "string" }
+              }
+            },
+            "next_action": { "type": "string" },
+            "boundaries": {
+              "type": "object",
+              "properties": {
+                "publication_authorized": { "type": "boolean" },
+                "external_writes_allowed": { "type": "boolean" },
+                "external_writes_performed": { "type": "boolean" },
+                "meta_write_performed": { "type": "boolean" },
+                "delivery_authorized": { "type": "boolean" },
+                "spend_authorized": { "type": "boolean" }
+              }
+            }
+          }
+        } } } } }
+      }
+    },
+    "/operator/campaign-strategies/v1/action-submit": {
+      "post": {
+        "operationId": "submitCampaignPackage",
+        "summary": "Enviar estrategia final aprovada ao Gerador",
+        "description": "Use somente a aprovacao explicita mais recente. Nao solicite tenantId, client_id, package_id, checksum, MIME, largura ou altura ao usuario. Esta etapa nao publica nem gera gasto.",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["approval_basis", "business_name", "offer_name", "offer_description", "campaign_objective", "conversion_destination", "audience_description", "locations", "budget_type", "budget_amount", "currency", "duration_days", "strategy_status", "handoff_status"],
+            "properties": {
+              "approval_basis": { "type": "string", "enum": ["LATEST_EXPLICIT_CONVERSATION_APPROVAL"] },
+              "business_name": { "type": "string" },
+              "business_description": { "type": "string" },
+              "offer_name": { "type": "string" },
+              "offer_description": { "type": "string" },
+              "campaign_objective": { "type": "string", "enum": ["LEADS"] },
+              "conversion_destination": { "type": "string", "enum": ["WHATSAPP"] },
+              "campaign_goal_description": { "type": "string" },
+              "audience_description": { "type": "string" },
+              "locations": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["city", "country"],
+                  "properties": {
+                    "city": { "type": "string" },
+                    "state": { "type": "string" },
+                    "country": { "type": "string" },
+                    "radius_km": { "type": "number" },
+                    "include": { "type": "boolean" }
+                  }
+                }
+              },
+              "budget_type": { "type": "string", "enum": ["DAILY", "LIFETIME"] },
+              "budget_amount": { "type": "number" },
+              "currency": { "type": "string" },
+              "duration_days": { "type": "integer" },
+              "creative_brief": { "type": "string" },
+              "strategy_status": { "type": "string", "enum": ["COMPLETE"] },
+              "handoff_status": { "type": "string", "enum": ["READY_FOR_GENERATOR"] }
+            }
+          } } }
+        },
+        "responses": { "200": { "description": "Handoff", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "package_id": { "type": "string" },
+            "campaign_id": { "type": "string" },
+            "execution_plan_id": { "type": "string" },
+            "creative_package_status": { "type": "string" },
+            "target_binding_status": { "type": "string" },
+            "idempotency_status": { "type": "string" },
+            "next_action": { "type": "string" }
+          }
+        } } } } }
+      }
+    },
+    "/operator/campaign-packages/v1/action-status": {
+      "post": {
+        "operationId": "recoverCampaignPackageStatus",
+        "summary": "Recuperar Campaign Package persistido",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package_id"],
+            "properties": { "package_id": { "type": "string" } }
+          } } }
+        },
+        "responses": { "200": { "description": "Estado", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "package_id": { "type": "string" },
+            "campaign_id": { "type": "string" },
+            "execution_plan_id": { "type": "string" },
+            "creative_package_status": { "type": "string" },
+            "target_binding_status": { "type": "string" },
+            "next_action": { "type": "string" }
+          }
+        } } } } }
+      }
+    },
+    "/operator/creative-packages/v1/action-prepare": {
+      "post": {
+        "operationId": "prepareCreativePackage",
+        "summary": "Preparar Creative Package e ingerir arquivos anexados",
+        "description": "O backend resolve automaticamente tenant, SHA-256, MIME, dimensoes e armazenamento estavel. Nao solicite metadados tecnicos ao usuario.",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package_id", "campaign_id", "asset_ids", "openaiFileIdRefs", "copies", "claims", "reviewChecklist"],
+            "properties": {
+              "package_id": { "type": "string" },
+              "campaign_id": { "type": "string" },
+              "asset_ids": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "type": "string" } },
+              "openaiFileIdRefs": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "type": "string" } },
+              "copies": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 10,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["copyId", "primaryText", "headline", "callToAction"],
+                  "properties": {
+                    "copyId": { "type": "string" },
+                    "primaryText": { "type": "string" },
+                    "headline": { "type": "string" },
+                    "description": { "type": "string" },
+                    "whatsappMessage": { "type": "string" },
+                    "callToAction": { "type": "string", "enum": ["LEARN_MORE", "SHOP_NOW", "SIGN_UP", "CONTACT_US", "SEND_WHATSAPP_MESSAGE"] }
+                  }
+                }
+              },
+              "claims": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["claimId", "text", "sourceRefs"],
+                  "properties": {
+                    "claimId": { "type": "string" },
+                    "text": { "type": "string" },
+                    "sourceRefs": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string" } }
+                  }
+                }
+              },
+              "reviewChecklist": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["claimsVerifiedAgainstSources", "visualFidelityReviewed", "safeAreaReviewed", "requiredFieldsReviewed", "automaticEnhancementsReviewed"],
+                "properties": {
+                  "claimsVerifiedAgainstSources": { "type": "boolean" },
+                  "visualFidelityReviewed": { "type": "boolean" },
+                  "safeAreaReviewed": { "type": "boolean" },
+                  "requiredFieldsReviewed": { "type": "boolean" },
+                  "automaticEnhancementsReviewed": { "type": "boolean" }
+                }
+              }
+            }
+          } } }
+        },
+        "responses": { "200": { "description": "Creative Package preparado", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "execution_plan_id": { "type": "string" },
+            "idempotency_status": { "type": "string" },
+            "media_auto_resolved": { "type": "boolean" },
+            "tenant_auto_resolved": { "type": "boolean" },
+            "next_action": { "type": "string" }
+          }
+        } } } } }
+      }
+    },
+    "/operator/creative-packages/v1/action-review": {
+      "post": {
+        "operationId": "reviewCreativePackage",
+        "summary": "Recuperar Creative Package atual",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package_id"],
+            "properties": { "package_id": { "type": "string" } }
+          } } }
+        },
+        "responses": { "200": { "description": "Creative Package", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "execution_plan_id": { "type": "string" },
+            "next_action": { "type": "string" }
+          }
+        } } } } }
+      }
+    },
+    "/operator/campaigns/v1/action-final-review": {
+      "post": {
+        "operationId": "getFinalCampaignReview",
+        "summary": "Gerar revisao final formal da campanha",
+        "description": "Apresente ao usuario somente direcionamento e publico, oferta e logistica, textos e criativos, orcamento e duracao, e orientacao de cobranca.",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package_id"],
+            "properties": { "package_id": { "type": "string" } }
+          } } }
+        },
+        "responses": { "200": { "description": "Revisao final", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "package_id": { "type": "string" },
+            "campaign_id": { "type": "string" },
+            "execution_plan_id": { "type": "string" },
+            "final_review": {
+              "type": "object",
+              "properties": {
+                "review_hash": { "type": "string" },
+                "business": { "type": "string" },
+                "objective": { "type": "string" },
+                "direction": { "type": "string" },
+                "audience": { "type": "string" },
+                "offer_and_logistics": { "type": "string" }
+              }
+            },
+            "confirmation_items": { "type": "array", "items": { "type": "string" } },
+            "next_action": { "type": "string" }
+          }
+        } } } } }
+      }
+    },
+    "/operator/campaigns/v1/action-finalize-for-publication": {
+      "post": {
+        "operationId": "finalizeCampaignForPublication",
+        "summary": "Criar e validar campanha real em PAUSED",
+        "description": "Execute somente depois da aprovacao explicita da revisao final atual. Cria e valida objetos reais na Meta em PAUSED, sem entrega e sem gasto.",
+        "x-openai-isConsequential": true,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package_id", "review_hash", "confirmation"],
+            "properties": {
+              "package_id": { "type": "string" },
+              "review_hash": { "type": "string" },
+              "confirmation": { "type": "string", "enum": ["CONFIRM_AND_PREPARE_FOR_PUBLICATION"] },
+              "validation_mode": { "type": "string", "enum": ["PAUSED_ONLY", "FULL_ROUNDTRIP"], "default": "PAUSED_ONLY" }
+            }
+          } } }
+        },
+        "responses": { "200": { "description": "Campanha preparada", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "package_id": { "type": "string" },
+            "campaign_id": { "type": "string" },
+            "ready_hash": { "type": "string" },
+            "meta_validation_status": { "type": "string" },
+            "meta_objects": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "object_type": { "type": "string" },
+                  "external_object_id": { "type": "string" },
+                  "observed_status": { "type": "string" }
+                }
+              }
+            },
+            "next_action": { "type": "string" },
+            "human_message": { "type": "string" }
+          }
+        } } } } }
+      }
+    },
+    "/operator/campaigns/v1/action-publish": {
+      "post": {
+        "operationId": "publishCampaign",
+        "summary": "Publicar campanha previamente validada",
+        "description": "Execute somente quando o usuario der comando explicito de publicacao, como publica. Esta operacao pode iniciar entrega e gasto na Meta.",
+        "x-openai-isConsequential": true,
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package_id", "confirmation"],
+            "properties": {
+              "package_id": { "type": "string" },
+              "confirmation": { "type": "string", "enum": ["PUBLISH_CAMPAIGN"] }
+            }
+          } } }
+        },
+        "responses": { "200": { "description": "Publicacao", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "action_status": { "type": "string" },
+            "package_id": { "type": "string" },
+            "campaign_id": { "type": "string" },
+            "human_message": { "type": "string" }
+          }
+        } } } } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CompatibilityMarker": {
+        "type": "object",
+        "properties": { "compatible": { "type": "boolean" } }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
