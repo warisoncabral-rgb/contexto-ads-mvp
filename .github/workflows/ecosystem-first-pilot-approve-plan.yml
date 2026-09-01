@@ -1,0 +1,88 @@
+name: Ecosystem First Pilot Approve Plan
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-approve-plan.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  approve-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      PLAN_ID: 2ce02f67-8b97-488d-bc53-7acbac9d26fc
+    steps:
+      - name: Approve only the current campaign plan
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+
+          curl --fail --silent --show-error \
+            -H "$H" -H 'Content-Type: application/json' -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/plans/$PLAN_ID/approvals" \
+            -d '{}' > /tmp/request.json
+
+          node <<'NODE' > /tmp/approval.env
+          const x=require('/tmp/request.json');
+          const a=x.approval;
+          if(!a?.approvalId) throw new Error('Missing approval id');
+          if(a.status!=='pending' && a.status!=='approved') throw new Error(`Unexpected approval status ${a.status}`);
+          const b=x.boundaries||{};
+          for(const k of ['publicationAuthorized','externalWritesAllowed','externalWritesPerformed']) {
+            if(b[k]!==false) throw new Error(`Unsafe request boundary ${k}`);
+          }
+          if(b.approvalIsExecutionAuthorization!==false) throw new Error('Plan approval must not authorize execution');
+          console.log(`APPROVAL_ID=${a.approvalId}`);
+          NODE
+          source /tmp/approval.env
+
+          curl --fail --silent --show-error \
+            -H "$H" -H 'Content-Type: application/json' -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/approvals/$APPROVAL_ID/approve" \
+            -d '{}' > /tmp/approved.json
+
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/ecosystem/campaigns/$CAMPAIGN_ID" > /tmp/human.json
+
+          node <<'NODE'
+          const approved=require('/tmp/approved.json');
+          const human=require('/tmp/human.json');
+          const a=approved.approval;
+          if(a?.status!=='approved') throw new Error(`Plan was not approved: ${a?.status}`);
+          const b=approved.boundaries||{};
+          if(b.approvalIsExecutionAuthorization!==false) throw new Error('Plan approval became execution authorization');
+          for(const k of ['publicationAuthorized','externalWritesAllowed','externalWritesPerformed']) {
+            if(b[k]!==false) throw new Error(`Unsafe approval boundary ${k}`);
+          }
+          const hb=human.boundaries||{};
+          for(const k of ['publicationAuthorized','activationAuthorized','externalWritesAllowed','financialActionAuthorized','recommendationAutoExecuted']) {
+            if(hb[k]!==false) throw new Error(`Unsafe human boundary ${k}`);
+          }
+          if(human.stage!=='EXTERNAL_EXECUTION_GATE') throw new Error(`Expected external gate, got ${human.stage}`);
+          if(human.technicalDetails?.planApprovalStatus!=='approved') throw new Error('Human status does not reflect approved plan');
+          console.log(JSON.stringify({
+            PILOT_PLAN_APPROVAL:'APPROVED',
+            campaignId:human.campaignId,
+            stage:human.stage,
+            headline:human.headline,
+            simpleMessage:human.simpleMessage,
+            whatSystemDid:human.whatSystemDid,
+            nextStep:human.nextStep,
+            userActionRequired:human.userActionRequired,
+            userAction:human.userAction,
+            planApprovalStatus:human.technicalDetails?.planApprovalStatus,
+            packageNextAction:human.technicalDetails?.packageNextAction,
+            boundaries:human.boundaries,
+          },null,2));
+          NODE
