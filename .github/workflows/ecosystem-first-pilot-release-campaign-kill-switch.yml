@@ -1,0 +1,54 @@
+name: Ecosystem First Pilot Release Campaign Kill Switch
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-release-campaign-kill-switch.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+    steps:
+      - name: Initialize campaign kill switch as released
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          J="Content-Type: application/json"
+
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/kill-switch/effective" > /tmp/before.json
+          node -e "const x=require('/tmp/before.json');if(x.tenant?.status!=='released')throw new Error('tenant_kill_switch_not_released');if(x.campaign?.known===true&&x.campaign?.status==='engaged')throw new Error('campaign_kill_switch_explicitly_engaged');if(x.boundaries?.externalWritesAllowed!==false||x.boundaries?.externalWritesPerformed!==false)throw new Error('unsafe_kill_switch_before')"
+
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/kill-switch/campaign" \
+            -d "{\"campaignId\":\"$CAMPAIGN_ID\",\"status\":\"released\",\"reason\":\"Inicialização controlada do piloto PAUSED_ONLY após diagnóstico confirmar ausência de estado da campanha e nenhuma tentativa externa anterior.\"}" > /tmp/change.json
+
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/kill-switch/effective" > /tmp/after.json
+          node <<'NODE'
+          const before=require('/tmp/before.json');
+          const changed=require('/tmp/change.json');
+          const after=require('/tmp/after.json');
+          if(after.decision!=='released'||after.writesBlocked!==false) throw new Error(`kill_switch_not_released:${after.decision}`);
+          if(after.tenant?.status!=='released'||after.campaign?.status!=='released') throw new Error('effective_scopes_not_released');
+          if(after.boundaries?.externalWritesAllowed!==false||after.boundaries?.externalWritesPerformed!==false) throw new Error('kill_switch_release_itself_allowed_external_write');
+          console.log(JSON.stringify({
+            PILOT_CAMPAIGN_KILL_SWITCH:'RELEASED',
+            before:{decision:before.decision,tenant:before.tenant,campaign:before.campaign},
+            newState:{scope:changed.scope,status:changed.status,version:changed.version},
+            after:{decision:after.decision,writesBlocked:after.writesBlocked,tenant:after.tenant,campaign:after.campaign},
+            boundaries:after.boundaries,
+          },null,2));
+          NODE
