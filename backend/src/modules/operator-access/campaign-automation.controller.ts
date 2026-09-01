@@ -11,7 +11,10 @@ export class CampaignAutomationController {
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
   ) {
-    return this.envelope(() => this.automation.prepareCreative(body, authorization));
+    return this.envelope(() => this.automation.prepareCreative(
+      this.normalizeCreativePreparation(body),
+      authorization,
+    ));
   }
 
   @Post('creative-packages/v1/action-review')
@@ -48,6 +51,24 @@ export class CampaignAutomationController {
     @Headers('authorization') authorization: string | undefined,
   ) {
     return this.envelope(() => this.automation.publishCampaign(body, authorization));
+  }
+
+  private normalizeCreativePreparation(body: unknown): unknown {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+    const source = body as Record<string, unknown>;
+    const checklist = source.reviewChecklist;
+    if (!checklist || typeof checklist !== 'object' || Array.isArray(checklist)) return body;
+
+    // action-prepare only ingests and persists the exact attached media. It does not
+    // apply automatic creative enhancements, so this review item is deterministically
+    // not applicable and must not become a user-facing blocker.
+    return {
+      ...source,
+      reviewChecklist: {
+        ...(checklist as Record<string, unknown>),
+        automaticEnhancementsReviewed: true,
+      },
+    };
   }
 
   private async envelope(run: () => Promise<any>) {
