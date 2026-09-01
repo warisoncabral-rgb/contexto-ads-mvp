@@ -29,6 +29,15 @@ describe('IntegrationDiagnosticController', () => {
     };
   }
 
+  function controller(access: any, packages: any, plans?: any, capabilities?: any) {
+    return new IntegrationDiagnosticController(
+      access,
+      packages,
+      plans ?? { latest: jest.fn() },
+      capabilities ?? { validateForExecution: jest.fn() },
+    );
+  }
+
   it('returns a readable 200-style diagnostic when the Bearer token mismatches', async () => {
     const access = {
       listTenants: jest.fn().mockRejectedValue(new UnauthorizedException({
@@ -37,9 +46,9 @@ describe('IntegrationDiagnosticController', () => {
       })),
     } as any;
     const packages = { get: jest.fn() } as any;
-    const controller = new IntegrationDiagnosticController(access, packages);
+    const subject = controller(access, packages);
 
-    await expect(controller.diagnose({}, 'Bearer wrong')).resolves.toMatchObject({
+    await expect(subject.diagnose({}, 'Bearer wrong')).resolves.toMatchObject({
       action_status: 'DIAGNOSTIC_COMPLETE',
       overall_status: 'AUTH_TOKEN_MISMATCH',
       authentication: {
@@ -59,9 +68,9 @@ describe('IntegrationDiagnosticController', () => {
   it('resolves the single tenant without asking the user for tenantId', async () => {
     const access = { listTenants: jest.fn().mockResolvedValue(workspace()) } as any;
     const packages = { get: jest.fn() } as any;
-    const controller = new IntegrationDiagnosticController(access, packages);
+    const subject = controller(access, packages);
 
-    await expect(controller.diagnose({}, 'Bearer valid')).resolves.toMatchObject({
+    await expect(subject.diagnose({}, 'Bearer valid')).resolves.toMatchObject({
       overall_status: 'READY_FOR_CAMPAIGN_FLOW',
       authentication: { status: 'OK' },
       tenant_resolution: {
@@ -70,6 +79,7 @@ describe('IntegrationDiagnosticController', () => {
         required_permissions_present: true,
       },
       package: { status: 'NOT_REQUESTED' },
+      meta_capability_validation: { status: 'NOT_RUN' },
     });
   });
 
@@ -90,9 +100,11 @@ describe('IntegrationDiagnosticController', () => {
         next_action: 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE',
       }),
     } as any;
-    const controller = new IntegrationDiagnosticController(access, packages);
+    const plans = { latest: jest.fn() } as any;
+    const capabilities = { validateForExecution: jest.fn() } as any;
+    const subject = controller(access, packages, plans, capabilities);
 
-    await expect(controller.diagnose({ package_id: packageId }, 'Bearer valid')).resolves.toMatchObject({
+    await expect(subject.diagnose({ package_id: packageId }, 'Bearer valid')).resolves.toMatchObject({
       overall_status: 'PACKAGE_CREATIVE_PREPARATION_REQUIRED',
       package: {
         status: 'FOUND',
@@ -100,8 +112,65 @@ describe('IntegrationDiagnosticController', () => {
         creative_status: null,
         target_binding_status: 'BOUND',
       },
+      meta_capability_validation: { status: 'NOT_RUN' },
       next_action: 'PREPARE_CREATIVE_PACKAGE',
     });
     expect(packages.get).toHaveBeenCalledWith(tenantId, packageId);
+    expect(plans.latest).not.toHaveBeenCalled();
+    expect(capabilities.validateForExecution).not.toHaveBeenCalled();
+  });
+
+  it('validates execution capabilities read-only for a bound package with creative content', async () => {
+    const access = { listTenants: jest.fn().mockResolvedValue(workspace()) } as any;
+    const packages = {
+      get: jest.fn().mockResolvedValue({
+        package_id: packageId,
+        campaign_id: packageId,
+        context: { status: 'ready_for_generation' },
+        creative: { status: 'needs_review' },
+        execution_plan: {
+          execution_plan_id: '5308c5b6-7c45-42d4-831e-ee7df642d5e6',
+          status: 'draft',
+          target_binding_status: 'BOUND',
+        },
+        plan_approval: null,
+        next_action: 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE',
+      }),
+    } as any;
+    const plans = {
+      latest: jest.fn().mockResolvedValue({
+        meta: {
+          connectionId: '33333333-3333-4333-8333-333333333333',
+          requiredCapabilities: ['CREATE_CAMPAIGN', 'CREATE_ADSET'],
+        },
+      }),
+    } as any;
+    const capabilities = {
+      validateForExecution: jest.fn().mockResolvedValue({
+        success: true,
+        observedAt: '2026-09-01T12:00:00.000Z',
+        retryable: false,
+        data: [
+          { capabilityType: 'CREATE_CAMPAIGN', status: 'available', restrictions: [] },
+          { capabilityType: 'CREATE_ADSET', status: 'available', restrictions: [] },
+        ],
+      }),
+    } as any;
+    const subject = controller(access, packages, plans, capabilities);
+
+    await expect(subject.diagnose({ package_id: packageId }, 'Bearer valid')).resolves.toMatchObject({
+      overall_status: 'PACKAGE_CREATIVE_REVIEW_REQUIRED',
+      meta_capability_validation: {
+        status: 'OK',
+        capabilities: [
+          { capability: 'CREATE_CAMPAIGN', status: 'available' },
+          { capability: 'CREATE_ADSET', status: 'available' },
+        ],
+      },
+    });
+    expect(capabilities.validateForExecution).toHaveBeenCalledWith(
+      tenantId,
+      '33333333-3333-4333-8333-333333333333',
+    );
   });
 });
