@@ -58,13 +58,69 @@ export class EcosystemOrchestratorService {
     return this.describeCampaign(target.tenantId, target.campaignId, target.executionPlanId);
   }
 
+  async advanceAllSafe(authorization: string | undefined) {
+    const portfolio = await this.access.portfolio(authorization);
+    const results: Array<Record<string, unknown>> = [];
+
+    for (const item of portfolio.items) {
+      let status: PackageStatus;
+      try {
+        status = await this.packages.get(item.tenantId, item.campaignId);
+      } catch {
+        results.push({
+          campaignId: item.campaignId,
+          actionStatus: 'NO_SAFE_STEP',
+          simpleMessage: 'A campanha ainda não tem um pacote pronto para avanço interno.',
+        });
+        continue;
+      }
+
+      if (!['RESOLVE_META_TARGET', 'REQUEST_EXECUTION_PLAN_APPROVAL'].includes(status.next_action)) {
+        results.push({
+          campaignId: item.campaignId,
+          actionStatus: 'NO_SAFE_STEP',
+          nextAction: status.next_action,
+          simpleMessage: 'A campanha já está em um ponto que exige revisão, decisão humana ou um gate externo.',
+        });
+        continue;
+      }
+
+      try {
+        const result = await this.advanceSafe(authorization, item.campaignId);
+        results.push({ campaignId: item.campaignId, ...result });
+      } catch {
+        results.push({
+          campaignId: item.campaignId,
+          actionStatus: 'SAFE_STEP_FAILED',
+          simpleMessage: 'Não foi possível concluir o avanço interno desta campanha. Nenhum efeito externo foi executado.',
+        });
+      }
+    }
+
+    const advancedCount = results.filter((item) => item.actionStatus === 'SAFE_STEPS_COMPLETED').length;
+    const failedCount = results.filter((item) => item.actionStatus === 'SAFE_STEP_FAILED').length;
+
+    return {
+      actionStatus: 'SAFE_BATCH_COMPLETED',
+      headline: advancedCount > 0
+        ? `${advancedCount} campanha(s) avançaram automaticamente até o próximo gate humano.`
+        : 'Não havia etapas internas seguras pendentes para avançar automaticamente.',
+      simpleMessage: failedCount > 0
+        ? `${failedCount} campanha(s) precisam de revisão técnica, mas nenhuma ação externa foi executada.`
+        : 'O ecossistema executou somente etapas internas permitidas e parou antes de qualquer decisão ou efeito externo.',
+      advancedCount,
+      failedCount,
+      campaignCount: results.length,
+      results,
+      boundaries: this.boundaries(),
+    };
+  }
+
   async advanceSafe(authorization: string | undefined, campaignId: string) {
     const target = await this.authorizedCampaign(authorization, campaignId);
     let status = await this.packages.get(target.tenantId, campaignId);
     const completedSteps: string[] = [];
 
-    // Safe internal steps may be chained in one user action. The loop is intentionally
-    // narrow and bounded: only target resolution is allowed to auto-continue.
     if (status.next_action === 'RESOLVE_META_TARGET') {
       const selected = await this.connections.selectedExecutionTarget(target.tenantId);
       await this.access.bindExecutionTarget(
