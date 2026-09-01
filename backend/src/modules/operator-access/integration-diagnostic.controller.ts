@@ -1,5 +1,7 @@
 import { Body, Controller, Headers, HttpCode, HttpException, Post } from '@nestjs/common';
 import { CampaignPackageStatusService } from '../campaign-package/campaign-package-status.service';
+import { CapabilityRegistryService } from '../capability-registry/capability-registry.service';
+import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
 import { OperatorAccessService } from './operator-access.service';
 
 type DiagnosticBody = {
@@ -11,6 +13,8 @@ export class IntegrationDiagnosticController {
   constructor(
     private readonly access: OperatorAccessService,
     private readonly packages: CampaignPackageStatusService,
+    private readonly plans: ExecutionPlanService,
+    private readonly capabilities: CapabilityRegistryService,
   ) {}
 
   @Post('integration/v1/action-diagnose')
@@ -59,12 +63,9 @@ export class IntegrationDiagnosticController {
               ? 'CONFIGURED_BUT_REQUEST_TOKEN_MISMATCH'
               : 'CHECK_SERVER_CONFIGURATION',
           },
-          tenant_resolution: {
-            status: 'NOT_RUN',
-          },
-          package: {
-            status: 'NOT_RUN',
-          },
+          tenant_resolution: { status: 'NOT_RUN' },
+          package: { status: 'NOT_RUN' },
+          meta_capability_validation: { status: 'NOT_RUN' },
           next_action: 'SYNC_GPT_BEARER_TOKEN_WITH_RENDER',
         };
       }
@@ -78,6 +79,7 @@ export class IntegrationDiagnosticController {
         },
         tenant_resolution: { status: 'NOT_RUN' },
         package: { status: 'NOT_RUN' },
+        meta_capability_validation: { status: 'NOT_RUN' },
         next_action: 'REVIEW_SERVER_AUTHENTICATION',
       };
     }
@@ -87,10 +89,7 @@ export class IntegrationDiagnosticController {
       return {
         ...base,
         overall_status: 'TENANT_RESOLUTION_BLOCKED',
-        authentication: {
-          status: 'OK',
-          provider: workspace.operator.provider,
-        },
+        authentication: { status: 'OK', provider: workspace.operator.provider },
         tenant_resolution: {
           status: 'BLOCKED',
           authorized_tenant_count: tenants.length,
@@ -99,6 +98,7 @@ export class IntegrationDiagnosticController {
             : 'MULTIPLE_AUTHORIZED_TENANTS',
         },
         package: { status: 'NOT_RUN' },
+        meta_capability_validation: { status: 'NOT_RUN' },
         next_action: 'FIX_OPERATOR_TENANT_MEMBERSHIP',
       };
     }
@@ -109,19 +109,15 @@ export class IntegrationDiagnosticController {
       return {
         ...base,
         overall_status: 'READY_FOR_CAMPAIGN_FLOW',
-        authentication: {
-          status: 'OK',
-          provider: workspace.operator.provider,
-        },
+        authentication: { status: 'OK', provider: workspace.operator.provider },
         tenant_resolution: {
           status: 'OK',
           authorized_tenant_count: 1,
           role: tenant.role,
           required_permissions_present: tenant.permissions.includes('manage_campaign_preparation'),
         },
-        package: {
-          status: 'NOT_REQUESTED',
-        },
+        package: { status: 'NOT_REQUESTED' },
+        meta_capability_validation: { status: 'NOT_RUN' },
         next_action: 'RUN_CAMPAIGN_FLOW_OR_DIAGNOSE_WITH_PACKAGE_ID',
       };
     }
@@ -130,17 +126,70 @@ export class IntegrationDiagnosticController {
       const status = await this.packages.get(tenant.tenantId, packageId);
       const creativeStatus = status.creative?.status ?? null;
       const targetStatus = status.execution_plan.target_binding_status;
-      return {
-        ...base,
-        overall_status: creativeStatus === 'approved' && targetStatus === 'BOUND'
+
+      let metaCapabilityValidation: Record<string, unknown> = { status: 'NOT_RUN' };
+      if (creativeStatus && targetStatus === 'BOUND') {
+        try {
+          const plan = await this.plans.latest(tenant.tenantId, status.campaign_id);
+          const connectionId = plan.meta.connectionId;
+          if (!connectionId) {
+            metaCapabilityValidation = {
+              status: 'BLOCKED',
+              code: 'meta_connection_not_bound',
+            };
+          } else {
+            const validation = await this.capabilities.validateForExecution(
+              tenant.tenantId,
+              connectionId,
+            );
+            if (!validation.success || !validation.data) {
+              metaCapabilityValidation = {
+                status: 'FAILED',
+                connection_id: connectionId,
+                retryable: validation.retryable,
+                normalized_error: validation.normalizedError ?? 'VALIDATION',
+                observed_at: validation.observedAt,
+              };
+            } else {
+              const required = new Set(plan.meta.requiredCapabilities);
+              const relevant = validation.data.filter((record) =>
+                required.has(record.capabilityType));
+              const unavailable = relevant.filter((record) => record.status !== 'available');
+              metaCapabilityValidation = {
+                status: unavailable.length ? 'BLOCKED' : 'OK',
+                connection_id: connectionId,
+                observed_at: validation.observedAt,
+                capabilities: relevant.map((record) => ({
+                  capability: record.capabilityType,
+                  status: record.status,
+                  restrictions: record.restrictions,
+                })),
+              };
+            }
+          }
+        } catch (error) {
+          metaCapabilityValidation = {
+            status: 'FAILED',
+            code: 'meta_capability_validation_error',
+            message: error instanceof Error ? error.message : 'Unexpected Meta capability validation error',
+          };
+        }
+      }
+
+      const capabilitiesReady = metaCapabilityValidation.status === 'OK'
+        || metaCapabilityValidation.status === 'NOT_RUN';
+      const overallStatus = !capabilitiesReady
+        ? 'META_CAPABILITY_VALIDATION_REQUIRED'
+        : creativeStatus === 'approved' && targetStatus === 'BOUND'
           ? 'PACKAGE_TECHNICALLY_READY_FOR_FINAL_GATES'
           : creativeStatus
             ? 'PACKAGE_CREATIVE_REVIEW_REQUIRED'
-            : 'PACKAGE_CREATIVE_PREPARATION_REQUIRED',
-        authentication: {
-          status: 'OK',
-          provider: workspace.operator.provider,
-        },
+            : 'PACKAGE_CREATIVE_PREPARATION_REQUIRED';
+
+      return {
+        ...base,
+        overall_status: overallStatus,
+        authentication: { status: 'OK', provider: workspace.operator.provider },
         tenant_resolution: {
           status: 'OK',
           authorized_tenant_count: 1,
@@ -159,9 +208,12 @@ export class IntegrationDiagnosticController {
           plan_approval_status: status.plan_approval?.status ?? null,
           next_action: status.next_action,
         },
-        next_action: creativeStatus
-          ? status.next_action
-          : 'PREPARE_CREATIVE_PACKAGE',
+        meta_capability_validation: metaCapabilityValidation,
+        next_action: !capabilitiesReady
+          ? 'FIX_OR_REAUTHORIZE_META_CAPABILITIES'
+          : creativeStatus
+            ? status.next_action
+            : 'PREPARE_CREATIVE_PACKAGE',
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -169,10 +221,7 @@ export class IntegrationDiagnosticController {
         return {
           ...base,
           overall_status: 'PACKAGE_DIAGNOSTIC_BLOCKED',
-          authentication: {
-            status: 'OK',
-            provider: workspace.operator.provider,
-          },
+          authentication: { status: 'OK', provider: workspace.operator.provider },
           tenant_resolution: {
             status: 'OK',
             authorized_tenant_count: 1,
@@ -184,6 +233,7 @@ export class IntegrationDiagnosticController {
             http_status: error.getStatus(),
             error: response,
           },
+          meta_capability_validation: { status: 'NOT_RUN' },
           next_action: error.getStatus() === 404
             ? 'SUBMIT_OR_RECOVER_CAMPAIGN_PACKAGE'
             : 'FIX_PACKAGE_STATE',
@@ -206,6 +256,7 @@ export class IntegrationDiagnosticController {
             message: error instanceof Error ? error.message : 'Unexpected package diagnostic error',
           },
         },
+        meta_capability_validation: { status: 'NOT_RUN' },
         next_action: 'FIX_PACKAGE_STATE',
       };
     }
