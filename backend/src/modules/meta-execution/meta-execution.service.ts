@@ -262,15 +262,63 @@ export class MetaExecutionService {
         .sort((a, b) => a.order - b.order)) {
         const config = configs.get(operation.internalObjectId);
         if (!config) throw new Error('MANIFEST_CONFIG_MISSING');
+        let operationState = state.execution?.operations.find(
+          (item) => item.operationKey === operation.operationKey,
+        );
+        if (!operationState) throw new Error('OPERATION_STATE_MISSING');
+        let videoId: string | undefined;
+        if (operation.objectType === 'creative' && this.isVideoCreative(config)) {
+          videoId = prepared.preservedMediaUploads?.find(
+            (item) => item.operationKey === operation.operationKey,
+          )?.externalObjectId;
+          if (!videoId) {
+            const asset = this.record(config.asset, 'creative.asset');
+            const uploaded = await this.adapter.createVideo(
+              tenantId,
+              connection.credentialRef,
+              adAccountId,
+              this.string(asset.storageRef, 'creative.storageRef'),
+              `Contexto Ads video [CTX-${operation.idempotencyKey.slice(0, 10)}]`,
+            );
+            if (!uploaded.success || !uploaded.data) {
+              operationState.status = uploaded.retryable ? 'uncertain' : 'failed';
+              operationState.normalizedError = uploaded.normalizedError ?? 'UNKNOWN';
+              operationState.diagnosticCode = uploaded.diagnosticCode;
+              throw new Error(uploaded.normalizedError ?? 'UNKNOWN');
+            }
+            videoId = uploaded.data.id;
+            operationState.mediaExternalObjectId = videoId;
+            state.boundaries.externalWritesPerformed = true;
+            state = await this.protocols.updateExecution(
+              state,
+              this.event(state, undefined, 'meta_video_upload_succeeded', 'success', {
+                operationKey: operation.operationKey,
+                externalObjectId: videoId,
+              }),
+            );
+            operationState = state.execution?.operations.find(
+              (item) => item.operationKey === operation.operationKey,
+            );
+            if (!operationState) throw new Error('OPERATION_STATE_MISSING');
+          }
+          const videoStatus = await this.waitForVideo(
+            tenantId, connection.credentialRef, videoId,
+          );
+          operationState.mediaExternalObjectId = videoId;
+          operationState.mediaObservedStatus = videoStatus;
+          if (videoStatus !== 'ready') {
+            operationState.status = videoStatus === 'processing' ? 'uncertain' : 'failed';
+            operationState.normalizedError = 'MEDIA';
+            operationState.diagnosticCode = `META_VIDEO_${videoStatus.toUpperCase()}`;
+            throw new Error('MEDIA');
+          }
+        }
         const request = this.requestFor(
-          operation, config, plan, ids, pageId, whatsappId, cityKeys,
+          operation, config, plan, ids, pageId, whatsappId, cityKeys, videoId,
         );
         const result = await this.adapter.create(
           tenantId, connection.credentialRef, `/${adAccountId}/${request.edge}`,
           request.params,
-        );
-        const operationState = state.execution?.operations.find(
-          (item) => item.operationKey === operation.operationKey,
         );
         if (!operationState || !result.success || !result.data) {
           if (operationState) {
@@ -416,6 +464,7 @@ export class MetaExecutionService {
     pageId: string,
     whatsappId: string,
     cityKeys: Array<{ key: string; radius: number; distance_unit: 'kilometer' }>,
+    videoId?: string,
   ): { edge: 'campaigns' | 'adsets' | 'adcreatives' | 'ads'; params: Record<string, string | number | boolean | object | unknown[]> } {
     const suffix = operation.idempotencyKey.slice(0, 10);
     if (operation.objectType === 'campaign') {
@@ -436,21 +485,37 @@ export class MetaExecutionService {
       const picture = /^https:\/\//.test(storageRef)
         ? storageRef
         : new URL(storageRef.replace(/^\//, ''), `${publicBase.replace(/\/$/, '')}/`).toString();
+      const common = {
+        message: this.string(copy.primaryText, 'creative.primaryText'),
+        call_to_action: {
+          type: 'WHATSAPP_MESSAGE',
+          value: { app_destination: 'WHATSAPP' },
+        },
+      };
+      const story = this.isVideoCreative(config)
+        ? {
+          video_data: {
+            ...common,
+            video_id: this.string(videoId, 'creative.videoId'),
+            title: this.string(copy.headline, 'creative.headline'),
+            ...(typeof copy.description === 'string'
+              ? { link_description: copy.description } : {}),
+          },
+        }
+        : {
+          link_data: {
+            link: 'https://api.whatsapp.com/send',
+            picture,
+            ...common,
+            name: this.string(copy.headline, 'creative.headline'),
+            ...(typeof copy.description === 'string' ? { description: copy.description } : {}),
+          },
+        };
       return { edge: 'adcreatives', params: {
         name: `Contexto Ads creative [CTX-${suffix}]`,
         object_story_spec: {
           page_id: pageId,
-          link_data: {
-            link: 'https://api.whatsapp.com/send',
-            picture,
-            message: this.string(copy.primaryText, 'creative.primaryText'),
-            name: this.string(copy.headline, 'creative.headline'),
-            ...(typeof copy.description === 'string' ? { description: copy.description } : {}),
-            call_to_action: {
-              type: 'WHATSAPP_MESSAGE',
-              value: { app_destination: 'WHATSAPP' },
-            },
-          },
+          ...story,
         },
       } };
     }
@@ -490,6 +555,27 @@ export class MetaExecutionService {
       creative: { creative_id: creativeId },
       status: 'PAUSED',
     } };
+  }
+
+  private isVideoCreative(config: Record<string, unknown>): boolean {
+    const asset = this.record(config.asset, 'creative.asset');
+    return this.string(asset.mimeType, 'creative.mimeType').startsWith('video/');
+  }
+
+  private async waitForVideo(
+    tenantId: string,
+    credentialRef: string,
+    videoId: string,
+  ): Promise<string> {
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      const observed = await this.adapter.readVideoStatus(
+        tenantId, credentialRef, videoId,
+      );
+      if (!observed.success || !observed.data) return 'unknown';
+      if (observed.data.videoStatus !== 'processing') return observed.data.videoStatus;
+      if (attempt < 14) await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    return 'processing';
   }
 
   private dependencyId(

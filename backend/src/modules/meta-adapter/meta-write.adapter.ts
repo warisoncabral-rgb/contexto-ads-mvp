@@ -45,8 +45,7 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
     params: Record<string, string | number | boolean | object | unknown[]>,
   ): Promise<MetaAdapterResult<MetaWriteObjectResult>> {
     const observedAt = new Date().toISOString();
-    if (!this.enabled()
-      || !/^\/(?:act_\d+)\/(?:campaigns|adsets|adcreatives|ads|advideos)$/.test(edgePath)) {
+    if (!this.enabled() || !/^\/(?:act_\d+)\/(?:campaigns|adsets|adcreatives|ads|advideos)$/.test(edgePath)) {
       return this.failure(new MetaWriteRequestError('VALIDATION', false), observedAt);
     }
     try {
@@ -154,6 +153,60 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
         throw new MetaWriteRequestError('VALIDATION', false);
       }
       return this.success({ key: result.key, name: result.name }, observedAt);
+    } catch (error) {
+      return this.failure(error, observedAt);
+    }
+  }
+
+  async createVideo(
+    tenantId: string,
+    credentialRef: string,
+    adAccountId: string,
+    fileUrl: string,
+    title: string,
+  ): Promise<MetaAdapterResult<MetaWriteObjectResult>> {
+    const observedAt = new Date().toISOString();
+    if (!this.enabled() || !/^act_\d+$/.test(adAccountId)) {
+      return this.failure(new MetaWriteRequestError('VALIDATION', false), observedAt);
+    }
+    try {
+      const url = new URL(fileUrl);
+      if (url.protocol !== 'https:') throw new MetaWriteRequestError('VALIDATION', false);
+      const accessToken = await this.accessToken(tenantId, credentialRef);
+      const payload = await this.request('POST', `/${adAccountId}/advideos`, {
+        file_url: url.toString(),
+        title,
+      }, accessToken);
+      if (!this.isObject(payload) || !this.isDigits(payload.id)) {
+        throw new MetaWriteRequestError('VALIDATION', false);
+      }
+      return this.success({ id: payload.id }, observedAt);
+    } catch (error) {
+      return this.failure(error, observedAt);
+    }
+  }
+
+  async readVideoStatus(
+    tenantId: string,
+    credentialRef: string,
+    externalObjectId: string,
+  ): Promise<MetaAdapterResult<{ id: string; videoStatus: string }>> {
+    const observedAt = new Date().toISOString();
+    if (!this.enabled() || !this.isDigits(externalObjectId)) {
+      return this.failure(new MetaWriteRequestError('VALIDATION', false), observedAt);
+    }
+    try {
+      const accessToken = await this.accessToken(tenantId, credentialRef);
+      const payload = await this.request('GET', `/${externalObjectId}`, {
+        fields: 'id,status',
+      }, accessToken);
+      const status = this.isObject(payload) && this.isObject(payload.status)
+        ? payload.status.video_status : undefined;
+      if (!this.isObject(payload) || payload.id !== externalObjectId
+        || typeof status !== 'string') {
+        throw new MetaWriteRequestError('VALIDATION', false);
+      }
+      return this.success({ id: externalObjectId, videoStatus: status }, observedAt);
     } catch (error) {
       return this.failure(error, observedAt);
     }

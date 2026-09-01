@@ -207,6 +207,8 @@ describe('MetaWriteValidationService', () => {
           operationKey: creative.operationKey,
           objectType: 'creative',
           status: 'failed',
+          mediaExternalObjectId: '120253268736399999',
+          mediaObservedStatus: 'ready',
           normalizedError: 'VALIDATION',
         }],
       },
@@ -222,6 +224,10 @@ describe('MetaWriteValidationService', () => {
     }]);
     expect(resumed.operations.map((operation) => operation.operationKey))
       .toEqual([creative.operationKey]);
+    expect(resumed.preservedMediaUploads).toEqual([{
+      operationKey: creative.operationKey,
+      externalObjectId: '120253268736399999',
+    }]);
     expect(resumed.limits.exactOperationCount).toBe(1);
   });
 
