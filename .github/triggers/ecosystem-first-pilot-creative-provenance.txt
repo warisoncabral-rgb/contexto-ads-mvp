@@ -1,0 +1,5 @@
+trigger=2026-09-01T16:05:30Z
+mode=read-only
+publication=false
+activation=false
+spend=false
