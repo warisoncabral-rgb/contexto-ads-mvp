@@ -1,0 +1,61 @@
+name: Ecosystem First Pilot Release After Known No-Write
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-release-after-known-no-write.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  release-after-known-no-write:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      PLAN_ID: 2ce02f67-8b97-488d-bc53-7acbac9d26fc
+    steps:
+      - name: Prove prior failure had no external write
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          J="Content-Type: application/json"
+
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/plans/$PLAN_ID/execution-manifests/latest" > /tmp/manifest.json
+          MANIFEST_ID=$(node -e "const x=require('/tmp/manifest.json');if(!x.executionManifestId)throw new Error('missing_manifest');process.stdout.write(x.executionManifestId)")
+
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/meta-write-validation-protocols/latest" > /tmp/protocol.json
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/kill-switch/effective" > /tmp/switch.json
+
+          node <<'NODE'
+          const p=require('/tmp/protocol.json');
+          const s=require('/tmp/switch.json');
+          if(p.status!=='external_validation_failed') throw new Error(`unexpected_protocol_status:${p.status}`);
+          if(p.boundaries?.externalWritesPerformed!==false) throw new Error('external_write_was_performed');
+          const ops=p.execution?.operations||[];
+          if(ops.some(o=>o.externalObjectId)) throw new Error('external_object_id_present');
+          if(s.tenant?.status!=='released') throw new Error('tenant_switch_not_released');
+          if(s.campaign?.status!=='engaged') throw new Error('campaign_switch_not_engaged');
+          NODE
+
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/kill-switch/campaign" \
+            -d "{\"campaignId\":\"$CAMPAIGN_ID\",\"status\":\"released\",\"reason\":\"Recuperação controlada após falha anterior comprovadamente sem escrita externa e sem IDs Meta; parser de geografia corrigido, validado em CI e implantado antes de nova tentativa PAUSED_ONLY.\"}" > /tmp/released.json
+
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/kill-switch/effective" > /tmp/after.json
+          node <<'NODE'
+          const a=require('/tmp/after.json');
+          if(a.decision!=='released'||a.writesBlocked!==false) throw new Error(`release_failed:${a.decision}`);
+          if(a.boundaries?.externalWritesAllowed!==false||a.boundaries?.externalWritesPerformed!==false) throw new Error('release_itself_enabled_write');
+          console.log(JSON.stringify({PILOT_RECOVERY:'RELEASED_AFTER_KNOWN_NO_WRITE',boundaries:a.boundaries},null,2));
+          NODE
