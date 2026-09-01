@@ -1,0 +1,72 @@
+name: Ecosystem First Pilot PAUSED_ONLY Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-paused-only-diagnostic.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      PLAN_ID: 2ce02f67-8b97-488d-bc53-7acbac9d26fc
+    steps:
+      - name: Read current execution state only
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/plans/$PLAN_ID/execution-manifests/latest" > /tmp/manifest.json
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/ecosystem/campaigns/$CAMPAIGN_ID" > /tmp/human.json
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/timeline?executionPlanId=$PLAN_ID" > /tmp/timeline.json
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/plans/$PLAN_ID/readiness" > /tmp/readiness.json || true
+
+          MANIFEST_ID=$(node -e "const x=require('/tmp/manifest.json');process.stdout.write(x?.executionManifestId||'')")
+          if [ -n "$MANIFEST_ID" ]; then
+            code=$(curl --silent --show-error -o /tmp/protocol.json -w '%{http_code}' -H "$H" \
+              "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/meta-write-validation-protocols/latest")
+            if [ "$code" != "200" ]; then echo '{}' > /tmp/protocol.json; fi
+          else
+            echo '{}' > /tmp/protocol.json
+          fi
+
+          node <<'NODE'
+          const manifest=require('/tmp/manifest.json');
+          const protocol=require('/tmp/protocol.json');
+          const human=require('/tmp/human.json');
+          const timeline=require('/tmp/timeline.json');
+          let readiness={}; try{readiness=require('/tmp/readiness.json')}catch{}
+          const ops=(protocol.execution?.operations||[]).map(o=>({
+            objectType:o.objectType,
+            status:o.status,
+            externalObjectId:o.externalObjectId,
+            observedStatus:o.observedStatus,
+            diagnosticCode:o.diagnosticCode,
+            normalizedError:o.normalizedError,
+          }));
+          const externalIds=ops.filter(o=>o.externalObjectId).length;
+          console.log(JSON.stringify({
+            PILOT_PAUSED_ONLY_DIAGNOSTIC:'READ_ONLY',
+            human:{stage:human.stage,headline:human.headline,planApprovalStatus:human.technicalDetails?.planApprovalStatus,packageNextAction:human.technicalDetails?.packageNextAction},
+            manifest:{id:manifest.executionManifestId,status:manifest.status,gate:manifest.executionGate?.status,operationCount:manifest.operations?.length,boundaries:manifest.boundaries},
+            readiness:{status:readiness.status,nextAction:readiness.nextAction,blockers:readiness.blockers},
+            protocol:{id:protocol.metaWriteValidationProtocolId,status:protocol.status,boundaries:protocol.boundaries,executionAuthorizationId:protocol.execution?.executionAuthorizationId,operations:ops},
+            evidence:{externalAttemptStarted:protocol.boundaries?.externalAttemptStarted===true,externalWritesPerformed:protocol.boundaries?.externalWritesPerformed===true,externalObjectIdsObserved:externalIds},
+            recentTimeline:(timeline.items||[]).slice(-12).map(i=>({title:i.title,category:i.category,detail:i.detail})),
+          },null,2));
+          NODE
