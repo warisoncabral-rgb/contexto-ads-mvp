@@ -101,7 +101,10 @@ describe('MetaWriteAdapter', () => {
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         id: '998877665544', status: { video_status: 'ready' },
-      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [
+        { uri: 'https://scontent.example/thumbnail.jpg', is_preferred: true },
+      ] }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const adapter = new MetaWriteAdapter(new ConfigService({
       META_WRITE_ADAPTER_ENABLED: 'true',
       META_GRAPH_BASE_URL: 'https://graph.facebook.com',
@@ -125,6 +128,13 @@ describe('MetaWriteAdapter', () => {
     )).resolves.toEqual(expect.objectContaining({
       success: true,
       data: { id: '998877665544', videoStatus: 'ready' },
+    }));
+
+    await expect(adapter.readVideoThumbnail(
+      '22222222-2222-4222-8222-222222222222', 'vault/ref', '998877665544',
+    )).resolves.toEqual(expect.objectContaining({
+      success: true,
+      data: { imageUrl: 'https://scontent.example/thumbnail.jpg' },
     }));
   });
 });
