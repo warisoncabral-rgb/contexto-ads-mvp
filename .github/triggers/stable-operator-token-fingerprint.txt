@@ -1,0 +1,2 @@
+trigger=2026-09-01T13:50:00Z
+purpose=secondary-auth-sync
