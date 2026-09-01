@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$OPERATOR_TOKEN"
-          H="x-contexto-operator-key: $OPERATOR_TOKEN"
+          H="Authorization: Bearer $OPERATOR_TOKEN"
 
           curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/ecosystem/overview" > /tmp/overview.json
           curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/portfolio" > /tmp/portfolio.json
