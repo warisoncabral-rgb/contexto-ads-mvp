@@ -38,6 +38,10 @@ export interface MetaWriteValidationProtocolV1 {
     externalObjectId: string;
     observedStatus: string;
   }>;
+  preservedMediaUploads?: Array<{
+    operationKey: string;
+    externalObjectId: string;
+  }>;
   operations: Array<{
     order: number;
     operationKey: string;
@@ -94,6 +98,7 @@ export interface MetaWriteValidationProtocolV1 {
       status: 'pending' | 'succeeded' | 'failed' | 'uncertain';
       externalObjectId?: string;
       mediaExternalObjectId?: string;
+      mediaObservedStatus?: string;
       observedStatus?: string;
       sanitizedResponseRef?: string;
       normalizedError?: string;
