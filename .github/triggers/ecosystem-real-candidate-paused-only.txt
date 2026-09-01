@@ -1,1 +1,1 @@
-Trigger the second supervised Rosa VIP real-media candidate PAUSED_ONLY pilot after adding the read-only geography gate.
+Trigger the supervised Rosa VIP candidate again with stale preflight authorization cleanup enabled.
