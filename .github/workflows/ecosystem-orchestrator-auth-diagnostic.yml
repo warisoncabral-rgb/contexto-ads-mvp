@@ -1,0 +1,46 @@
+name: Ecosystem Orchestrator Auth Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/ecosystem-orchestrator-auth-diagnostic.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Test stable auth modes without exposing secret
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+          bearer_ping=$(curl -sS -o /tmp/bearer_ping.json -w '%{http_code}' -H "Authorization: Bearer $OPERATOR_TOKEN" "$BASE_URL/operator/action-ping")
+          custom_ping=$(curl -sS -o /tmp/custom_ping.json -w '%{http_code}' -H "x-contexto-operator-key: $OPERATOR_TOKEN" "$BASE_URL/operator/action-ping")
+          bearer_overview=$(curl -sS -o /tmp/bearer_overview.json -w '%{http_code}' -H "Authorization: Bearer $OPERATOR_TOKEN" "$BASE_URL/operator/ecosystem/overview")
+          custom_overview=$(curl -sS -o /tmp/custom_overview.json -w '%{http_code}' -H "x-contexto-operator-key: $OPERATOR_TOKEN" "$BASE_URL/operator/ecosystem/overview")
+          node - <<'NODE'
+          const fs=require('fs');
+          const status={
+            bearer_ping:process.env.BEARER_PING,
+            custom_ping:process.env.CUSTOM_PING,
+            bearer_overview:process.env.BEARER_OVERVIEW,
+            custom_overview:process.env.CUSTOM_OVERVIEW,
+          };
+          console.log(JSON.stringify(status,null,2));
+          NODE
+          echo "bearer_ping=$bearer_ping"
+          echo "custom_ping=$custom_ping"
+          echo "bearer_overview=$bearer_overview"
+          echo "custom_overview=$custom_overview"
+          if [ "$bearer_ping" != "200" ] && [ "$custom_ping" != "200" ]; then
+            echo 'No stable auth mode accepted the configured secret' >&2
+            exit 2
+          fi
