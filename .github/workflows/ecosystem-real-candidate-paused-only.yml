@@ -115,7 +115,16 @@ jobs:
           curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
             "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/preflights" \
             -d '{}' > /tmp/preflight.json
-          node -e "const x=require('/tmp/preflight.json');if((x.blockers||[]).length)throw new Error('PREFLIGHT_BLOCKED:'+(x.blockers||[]).join(','));if((x.checks||[]).some(c=>c.status!=='passed'))throw new Error('preflight_check_failed');for(const k of ['externalAttemptStarted','campaignPublished','campaignActive','campaignDelivering','externalWritesAllowed','externalWritesPerformed'])if(x.boundaries?.[k]!==false)throw new Error('unsafe_preflight:'+k)"
+          node <<'NODE'
+          const x=require('/tmp/preflight.json');
+          const geography=(x.checks||[]).find(c=>c.key==='meta_geography_resolved');
+          if(!geography) throw new Error('hosted_preflight_missing_geography_gate');
+          if((x.blockers||[]).length) throw new Error('PREFLIGHT_BLOCKED:'+(x.blockers||[]).join(','));
+          if((x.checks||[]).some(c=>c.status!=='passed')) throw new Error('preflight_check_failed');
+          for(const k of ['externalAttemptStarted','campaignPublished','campaignActive','campaignDelivering','externalWritesAllowed','externalWritesPerformed']) {
+            if(x.boundaries?.[k]!==false) throw new Error('unsafe_preflight:'+k);
+          }
+          NODE
           echo "EXEC_AUTH_ID=$EXEC_AUTH_ID" >> "$GITHUB_ENV"
 
       - name: Execute the single controlled PAUSED_ONLY attempt
@@ -166,4 +175,3 @@ jobs:
           if(b.trackingOnly!==true||b.executionAuthorized!==false||b.metaWritePerformed!==false||b.externalWritesAllowed!==false||b.recommendationAutoExecuted!==false) throw new Error('unsafe_analyst_tracking');
           console.log(JSON.stringify({ECOSYSTEM_REAL_E2E:'PASSED',campaignId:process.env.CAMPAIGN_ID,metaCampaignId:t.registration.externalCampaignId,analystStatus:a.action_status,trackingSource:t.registration.source,boundaries:b},null,2));
           NODE
-
