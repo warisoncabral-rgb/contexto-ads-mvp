@@ -1,0 +1,82 @@
+name: Ecosystem Orchestrator Hosted Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-orchestrator-hosted-smoke.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  human-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+
+      - name: Confirm stable API health
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$BASE_URL/health" > /tmp/health.json
+          node -e "const x=require('/tmp/health.json'); if (!x) process.exit(1);"
+
+      - name: Validate human-first ecosystem overview
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/ecosystem/overview" > /tmp/overview.json
+          node <<'NODE'
+          const x=require('/tmp/overview.json');
+          if (x.actionStatus !== 'OK') throw new Error(`Unexpected actionStatus: ${x.actionStatus}`);
+          for (const key of ['headline','simpleMessage','userActionRequired','campaigns','summary','boundaries']) {
+            if (x[key] === undefined || x[key] === null) throw new Error(`Missing overview field: ${key}`);
+          }
+          if (!Array.isArray(x.campaigns)) throw new Error('campaigns must be an array');
+          const allowedModules=new Set(['contexto_ads','generator','analyst','user']);
+          const allowedStages=new Set(['CONTEXT_REQUIRED','CREATIVE_REVIEW','TARGET_RESOLUTION','PLAN_APPROVAL_PREPARATION','PLAN_APPROVAL_REQUIRED','EXTERNAL_EXECUTION_GATE','ANALYSIS_WAITING','ANALYST_DECISION','MONITORING','BLOCKED']);
+          for (const c of x.campaigns) {
+            for (const key of ['headline','simpleMessage','whatSystemDid','nextStep','userAction','progressPercent','activeModule','stage']) {
+              if (c[key] === undefined || c[key] === null || c[key] === '') throw new Error(`Missing human campaign field: ${key}`);
+            }
+            if (!allowedModules.has(c.activeModule)) throw new Error(`Invalid module ${c.activeModule}`);
+            if (!allowedStages.has(c.stage)) throw new Error(`Invalid stage ${c.stage}`);
+            if (c.progressPercent < 0 || c.progressPercent > 100) throw new Error('Invalid progressPercent');
+            const b=c.boundaries||{};
+            for (const k of ['publicationAuthorized','activationAuthorized','externalWritesAllowed','financialActionAuthorized','recommendationAutoExecuted']) {
+              if (b[k] !== false) throw new Error(`Unsafe campaign boundary ${k}`);
+            }
+          }
+          const b=x.boundaries||{};
+          for (const k of ['publicationAuthorized','activationAuthorized','externalWritesAllowed','financialActionAuthorized','recommendationAutoExecuted']) {
+            if (b[k] !== false) throw new Error(`Unsafe overview boundary ${k}`);
+          }
+          console.log(JSON.stringify({
+            ECOSYSTEM_ORCHESTRATOR_HUMAN_SMOKE:'PASSED',
+            headline:x.headline,
+            simpleMessage:x.simpleMessage,
+            userActionRequired:x.userActionRequired,
+            summary:x.summary,
+            campaigns:x.campaigns.map(c=>({
+              activeModule:c.activeModule,
+              stage:c.stage,
+              progressPercent:c.progressPercent,
+              headline:c.headline,
+              whatSystemDid:c.whatSystemDid,
+              nextStep:c.nextStep,
+              userActionRequired:c.userActionRequired,
+              userAction:c.userAction,
+            })),
+            boundaries:x.boundaries,
+          },null,2));
+          NODE
