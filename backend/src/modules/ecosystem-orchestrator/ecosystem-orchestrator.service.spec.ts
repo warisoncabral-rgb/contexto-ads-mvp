@@ -146,6 +146,31 @@ describe('EcosystemOrchestratorService', () => {
     expect(result.boundaries.activationAuthorized).toBe(false);
   });
 
+  it('advances all eligible campaigns in one safe batch and stops at human gates', async () => {
+    const { service, access, packages } = setup();
+    packages.get
+      .mockResolvedValueOnce(packageStatus('REQUEST_EXECUTION_PLAN_APPROVAL', 'BOUND'))
+      .mockResolvedValueOnce(packageStatus('REQUEST_EXECUTION_PLAN_APPROVAL', 'BOUND'));
+
+    const result = await service.advanceAllSafe('Bearer test');
+
+    expect(result.actionStatus).toBe('SAFE_BATCH_COMPLETED');
+    expect(result.advancedCount).toBe(1);
+    expect(result.failedCount).toBe(0);
+    expect(access.requestPlanApproval).toHaveBeenCalledTimes(1);
+    expect(result.results[0]).toEqual(expect.objectContaining({
+      campaignId: CAMPAIGN,
+      actionStatus: 'SAFE_STEPS_COMPLETED',
+      userActionRequired: true,
+    }));
+    expect(result.boundaries).toEqual(expect.objectContaining({
+      publicationAuthorized: false,
+      activationAuthorized: false,
+      externalWritesAllowed: false,
+      financialActionAuthorized: false,
+    }));
+  });
+
   it('stops for real creative review instead of auto-approving visual fidelity', async () => {
     const { service, packages, access } = setup();
     packages.get.mockResolvedValueOnce({
