@@ -270,6 +270,7 @@ describe('MetaExecutionService', () => {
       '1002133529311219',
       [],
       '998877665544',
+      'https://scontent.example/thumbnail.jpg',
     );
 
     expect(request.params).toEqual(expect.objectContaining({
@@ -277,6 +278,7 @@ describe('MetaExecutionService', () => {
         page_id: '100457068314696',
         video_data: expect.objectContaining({
           video_id: '998877665544',
+          image_url: 'https://scontent.example/thumbnail.jpg',
           message: 'Veja os modelos.',
           title: 'Fale no WhatsApp',
         }),
