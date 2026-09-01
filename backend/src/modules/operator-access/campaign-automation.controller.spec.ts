@@ -35,4 +35,21 @@ describe('CampaignAutomationController', () => {
     );
     expect(body.reviewChecklist.automaticEnhancementsReviewed).toBe(false);
   });
+
+  it('exposes the authenticated controlled pause command', async () => {
+    const automation = {
+      pauseCampaign: jest.fn().mockResolvedValue({ action_status: 'PAUSED' }),
+    } as any;
+    const controller = new CampaignAutomationController(automation);
+    const body = {
+      package_id: '0fc65970-05f1-4258-a28e-a6c411e9f676',
+      confirmation: 'PAUSE_CAMPAIGN',
+      reason: 'Alerta crítico',
+    };
+
+    await expect(controller.pause(body, 'Bearer valid-token')).resolves.toEqual({
+      action_status: 'PAUSED',
+    });
+    expect(automation.pauseCampaign).toHaveBeenCalledWith(body, 'Bearer valid-token');
+  });
 });

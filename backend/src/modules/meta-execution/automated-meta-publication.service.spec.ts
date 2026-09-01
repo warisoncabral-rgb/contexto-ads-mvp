@@ -164,4 +164,64 @@ describe('AutomatedMetaPublicationService', () => {
       ['10001', 'PAUSED'],
     ]);
   });
+
+  it('pauses ads before ad set and campaign then engages the campaign kill switch', async () => {
+    const plan = {
+      tenantId,
+      campaignId,
+      executionPlanId: planId,
+      planHash: 'a'.repeat(64),
+      meta: { connectionId: '55555555-5555-4555-8555-555555555555' },
+    } as any;
+    plans.findById.mockResolvedValue(plan);
+    plans.latest.mockResolvedValue(plan);
+    manifests.latestForPlan.mockResolvedValue({
+      executionManifestId: manifestId,
+      planHash: plan.planHash,
+    });
+    protocols.latestForManifest.mockResolvedValue({
+      status: 'external_validation_succeeded',
+      execution: {
+        operations: [
+          { objectType: 'campaign', externalObjectId: '10001' },
+          { objectType: 'ad_set', externalObjectId: '10002' },
+          { objectType: 'ad', externalObjectId: '10003' },
+          { objectType: 'ad', externalObjectId: '10004' },
+        ],
+      },
+    });
+    connections.findById.mockResolvedValue({ credentialRef: 'vault:1' });
+    adapter.read.mockResolvedValue({
+      success: true,
+      data: { configuredStatus: 'ACTIVE' },
+      observedAt: new Date().toISOString(),
+      retryable: false,
+    });
+    adapter.updateStatus.mockImplementation(async (
+      _tenant: string,
+      _credential: string,
+      id: string,
+      status: 'ACTIVE' | 'PAUSED',
+    ) => ({ success: true, data: { id, configuredStatus: status }, retryable: false }));
+
+    const result = await service.pause(
+      tenantId, planId, 'operator:warison', 'Teto do piloto atingido',
+    );
+
+    expect(result.status).toBe('PAUSED_CONFIRMED');
+    expect(result.kill_switch_engaged).toBe(true);
+    expect(adapter.updateStatus.mock.calls.map((call: any[]) => [call[2], call[3]])).toEqual([
+      ['10003', 'PAUSED'],
+      ['10004', 'PAUSED'],
+      ['10002', 'PAUSED'],
+      ['10001', 'PAUSED'],
+    ]);
+    expect(killSwitch.changeCampaign).toHaveBeenCalledWith(
+      tenantId,
+      campaignId,
+      'engaged',
+      'operator:warison',
+      expect.stringContaining('Teto do piloto atingido'),
+    );
+  });
 });

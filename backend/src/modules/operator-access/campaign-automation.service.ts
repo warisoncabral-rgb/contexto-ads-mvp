@@ -316,6 +316,46 @@ export class CampaignAutomationService {
     };
   }
 
+  async pauseCampaign(body: unknown, authorization: string | undefined) {
+    const source = this.record(body, 'pause request');
+    const packageId = this.uuid(source.package_id, 'package_id');
+    if (source.confirmation !== 'PAUSE_CAMPAIGN') {
+      throw new BadRequestException({
+        code: 'explicit_pause_command_required',
+        message: 'A pausa exige a confirmação explícita PAUSE_CAMPAIGN.',
+      });
+    }
+    const reason = typeof source.reason === 'string' && source.reason.trim()
+      ? source.reason.trim()
+      : 'Limite ou risco do piloto controlado.';
+    const tenant = await this.resolveTenant(authorization, 'decide_approval');
+    const packageStatus = await this.status.get(tenant.tenantId, packageId);
+    const { operator } = await this.access.authorizeCampaignPreparation(
+      authorization, tenant.tenantId,
+    );
+    const paused = await this.publication.pause(
+      tenant.tenantId,
+      packageStatus.execution_plan.execution_plan_id,
+      operator.subject,
+      reason,
+    );
+    return {
+      action_status: 'PAUSED',
+      package_id: packageId,
+      campaign_id: packageId,
+      execution_plan_id: packageStatus.execution_plan.execution_plan_id,
+      meta_pause: paused,
+      human_message: 'A campanha, o conjunto e os anúncios foram confirmados em PAUSED.',
+      boundaries: {
+        publication_authorized: false,
+        campaign_active: false,
+        delivery_authorized: false,
+        spend_authorized: false,
+        budget_change_authorized: false,
+      },
+    };
+  }
+
   private async buildFinalReview(
     tenantId: string,
     packageId: string,

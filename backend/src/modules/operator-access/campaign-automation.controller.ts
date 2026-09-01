@@ -53,6 +53,15 @@ export class CampaignAutomationController {
     return this.envelope(() => this.automation.publishCampaign(body, authorization));
   }
 
+  @Post('campaigns/v1/action-pause')
+  @HttpCode(200)
+  pause(
+    @Body() body: unknown,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.envelope(() => this.automation.pauseCampaign(body, authorization));
+  }
+
   private normalizeCreativePreparation(body: unknown): unknown {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
     const source = body as Record<string, unknown>;

@@ -313,6 +313,78 @@ export class AutomatedMetaPublicationService {
     }
   }
 
+  async pause(
+    tenantIdValue: unknown,
+    executionPlanIdValue: unknown,
+    actorValue: unknown,
+    reasonValue: unknown,
+  ) {
+    const tenantId = this.uuid(tenantIdValue, 'tenantId');
+    const executionPlanId = this.uuid(executionPlanIdValue, 'executionPlanId');
+    const actor = this.actor(actorValue);
+    const reason = this.string(reasonValue, 'reason');
+    const plan = await this.plans.findById(tenantId, executionPlanId);
+    if (!plan) throw new NotFoundException('Execution plan not found');
+    const latestPlan = await this.plans.latest(tenantId, plan.campaignId);
+    if (!latestPlan || latestPlan.executionPlanId !== executionPlanId
+      || latestPlan.planHash !== plan.planHash) {
+      throw new ConflictException('Somente o plano atual pode ser pausado.');
+    }
+    const manifest = await this.manifests.latestForPlan(tenantId, executionPlanId);
+    if (!manifest || manifest.planHash !== plan.planHash) {
+      throw new ConflictException('Manifesto atual ausente.');
+    }
+    const protocol = await this.protocols.latestForManifest(tenantId, manifest.executionManifestId);
+    if (!protocol || protocol.status !== 'external_validation_succeeded') {
+      throw new ConflictException('Os objetos Meta validados não estão disponíveis para pausa.');
+    }
+    const connectionId = plan.meta.connectionId;
+    if (!connectionId) throw new ConflictException('Conexão Meta ausente.');
+    const connection = await this.connections.findById(tenantId, connectionId);
+    if (!connection?.credentialRef) throw new ConflictException('Credencial Meta ausente.');
+    const lifecycle = (protocol.execution?.operations ?? [])
+      .filter((item) => item.externalObjectId && ['campaign', 'ad_set', 'ad'].includes(item.objectType))
+      .map((item) => ({ objectType: item.objectType, id: item.externalObjectId! }));
+    if (!lifecycle.some((item) => item.objectType === 'campaign')
+      || !lifecycle.some((item) => item.objectType === 'ad_set')
+      || !lifecycle.some((item) => item.objectType === 'ad')) {
+      throw new ConflictException('Os objetos validados na Meta estão incompletos.');
+    }
+    const priority: Record<string, number> = { ad: 0, ad_set: 1, campaign: 2 };
+    lifecycle.sort((a, b) => priority[a.objectType] - priority[b.objectType]);
+    const failures: Array<{ objectType: string; id: string }> = [];
+    for (const object of lifecycle) {
+      const current = await this.adapter.read(tenantId, connection.credentialRef, object.id, true);
+      if (current.success && current.data?.configuredStatus === 'PAUSED') continue;
+      const paused = await this.adapter.updateStatus(
+        tenantId, connection.credentialRef, object.id, 'PAUSED',
+      );
+      if (!paused.success || paused.data?.configuredStatus !== 'PAUSED') failures.push(object);
+    }
+    await this.killSwitch.changeCampaign(
+      tenantId, plan.campaignId, 'engaged', actor,
+      `Piloto ativo pausado automaticamente: ${reason}`,
+    );
+    if (failures.length) {
+      throw new ConflictException({
+        code: 'campaign_pause_incomplete',
+        message: 'A trava foi acionada, mas nem todos os objetos confirmaram PAUSED.',
+        failed_object_count: failures.length,
+      });
+    }
+    return {
+      status: 'PAUSED_CONFIRMED',
+      campaign_id: plan.campaignId,
+      execution_plan_id: executionPlanId,
+      objects: lifecycle,
+      reason,
+      campaign_active: false,
+      delivery_authorized: false,
+      spend_authorized: false,
+      kill_switch_engaged: true,
+    };
+  }
+
   private async cityKeys(
     tenantId: string,
     credentialRef: string,
