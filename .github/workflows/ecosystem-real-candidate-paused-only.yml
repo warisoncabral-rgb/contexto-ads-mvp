@@ -115,6 +115,15 @@ jobs:
           curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
             "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/preflights" \
             -d '{}' > /tmp/preflight.json
+          if ! node -e "const x=require('/tmp/preflight.json');process.exit((x.checks||[]).some(c=>c.key==='meta_geography_resolved')?0:1)"; then
+            curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+              "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/revoke" \
+              -d '{"reason":"Preflight hospedado anterior ao gate geográfico; autorização revogada sem iniciar tentativa externa."}' \
+              > /tmp/auth-revoked.json
+            node -e "const x=require('/tmp/auth-revoked.json');if(x.status!=='revoked')throw new Error('stale_authorization_not_revoked')"
+            echo 'Hosted preflight is stale; short authorization revoked before execution.'
+            exit 1
+          fi
           node <<'NODE'
           const x=require('/tmp/preflight.json');
           const geography=(x.checks||[]).find(c=>c.key==='meta_geography_resolved');
