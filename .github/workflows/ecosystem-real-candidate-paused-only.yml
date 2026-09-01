@@ -124,11 +124,20 @@ jobs:
             echo 'Hosted preflight is stale; short authorization revoked before execution.'
             exit 1
           fi
+          node -e "const x=require('/tmp/preflight.json');console.log(JSON.stringify({PILOT_PREFLIGHT:'READ_ONLY',checks:(x.checks||[]).map(c=>({key:c.key,status:c.status,meaning:c.meaning})),blockers:x.blockers,boundaries:x.boundaries},null,2))"
+          if ! node -e "const x=require('/tmp/preflight.json');process.exit((x.blockers||[]).length?1:0)"; then
+            curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+              "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/revoke" \
+              -d '{"reason":"Preflight bloqueado; autorização revogada sem iniciar tentativa externa."}' \
+              > /tmp/auth-revoked.json
+            node -e "const x=require('/tmp/auth-revoked.json');if(x.status!=='revoked')throw new Error('blocked_authorization_not_revoked')"
+            echo 'Preflight blocked; short authorization revoked before execution.'
+            exit 1
+          fi
           node <<'NODE'
           const x=require('/tmp/preflight.json');
           const geography=(x.checks||[]).find(c=>c.key==='meta_geography_resolved');
           if(!geography) throw new Error('hosted_preflight_missing_geography_gate');
-          if((x.blockers||[]).length) throw new Error('PREFLIGHT_BLOCKED:'+(x.blockers||[]).join(','));
           if((x.checks||[]).some(c=>c.status!=='passed')) throw new Error('preflight_check_failed');
           for(const k of ['externalAttemptStarted','campaignPublished','campaignActive','campaignDelivering','externalWritesAllowed','externalWritesPerformed']) {
             if(x.boundaries?.[k]!==false) throw new Error('unsafe_preflight:'+k);

@@ -1,1 +1,1 @@
-Trigger the supervised Rosa VIP candidate again with stale preflight authorization cleanup enabled.
+Trigger the supervised Rosa VIP candidate to expose the read-only preflight diagnosis and revoke any blocked authorization.
