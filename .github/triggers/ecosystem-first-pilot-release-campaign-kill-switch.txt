@@ -1,0 +1,3 @@
+trigger=2026-09-01T15:39:00Z
+mode=initialize-campaign-kill-switch-released
+external-write=false
