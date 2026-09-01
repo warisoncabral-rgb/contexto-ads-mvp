@@ -5,6 +5,55 @@ import { EcosystemOrchestratorService } from './ecosystem-orchestrator.service';
 export class EcosystemOrchestratorController {
   constructor(private readonly orchestrator: EcosystemOrchestratorService) {}
 
+  @Get('human-status')
+  async humanStatus(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
+  ) {
+    const result = await this.orchestrator.overview(
+      this.operatorAuthorization(authorization, operatorKey),
+    );
+    return {
+      status: result.headline,
+      message: result.simpleMessage,
+      needsYourDecision: result.userActionRequired,
+      campaigns: result.campaigns.map((campaign) => ({
+        whoIsWorking: this.humanModule(campaign.activeModule),
+        progress: `${campaign.progressPercent}%`,
+        status: campaign.headline,
+        message: campaign.simpleMessage,
+        whatAlreadyHappened: campaign.whatSystemDid,
+        whatHappensNow: campaign.nextStep,
+        needsYourDecision: campaign.userActionRequired,
+        yourAction: campaign.userAction,
+      })),
+      safety: 'Nada é publicado, ativado ou autorizado para gastar sem uma decisão humana específica para essa etapa.',
+    };
+  }
+
+  @Get('campaigns/:campaignId/human-status')
+  async humanCampaign(
+    @Param('campaignId') campaignId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
+  ) {
+    const campaign = await this.orchestrator.campaign(
+      this.operatorAuthorization(authorization, operatorKey),
+      campaignId,
+    );
+    return {
+      whoIsWorking: this.humanModule(campaign.activeModule),
+      progress: `${campaign.progressPercent}%`,
+      status: campaign.headline,
+      message: campaign.simpleMessage,
+      whatAlreadyHappened: campaign.whatSystemDid,
+      whatHappensNow: campaign.nextStep,
+      needsYourDecision: campaign.userActionRequired,
+      yourAction: campaign.userAction,
+      safety: 'Nada é publicado, ativado ou autorizado para gastar sem uma decisão humana específica para essa etapa.',
+    };
+  }
+
   @Get('overview')
   overview(
     @Headers('authorization') authorization: string | undefined,
@@ -45,6 +94,16 @@ export class EcosystemOrchestratorController {
       this.operatorAuthorization(authorization, operatorKey),
       campaignId,
     );
+  }
+
+  private humanModule(module: 'contexto_ads' | 'generator' | 'analyst' | 'user') {
+    const labels = {
+      contexto_ads: 'Contexto Ads',
+      generator: 'Gerador de Campanhas',
+      analyst: 'Analista Ads',
+      user: 'Você',
+    } as const;
+    return labels[module];
   }
 
   private operatorAuthorization(
