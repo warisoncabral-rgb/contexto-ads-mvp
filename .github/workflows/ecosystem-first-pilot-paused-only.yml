@@ -1,0 +1,155 @@
+name: Ecosystem First Pilot PAUSED_ONLY
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-paused-only.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  paused-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      PLAN_ID: 2ce02f67-8b97-488d-bc53-7acbac9d26fc
+    steps:
+      - name: Execute one controlled PAUSED_ONLY attempt
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          J="Content-Type: application/json"
+
+          # Re-read the current approved plan idempotently so the workflow never relies on a copied approval id.
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/plans/$PLAN_ID/approvals" \
+            -d '{}' > /tmp/approval.json
+          node <<'NODE' > /tmp/approval.env
+          const x=require('/tmp/approval.json');
+          const a=x.approval;
+          if(a?.status!=='approved') throw new Error(`Plan approval is not approved: ${a?.status}`);
+          if(x.boundaries?.approvalIsExecutionAuthorization!==false) throw new Error('Plan approval cannot authorize execution');
+          if(x.boundaries?.publicationAuthorized!==false || x.boundaries?.externalWritesAllowed!==false) throw new Error('Unsafe plan approval boundary');
+          console.log(`APPROVAL_ID=${a.approvalId}`);
+          NODE
+          source /tmp/approval.env
+
+          # Prepare a fresh manifest. This is internal and must remain non-executable/gate closed.
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/plans/$PLAN_ID/execution-manifests" \
+            -d "{\"approvalId\":\"$APPROVAL_ID\"}" > /tmp/manifest.json
+          node <<'NODE' > /tmp/manifest.env
+          const x=require('/tmp/manifest.json');
+          if(!x.executionManifestId) throw new Error('Missing execution manifest');
+          if(x.status!=='prepared_gate_closed') throw new Error(`Manifest gate is not closed: ${x.status}`);
+          if(x.boundaries?.externalWritesAllowed!==false || x.boundaries?.externalWritesPerformed!==false) throw new Error('Manifest unexpectedly allows writes');
+          if(x.operations?.some(o=>o.intendedLifecycleStatus!=='PAUSED')) throw new Error('Manifest contains non-PAUSED operation');
+          console.log(`MANIFEST_ID=${x.executionManifestId}`);
+          NODE
+          source /tmp/manifest.env
+
+          # Prepare the real validation protocol before the short execution authorization.
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/meta-write-validation-protocols" \
+            -d '{}' > /tmp/protocol.json
+          node <<'NODE' > /tmp/protocol.env
+          const x=require('/tmp/protocol.json');
+          if(!x.metaWriteValidationProtocolId) throw new Error('Missing Meta validation protocol');
+          if(!['prepared_external_validation_required','external_validation_succeeded'].includes(x.status)) throw new Error(`Unexpected protocol status ${x.status}`);
+          if(x.boundaries?.externalWritesAllowed!==false) throw new Error('Prepared protocol unexpectedly allows writes');
+          console.log(`PROTOCOL_ID=${x.metaWriteValidationProtocolId}`);
+          console.log(`PROTOCOL_STATUS=${x.status}`);
+          NODE
+          source /tmp/protocol.env
+
+          if [ "$PROTOCOL_STATUS" = "external_validation_succeeded" ]; then
+            cp /tmp/protocol.json /tmp/result.json
+          else
+            # Request and approve the short-lived, PAUSED_ONLY execution authorization.
+            curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+              "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/authorizations" \
+              -d '{}' > /tmp/auth-request.json
+            node <<'NODE' > /tmp/auth.env
+            const x=require('/tmp/auth-request.json');
+            if(!x.executionAuthorizationId) throw new Error('Missing execution authorization');
+            if(x.status!=='pending' && x.status!=='approved') throw new Error(`Unexpected authorization status ${x.status}`);
+            if(!x.scope?.includes('intended_lifecycle_status:PAUSED')) throw new Error('Authorization scope is not PAUSED_ONLY');
+            if(x.boundaries?.effectiveExecutionPermission!==false || x.boundaries?.externalWritesAllowed!==false) throw new Error('Authorization request unexpectedly permits execution');
+            console.log(`EXEC_AUTH_ID=${x.executionAuthorizationId}`);
+            console.log(`EXEC_AUTH_STATUS=${x.status}`);
+            NODE
+            source /tmp/auth.env
+
+            if [ "$EXEC_AUTH_STATUS" != "approved" ]; then
+              curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+                "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/approve" \
+                -d '{}' > /tmp/auth-approved.json
+            else
+              cp /tmp/auth-request.json /tmp/auth-approved.json
+            fi
+            node <<'NODE'
+            const x=require('/tmp/auth-approved.json');
+            if(x.status!=='approved') throw new Error(`Execution authorization not approved: ${x.status}`);
+            if(!x.scope?.includes('intended_lifecycle_status:PAUSED')) throw new Error('Approved authorization lost PAUSED scope');
+            if(x.boundaries?.effectiveExecutionPermission!==false || x.boundaries?.externalWritesAllowed!==false) throw new Error('Approval itself unexpectedly enables write');
+            NODE
+
+            # Preflight must have zero blockers. Do not modify kill switches automatically.
+            curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+              "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/preflights" \
+              -d '{}' > /tmp/preflight.json
+            node <<'NODE'
+            const x=require('/tmp/preflight.json');
+            if(!Array.isArray(x.blockers)) throw new Error('Preflight blockers missing');
+            if(x.blockers.length) throw new Error(`PREFLIGHT_BLOCKED:${x.blockers.join(',')}`);
+            for(const c of x.checks||[]) if(c.status!=='passed') throw new Error(`Preflight check not passed: ${c.key}`);
+            const b=x.boundaries||{};
+            for(const k of ['externalAttemptStarted','campaignPublished','campaignActive','campaignDelivering','externalWritesAllowed','externalWritesPerformed']) if(b[k]!==false) throw new Error(`Unsafe preflight boundary ${k}`);
+            NODE
+
+            # Exactly one controlled external attempt. No retry is performed by this workflow.
+            curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+              "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/execute-paused" \
+              -d '{}' > /tmp/result.json
+          fi
+
+          # Final proof: success only if every executable object is confirmed safe and protocol closes writes again.
+          node <<'NODE'
+          const x=require('/tmp/result.json');
+          const operations=x.execution?.operations||[];
+          const summarized=operations.map(o=>({objectType:o.objectType,status:o.status,observedStatus:o.observedStatus,externalObjectId:o.externalObjectId}));
+          if(x.status!=='external_validation_succeeded') {
+            console.log(JSON.stringify({PILOT_PAUSED_ONLY:'STOPPED',protocolStatus:x.status,operations:summarized,boundaries:x.boundaries},null,2));
+            throw new Error(`PAUSED_ONLY execution did not succeed: ${x.status}`);
+          }
+          for(const o of operations) {
+            if(o.status!=='succeeded') throw new Error(`Operation not succeeded: ${o.objectType}:${o.status}`);
+            if(o.objectType!=='creative' && o.observedStatus!=='PAUSED') throw new Error(`Non-PAUSED object observed: ${o.objectType}:${o.observedStatus}`);
+          }
+          const b=x.boundaries||{};
+          if(b.realMetaWriteValidated!==true) throw new Error('Real Meta write was not validated');
+          if(b.externalWritesAllowed!==false) throw new Error('Write gate remained open after validation');
+          console.log(JSON.stringify({
+            PILOT_PAUSED_ONLY:'SUCCEEDED',
+            protocolStatus:x.status,
+            objectCount:operations.length,
+            operations:summarized,
+            safety:{
+              allDeliveryObjectsPaused:true,
+              publicationAuthorized:false,
+              activationAuthorized:false,
+              spendAuthorized:false,
+              deliveryStarted:false,
+              externalWritesAllowedAfterCompletion:b.externalWritesAllowed,
+            },
+          },null,2));
+          NODE
