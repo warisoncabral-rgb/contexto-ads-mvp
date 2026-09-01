@@ -1,0 +1,362 @@
+openapi: 3.0.3
+info:
+  title: Contexto Ads Gerador Client Safe
+  version: 1.0.27-client-safe
+  description: Fluxo end-to-end com POSTs simples, schemas inline e autenticação Bearer.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - bearerAuth: []
+paths:
+  /operator/transport-post-ping:
+    post:
+      operationId: testGeneratorTransportPost
+      summary: Testar transporte POST
+      security: []
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [probe]
+              properties:
+                probe:
+                  type: string
+                  enum: [ok]
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  service: { type: string }
+                  authenticated: { type: boolean }
+                  probe: { type: string }
+                  boundaries: { type: object }
+  /operator/action-post-ping:
+    post:
+      operationId: testGeneratorAuthenticatedPost
+      summary: Testar POST autenticado
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [probe]
+              properties:
+                probe:
+                  type: string
+                  enum: [ok]
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  authenticated: { type: boolean }
+                  authorized_tenant_count: { type: integer }
+                  boundaries: { type: object }
+  /operator/campaign-strategies/v1/action-submit:
+    post:
+      operationId: submitCampaignPackage
+      summary: Enviar estrategia final aprovada ao Gerador
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approval_basis,business_name,offer_name,offer_description,campaign_objective,conversion_destination,audience_description,locations,budget_type,budget_amount,currency,duration_days,strategy_status,handoff_status]
+              properties:
+                approval_basis: { type: string, enum: [LATEST_EXPLICIT_CONVERSATION_APPROVAL] }
+                business_name: { type: string }
+                business_description: { type: string }
+                offer_name: { type: string }
+                offer_description: { type: string }
+                commercial_conditions: { type: object }
+                campaign_objective: { type: string, enum: [LEADS] }
+                conversion_destination: { type: string, enum: [WHATSAPP] }
+                campaign_goal_description: { type: string }
+                audience_description: { type: string }
+                locations:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [city,country]
+                    properties:
+                      city: { type: string }
+                      state: { type: string }
+                      country: { type: string }
+                      radius_km: { type: number }
+                      include: { type: boolean }
+                budget_type: { type: string, enum: [DAILY,LIFETIME] }
+                budget_amount: { type: number }
+                currency: { type: string }
+                duration_days: { type: integer }
+                creative_brief: { type: string }
+                strategy_notes: { type: object }
+                strategy_status: { type: string, enum: [COMPLETE] }
+                handoff_status: { type: string, enum: [READY_FOR_GENERATOR] }
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  package_id: { type: string }
+                  campaign_id: { type: string }
+                  execution_plan_id: { type: string }
+                  creative_package_status: { type: string }
+                  target_binding_status: { type: string }
+                  idempotency_status: { type: string }
+                  next_action: { type: string }
+                  boundaries: { type: object }
+                  error: { type: object }
+  /operator/campaign-packages/v1/action-status:
+    post:
+      operationId: recoverCampaignPackageStatus
+      summary: Recuperar pacote persistido
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id]
+              properties:
+                package_id: { type: string }
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  package_id: { type: string }
+                  campaign_id: { type: string }
+                  execution_plan_id: { type: string }
+                  next_action: { type: string }
+                  boundaries: { type: object }
+                  error: { type: object }
+  /operator/creative-packages/v1/action-prepare:
+    post:
+      operationId: prepareCreativePackage
+      summary: Preparar criativos e ingerir arquivos anexados
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id,campaign_id,asset_ids,openaiFileIdRefs,copies,claims,reviewChecklist]
+              properties:
+                package_id: { type: string }
+                campaign_id: { type: string }
+                asset_ids:
+                  type: array
+                  items: { type: string }
+                openaiFileIdRefs:
+                  type: array
+                  description: IDs dos arquivos anexados nesta conversa.
+                  items: { type: string }
+                copies:
+                  type: array
+                  items:
+                    type: object
+                    required: [copyId,primaryText,headline,callToAction]
+                    properties:
+                      copyId: { type: string }
+                      primaryText: { type: string }
+                      headline: { type: string }
+                      description: { type: string }
+                      whatsappMessage: { type: string }
+                      callToAction: { type: string }
+                claims:
+                  type: array
+                  items:
+                    type: object
+                    required: [claimId,text,sourceRefs]
+                    properties:
+                      claimId: { type: string }
+                      text: { type: string }
+                      sourceRefs:
+                        type: array
+                        items: { type: string }
+                reviewChecklist:
+                  type: object
+                  required: [claimsVerifiedAgainstSources,visualFidelityReviewed,safeAreaReviewed,requiredFieldsReviewed,automaticEnhancementsReviewed]
+                  properties:
+                    claimsVerifiedAgainstSources: { type: boolean }
+                    visualFidelityReviewed: { type: boolean }
+                    safeAreaReviewed: { type: boolean }
+                    requiredFieldsReviewed: { type: boolean }
+                    automaticEnhancementsReviewed: { type: boolean }
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  creative_package: { type: object }
+                  execution_plan_id: { type: string }
+                  idempotency_status: { type: string }
+                  media_auto_resolved: { type: boolean }
+                  tenant_auto_resolved: { type: boolean }
+                  next_action: { type: string }
+                  boundaries: { type: object }
+                  error: { type: object }
+  /operator/creative-packages/v1/action-review:
+    post:
+      operationId: reviewCreativePackage
+      summary: Ler Creative Package atual
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id]
+              properties:
+                package_id: { type: string }
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  creative_package: { type: object }
+                  execution_plan_id: { type: string }
+                  next_action: { type: string }
+                  boundaries: { type: object }
+                  error: { type: object }
+  /operator/campaigns/v1/action-final-review:
+    post:
+      operationId: getFinalCampaignReview
+      summary: Mostrar revisao final de negocio
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id]
+              properties:
+                package_id: { type: string }
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  package_id: { type: string }
+                  campaign_id: { type: string }
+                  execution_plan_id: { type: string }
+                  final_review: { type: object }
+                  confirmation_items:
+                    type: array
+                    items: { type: string }
+                  next_action: { type: string }
+                  boundaries: { type: object }
+                  error: { type: object }
+  /operator/campaigns/v1/action-finalize-for-publication:
+    post:
+      operationId: finalizeCampaignForPublication
+      summary: Criar e validar campanha real em PAUSED
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id,review_hash,confirmation]
+              properties:
+                package_id: { type: string }
+                review_hash: { type: string }
+                confirmation: { type: string, enum: [CONFIRM_AND_PREPARE_FOR_PUBLICATION] }
+                validation_mode: { type: string, enum: [PAUSED_ONLY,FULL_ROUNDTRIP] }
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  package_id: { type: string }
+                  campaign_id: { type: string }
+                  ready_hash: { type: string }
+                  meta_validation_status: { type: string }
+                  meta_objects:
+                    type: array
+                    items: { type: object }
+                  next_action: { type: string }
+                  human_message: { type: string }
+                  boundaries: { type: object }
+                  error: { type: object }
+  /operator/campaigns/v1/action-publish:
+    post:
+      operationId: publishCampaign
+      summary: Ativar campanha previamente validada
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id,confirmation]
+              properties:
+                package_id: { type: string }
+                confirmation: { type: string, enum: [PUBLISH_CAMPAIGN] }
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_status: { type: string }
+                  package_id: { type: string }
+                  campaign_id: { type: string }
+                  human_message: { type: string }
+                  boundaries: { type: object }
+                  error: { type: object }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
