@@ -1,0 +1,1 @@
+Trigger the single supervised Rosa VIP real-media candidate PAUSED_ONLY pilot.
