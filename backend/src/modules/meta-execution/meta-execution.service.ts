@@ -267,6 +267,7 @@ export class MetaExecutionService {
         );
         if (!operationState) throw new Error('OPERATION_STATE_MISSING');
         let videoId: string | undefined;
+        let videoThumbnailUrl: string | undefined;
         if (operation.objectType === 'creative' && this.isVideoCreative(config)) {
           videoId = prepared.preservedMediaUploads?.find(
             (item) => item.operationKey === operation.operationKey,
@@ -312,9 +313,20 @@ export class MetaExecutionService {
             operationState.diagnosticCode = `META_VIDEO_${videoStatus.toUpperCase()}`;
             throw new Error('MEDIA');
           }
+          const thumbnail = await this.adapter.readVideoThumbnail(
+            tenantId, connection.credentialRef, videoId,
+          );
+          if (!thumbnail.success || !thumbnail.data) {
+            operationState.status = thumbnail.retryable ? 'uncertain' : 'failed';
+            operationState.normalizedError = thumbnail.normalizedError ?? 'MEDIA';
+            operationState.diagnosticCode = thumbnail.diagnosticCode;
+            throw new Error(thumbnail.normalizedError ?? 'MEDIA');
+          }
+          videoThumbnailUrl = thumbnail.data.imageUrl;
         }
         const request = this.requestFor(
-          operation, config, plan, ids, pageId, whatsappId, cityKeys, videoId,
+          operation, config, plan, ids, pageId, whatsappId, cityKeys,
+          videoId, videoThumbnailUrl,
         );
         const result = await this.adapter.create(
           tenantId, connection.credentialRef, `/${adAccountId}/${request.edge}`,
@@ -465,6 +477,7 @@ export class MetaExecutionService {
     whatsappId: string,
     cityKeys: Array<{ key: string; radius: number; distance_unit: 'kilometer' }>,
     videoId?: string,
+    videoThumbnailUrl?: string,
   ): { edge: 'campaigns' | 'adsets' | 'adcreatives' | 'ads'; params: Record<string, string | number | boolean | object | unknown[]> } {
     const suffix = operation.idempotencyKey.slice(0, 10);
     if (operation.objectType === 'campaign') {
@@ -497,6 +510,7 @@ export class MetaExecutionService {
           video_data: {
             ...common,
             video_id: this.string(videoId, 'creative.videoId'),
+            image_url: this.string(videoThumbnailUrl, 'creative.videoThumbnailUrl'),
             title: this.string(copy.headline, 'creative.headline'),
             ...(typeof copy.description === 'string'
               ? { link_description: copy.description } : {}),

@@ -44,4 +44,9 @@ export interface MetaWriteAdapterPort {
     credentialRef: string,
     externalObjectId: string,
   ): Promise<MetaAdapterResult<{ id: string; videoStatus: string }>>;
+  readVideoThumbnail(
+    tenantId: string,
+    credentialRef: string,
+    externalObjectId: string,
+  ): Promise<MetaAdapterResult<{ imageUrl: string }>>;
 }

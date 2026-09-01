@@ -85,8 +85,7 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
       }
       return this.success({
         id: externalObjectId,
-        ...(typeof observed.status === 'string'
-          ? { configuredStatus: observed.status } : {}),
+        ...(typeof observed.status === 'string' ? { configuredStatus: observed.status } : {}),
         ...(typeof observed.effective_status === 'string'
           ? { effectiveStatus: observed.effective_status } : {}),
       }, observedAt);
@@ -207,6 +206,36 @@ export class MetaWriteAdapter implements MetaWriteAdapterPort {
         throw new MetaWriteRequestError('VALIDATION', false);
       }
       return this.success({ id: externalObjectId, videoStatus: status }, observedAt);
+    } catch (error) {
+      return this.failure(error, observedAt);
+    }
+  }
+
+  async readVideoThumbnail(
+    tenantId: string,
+    credentialRef: string,
+    externalObjectId: string,
+  ): Promise<MetaAdapterResult<{ imageUrl: string }>> {
+    const observedAt = new Date().toISOString();
+    if (!this.enabled() || !this.isDigits(externalObjectId)) {
+      return this.failure(new MetaWriteRequestError('VALIDATION', false), observedAt);
+    }
+    try {
+      const accessToken = await this.accessToken(tenantId, credentialRef);
+      const payload = await this.request('GET', `/${externalObjectId}/thumbnails`, {
+        fields: 'uri,is_preferred',
+        limit: 10,
+      }, accessToken);
+      if (!this.isObject(payload) || !Array.isArray(payload.data)) {
+        throw new MetaWriteRequestError('VALIDATION', false);
+      }
+      const candidates = payload.data.filter((item) => this.isObject(item)
+        && typeof item.uri === 'string' && /^https:\/\//.test(item.uri));
+      const selected = candidates.find((item) => item.is_preferred === true) ?? candidates[0];
+      if (!this.isObject(selected) || typeof selected.uri !== 'string') {
+        throw new MetaWriteRequestError('MEDIA', false);
+      }
+      return this.success({ imageUrl: selected.uri }, observedAt);
     } catch (error) {
       return this.failure(error, observedAt);
     }
