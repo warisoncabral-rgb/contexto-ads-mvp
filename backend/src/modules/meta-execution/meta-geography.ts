@@ -28,6 +28,7 @@ export function parseMetaGeography(
       .replace(/\(\s*\d{1,2}\s*km\s*\)\s*$/i, '')
       .replace(/,\s*(?:BR|Brasil|Brazil)\s*$/i, '')
       .replace(/(?:,|[-/])\s*[A-Z]{2}\s*$/i, '')
+      .replace(/^(?:incluir|include)\s*:?\s*/i, '')
       .trim();
     if (!city || city.length > 120) throw new Error('GEOGRAPHY_INVALID');
     const dedupeKey = city.toLocaleLowerCase('pt-BR');

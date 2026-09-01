@@ -46,6 +46,19 @@ describe('MetaExecutionService', () => {
     ]);
   });
 
+  it('removes the human include instruction before resolving Meta cities', () => {
+    const targets = (service() as unknown as {
+      geographyTargets: (value: string) => Array<{ city: string; radius: number }>;
+    }).geographyTargets(
+      'Incluir João Pessoa, PB, Brasil (40 km); Incluir Recife, PE, Brasil (40 km)',
+    );
+
+    expect(targets).toEqual([
+      { city: 'João Pessoa', radius: 40 },
+      { city: 'Recife', radius: 40 },
+    ]);
+  });
+
   it('uses the configured default radius for compact city-state notation', () => {
     const parser = new MetaExecutionService(
       {} as never,
