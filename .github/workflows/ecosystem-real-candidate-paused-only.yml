@@ -1,0 +1,169 @@
+name: Ecosystem Real Candidate PAUSED_ONLY
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/ecosystem-real-candidate-paused-only.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ecosystem-real-candidate-paused-only
+  cancel-in-progress: false
+
+jobs:
+  controlled-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 0fc65970-05f1-4258-a28e-a6c411e9f676
+      PLAN_ID: 355a314c-382b-416a-b07c-1eb786ea72cc
+
+    steps:
+      - name: Require the hosted API and the operator secret
+        run: |
+          set -euo pipefail
+          test -n "$OPERATOR_TOKEN"
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 10 \
+            "$BASE_URL/health" > /tmp/health.json
+          node -e "const x=require('/tmp/health.json');if(x.status!=='ok'||x.database!=='reachable')throw new Error('hosted_api_not_ready')"
+
+      - name: Prove the exact approved real-media candidate
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/campaign-packages/v1/$CAMPAIGN_ID/status" > /tmp/status.json
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/creative-packages/latest" > /tmp/creative.json
+          node <<'NODE'
+          const s=require('/tmp/status.json');
+          const c=require('/tmp/creative.json');
+          if(s.package_id!==process.env.CAMPAIGN_ID||s.campaign_id!==process.env.CAMPAIGN_ID) throw new Error('candidate_identity_mismatch');
+          if(s.execution_plan?.execution_plan_id!==process.env.PLAN_ID) throw new Error('candidate_plan_changed');
+          if(s.execution_plan?.target_binding_status!=='BOUND') throw new Error('candidate_target_not_bound');
+          if(s.plan_approval?.status!=='approved') throw new Error('candidate_plan_not_approved');
+          if(c.status!=='approved'||!Array.isArray(c.assets)||c.assets.length<1) throw new Error('candidate_creative_not_approved');
+          for(const a of c.assets) {
+            if(!/^https:\/\//.test(a.storageRef||'')) throw new Error(`non_executable_media:${a.assetId}`);
+            if(!['image/jpeg','image/png','video/mp4'].includes(a.mimeType)) throw new Error(`unsupported_media:${a.assetId}`);
+          }
+          const b=s.boundaries||{};
+          if(b.publication_authorized!==false||b.external_writes_allowed!==false||b.external_writes_performed!==false) throw new Error('unsafe_candidate_boundary');
+          console.log(JSON.stringify({candidate:'VERIFIED',campaignId:s.campaign_id,planId:s.execution_plan.execution_plan_id,assets:c.assets.map(a=>({assetId:a.assetId,mimeType:a.mimeType,https:true})),boundaries:b},null,2));
+          NODE
+
+      - name: Require tenant safety and release only this campaign kill switch
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          J="Content-Type: application/json"
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/kill-switch/effective" > /tmp/switch-before.json
+          node -e "const x=require('/tmp/switch-before.json');if(!x.tenant?.known||x.tenant.status!=='released')throw new Error('tenant_kill_switch_not_released')"
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/kill-switch/campaign" \
+            -d "{\"campaignId\":\"$CAMPAIGN_ID\",\"status\":\"released\",\"reason\":\"Piloto real controlado autorizado, restrito a criação PAUSED_ONLY e sem entrega ou gasto.\"}" > /tmp/switch-release.json
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/kill-switch/effective" > /tmp/switch-after.json
+          node -e "const x=require('/tmp/switch-after.json');if(x.tenant?.status!=='released'||x.campaign?.status!=='released')throw new Error('campaign_kill_switch_not_released')"
+
+      - name: Prepare the closed manifest and validation protocol
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          J="Content-Type: application/json"
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/plans/$PLAN_ID/approvals" \
+            -d '{}' > /tmp/approval.json
+          APPROVAL_ID=$(node -e "const x=require('/tmp/approval.json'),a=x.approval;if(a?.status!=='approved')throw new Error('plan_not_approved:'+a?.status);if(x.boundaries?.approvalIsExecutionAuthorization!==false||x.boundaries?.publicationAuthorized!==false||x.boundaries?.externalWritesAllowed!==false)throw new Error('unsafe_plan_approval');process.stdout.write(a.approvalId)")
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/plans/$PLAN_ID/execution-manifests" \
+            -d "{\"approvalId\":\"$APPROVAL_ID\"}" > /tmp/manifest.json
+          MANIFEST_ID=$(node -e "const x=require('/tmp/manifest.json');if(x.status!=='prepared_gate_closed'||!x.executionManifestId)throw new Error('manifest_not_closed');if((x.operations||[]).some(o=>o.intendedLifecycleStatus!=='PAUSED'))throw new Error('non_paused_manifest_operation');if(x.boundaries?.externalWritesAllowed!==false||x.boundaries?.externalWritesPerformed!==false)throw new Error('unsafe_manifest');process.stdout.write(x.executionManifestId)")
+          echo "MANIFEST_ID=$MANIFEST_ID" >> "$GITHUB_ENV"
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/meta-write-validation-protocols" \
+            -d '{}' > /tmp/protocol.json
+          PROTOCOL_STATUS=$(node -e "const x=require('/tmp/protocol.json');if(!x.metaWriteValidationProtocolId)throw new Error('missing_protocol');if(!['prepared_external_validation_required','external_validation_succeeded'].includes(x.status))throw new Error('unexpected_protocol:'+x.status);if(x.boundaries?.externalWritesAllowed!==false)throw new Error('unsafe_protocol');process.stdout.write(x.status)")
+          echo "PROTOCOL_STATUS=$PROTOCOL_STATUS" >> "$GITHUB_ENV"
+
+      - name: Authorize exactly one PAUSED_ONLY attempt and run fail-closed preflight
+        if: env.PROTOCOL_STATUS != 'external_validation_succeeded'
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          J="Content-Type: application/json"
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/authorizations" \
+            -d '{}' > /tmp/auth-request.json
+          EXEC_AUTH_ID=$(node -e "const x=require('/tmp/auth-request.json');if(!x.executionAuthorizationId||!['pending','approved'].includes(x.status))throw new Error('execution_authorization_unavailable');if(!(x.scope||[]).includes('intended_lifecycle_status:PAUSED'))throw new Error('authorization_not_paused_only');if(x.boundaries?.effectiveExecutionPermission!==false||x.boundaries?.externalWritesAllowed!==false)throw new Error('unsafe_authorization_request');process.stdout.write(x.executionAuthorizationId)")
+          if [ "$(node -p "require('/tmp/auth-request.json').status")" = approved ]; then
+            cp /tmp/auth-request.json /tmp/auth-approved.json
+          else
+            curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+              "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/approve" \
+              -d '{}' > /tmp/auth-approved.json
+          fi
+          node -e "const x=require('/tmp/auth-approved.json');if(x.status!=='approved'||!(x.scope||[]).includes('intended_lifecycle_status:PAUSED'))throw new Error('paused_only_authorization_not_approved');if(x.boundaries?.effectiveExecutionPermission!==false||x.boundaries?.externalWritesAllowed!==false)throw new Error('unsafe_authorization_approval')"
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/preflights" \
+            -d '{}' > /tmp/preflight.json
+          node -e "const x=require('/tmp/preflight.json');if((x.blockers||[]).length)throw new Error('PREFLIGHT_BLOCKED:'+(x.blockers||[]).join(','));if((x.checks||[]).some(c=>c.status!=='passed'))throw new Error('preflight_check_failed');for(const k of ['externalAttemptStarted','campaignPublished','campaignActive','campaignDelivering','externalWritesAllowed','externalWritesPerformed'])if(x.boundaries?.[k]!==false)throw new Error('unsafe_preflight:'+k)"
+          echo "EXEC_AUTH_ID=$EXEC_AUTH_ID" >> "$GITHUB_ENV"
+
+      - name: Execute the single controlled PAUSED_ONLY attempt
+        if: env.PROTOCOL_STATUS != 'external_validation_succeeded'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" -H "Content-Type: application/json" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/execution-authorizations/$EXEC_AUTH_ID/execute-paused" \
+            -d '{}' > /tmp/result.json
+
+      - name: Reuse the already successful protocol
+        if: env.PROTOCOL_STATUS == 'external_validation_succeeded'
+        run: cp /tmp/protocol.json /tmp/result.json
+
+      - name: Prove the closed gate and PAUSED delivery state
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const x=require('/tmp/result.json');
+          const operations=x.execution?.operations||[];
+          const compact=operations.map(o=>({objectType:o.objectType,status:o.status,observedStatus:o.observedStatus,externalObjectId:o.externalObjectId,diagnosticCode:o.diagnosticCode}));
+          if(x.boundaries?.externalWritesAllowed!==false) throw new Error('external_write_gate_left_open');
+          for(const o of operations.filter(o=>o.status==='succeeded'&&o.objectType!=='creative')) {
+            if(o.observedStatus!=='PAUSED') throw new Error(`non_paused_object:${o.objectType}:${o.observedStatus}`);
+          }
+          console.log(JSON.stringify({REAL_CANDIDATE_PAUSED_ONLY:x.status==='external_validation_succeeded'?'SUCCEEDED':'STOPPED',protocolStatus:x.status,operations:compact,boundaries:x.boundaries,safety:{activationAuthorized:false,deliveryAuthorized:false,spendAuthorized:false}},null,2));
+          if(x.status!=='external_validation_succeeded') throw new Error(`controlled_pilot_stopped:${x.status}`);
+          if(x.boundaries?.realMetaWriteValidated!==true) throw new Error('real_meta_write_not_validated');
+          NODE
+
+      - name: Hand the exact Meta campaign to the read-only Analyst
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          J="Content-Type: application/json"
+          TODAY=$(date -u +%F)
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/collect-meta" \
+            -d "{\"since\":\"$TODAY\",\"until\":\"$TODAY\"}" > /tmp/analyst.json
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/tracking" > /tmp/tracking.json
+          node <<'NODE'
+          const a=require('/tmp/analyst.json'); const t=require('/tmp/tracking.json');
+          if(!['ANALYZED','UNAVAILABLE'].includes(a.action_status)) throw new Error(`analyst_handoff_failed:${a.action_status}`);
+          if(t.action_status!=='FOUND'||!/^\d+$/.test(t.registration?.externalCampaignId||'')) throw new Error('analyst_tracking_not_registered');
+          const b=t.registration.boundaries||{};
+          if(b.trackingOnly!==true||b.executionAuthorized!==false||b.metaWritePerformed!==false||b.externalWritesAllowed!==false||b.recommendationAutoExecuted!==false) throw new Error('unsafe_analyst_tracking');
+          console.log(JSON.stringify({ECOSYSTEM_REAL_E2E:'PASSED',campaignId:process.env.CAMPAIGN_ID,metaCampaignId:t.registration.externalCampaignId,analystStatus:a.action_status,trackingSource:t.registration.source,boundaries:b},null,2));
+          NODE
+
