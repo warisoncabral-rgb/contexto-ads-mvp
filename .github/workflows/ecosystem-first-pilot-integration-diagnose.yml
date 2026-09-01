@@ -1,0 +1,47 @@
+name: Ecosystem First Pilot Integration Diagnose
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-integration-diagnose.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      PACKAGE_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+    steps:
+      - name: Run existing integration diagnostic
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "$BASE_URL/operator/integration/v1/action-diagnose" \
+            -d "{\"package_id\":\"$PACKAGE_ID\"}" > /tmp/result.json
+          node <<'NODE'
+          const x=require('/tmp/result.json');
+          console.log(JSON.stringify({
+            PILOT_INTEGRATION_DIAGNOSTIC:'COMPLETED',
+            overallStatus:x.overall_status,
+            package:x.package,
+            metaCapabilityValidation:x.meta_capability_validation,
+            nextAction:x.next_action,
+            boundaries:x.boundaries,
+          },null,2));
+          const b=x.boundaries||{};
+          for(const k of ['publication_authorized','external_writes_allowed','external_writes_performed']) {
+            if(b[k]!==false) throw new Error(`Unsafe diagnostic boundary ${k}`);
+          }
+          if(x.meta_capability_validation?.status!=='OK') throw new Error(`CAPABILITY_DIAGNOSTIC_NOT_READY:${x.meta_capability_validation?.status}`);
+          NODE
