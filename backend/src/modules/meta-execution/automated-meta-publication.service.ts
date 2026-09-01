@@ -249,9 +249,14 @@ export class AutomatedMetaPublicationService {
     if (!connectionId) throw new ConflictException('Conexão Meta ausente.');
     const connection = await this.connections.findById(tenantId, connectionId);
     if (!connection?.credentialRef) throw new ConflictException('Credencial Meta ausente.');
-    const lifecycle = (protocol.execution?.operations ?? [])
+    const lifecycle = [
+      ...(protocol.reconciledOperations ?? []),
+      ...(protocol.execution?.operations ?? []),
+    ]
       .filter((item) => item.externalObjectId && ['campaign', 'ad_set', 'ad'].includes(item.objectType))
-      .map((item) => ({ objectType: item.objectType, id: item.externalObjectId! }));
+      .map((item) => ({ objectType: item.objectType, id: item.externalObjectId! }))
+      .filter((item, index, items) => items.findIndex((candidate) =>
+        candidate.objectType === item.objectType && candidate.id === item.id) === index);
     if (!lifecycle.some((item) => item.objectType === 'campaign')
       || !lifecycle.some((item) => item.objectType === 'ad_set')
       || !lifecycle.some((item) => item.objectType === 'ad')) {
@@ -342,9 +347,14 @@ export class AutomatedMetaPublicationService {
     if (!connectionId) throw new ConflictException('Conexão Meta ausente.');
     const connection = await this.connections.findById(tenantId, connectionId);
     if (!connection?.credentialRef) throw new ConflictException('Credencial Meta ausente.');
-    const lifecycle = (protocol.execution?.operations ?? [])
+    const lifecycle = [
+      ...(protocol.reconciledOperations ?? []),
+      ...(protocol.execution?.operations ?? []),
+    ]
       .filter((item) => item.externalObjectId && ['campaign', 'ad_set', 'ad'].includes(item.objectType))
-      .map((item) => ({ objectType: item.objectType, id: item.externalObjectId! }));
+      .map((item) => ({ objectType: item.objectType, id: item.externalObjectId! }))
+      .filter((item, index, items) => items.findIndex((candidate) =>
+        candidate.objectType === item.objectType && candidate.id === item.id) === index);
     if (!lifecycle.some((item) => item.objectType === 'campaign')
       || !lifecycle.some((item) => item.objectType === 'ad_set')
       || !lifecycle.some((item) => item.objectType === 'ad')) {
@@ -448,107 +458,3 @@ export class AutomatedMetaPublicationService {
       }
       return { edge: 'adcreatives', params: {
         name: `Contexto Ads image creative [CTX-${suffix}]`,
-        object_story_spec: {
-          page_id: pageId,
-          link_data: {
-            link: 'https://api.whatsapp.com/send',
-            picture: this.httpsUrl(asset.storageRef, 'creative.storageRef'),
-            message: this.string(copy.primaryText, 'creative.primaryText'),
-            name: this.string(copy.headline, 'creative.headline'),
-            ...(typeof copy.description === 'string' ? { description: copy.description } : {}),
-            call_to_action: callToAction,
-          },
-        },
-      } };
-    }
-    if (operation.objectType === 'ad_set') {
-      const campaignId = this.dependencyId(operation, ids, 'campaign');
-      const budget = this.record(config.budget, 'ad_set.budget');
-      const durationDays = this.integer(config.durationDays, 'ad_set.durationDays');
-      const start = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const end = new Date(start.getTime() + durationDays * 24 * 60 * 60 * 1000);
-      return { edge: 'adsets', params: {
-        name: `Contexto Ads | WhatsApp [CTX-${suffix}]`,
-        campaign_id: campaignId,
-        billing_event: 'IMPRESSIONS', optimization_goal: 'CONVERSATIONS',
-        destination_type: 'WHATSAPP', bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-        daily_budget: this.integer(budget.amountMinor, 'ad_set.budget.amountMinor'),
-        start_time: start.toISOString(), end_time: end.toISOString(),
-        promoted_object: { page_id: pageId },
-        targeting: { geo_locations: { cities: cityKeys }, publisher_platforms: ['facebook', 'instagram'] },
-        status: 'PAUSED',
-      } };
-    }
-    const adSetId = this.dependencyId(operation, ids, 'ad_set');
-    const creativeInternalId = this.string(config.creativeInternalObjectId, 'ad.creativeInternalObjectId');
-    const creativeId = ids[creativeInternalId];
-    if (!creativeId) throw new Error('CREATIVE_DEPENDENCY_MISSING');
-    return { edge: 'ads', params: {
-      name: `Contexto Ads ad [CTX-${suffix}]`, adset_id: adSetId,
-      creative: { creative_id: creativeId }, status: 'PAUSED',
-    } };
-  }
-
-  private dependencyId(operation: ExecutionManifestOperationV1, ids: ExternalIds, objectType: 'campaign' | 'ad_set') {
-    const entry = Object.entries(ids).find(([internalId]) =>
-      operation.dependsOnOperationKeys.length > 0 && internalId.endsWith(`:${objectType}`));
-    if (!entry) throw new Error(`${objectType.toUpperCase()}_DEPENDENCY_MISSING`);
-    return entry[1];
-  }
-
-  private selected(bindings: Awaited<ReturnType<MetaConnectionRepository['listBindings']>>, type: 'facebook_page' | 'whatsapp') {
-    const selected = bindings.filter((item) => item.assetType === type && item.selected);
-    return selected.length === 1 ? selected[0].externalId : undefined;
-  }
-
-  private paused(configured?: string, effective?: string) {
-    if (configured) return configured === 'PAUSED';
-    return ['PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED'].includes(effective ?? '');
-  }
-
-  private eventState(protocol: MetaWriteValidationProtocolV1, actor: string, eventType: string): any {
-    return {
-      auditEventId: crypto.randomUUID(), tenantId: protocol.tenantId,
-      correlationId: protocol.correlationId, actorType: 'user', actorId: actor,
-      eventType, objectType: 'meta_write_validation_protocol',
-      objectId: protocol.metaWriteValidationProtocolId,
-      newState: { status: protocol.status, externalWritesPerformed: protocol.boundaries.externalWritesPerformed },
-      result: eventType.includes('failed') ? 'blocked' : 'success',
-      createdAt: new Date().toISOString(),
-    };
-  }
-
-  private uuid(value: unknown, field: string): string {
-    if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-      throw new BadRequestException(`${field} must be a valid UUID`);
-    }
-    return value;
-  }
-
-  private actor(value: unknown): string {
-    if (typeof value !== 'string' || value.trim().length < 2 || value.length > 200) throw new BadRequestException('actor is invalid');
-    return value.trim();
-  }
-
-  private record(value: unknown, field: string): Record<string, any> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${field.toUpperCase()}_INVALID`);
-    return value as Record<string, any>;
-  }
-
-  private string(value: unknown, field: string): string {
-    if (typeof value !== 'string' || !value.trim()) throw new Error(`${field.toUpperCase()}_MISSING`);
-    return value.trim();
-  }
-
-  private httpsUrl(value: unknown, field: string): string {
-    const result = this.string(value, field);
-    const url = new URL(result);
-    if (url.protocol !== 'https:') throw new Error(`${field.toUpperCase()}_HTTPS_REQUIRED`);
-    return url.toString();
-  }
-
-  private integer(value: unknown, field: string): number {
-    if (!Number.isSafeInteger(value) || (value as number) < 1) throw new Error(`${field.toUpperCase()}_INVALID`);
-    return value as number;
-  }
-}
