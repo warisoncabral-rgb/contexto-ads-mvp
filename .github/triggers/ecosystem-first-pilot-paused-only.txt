@@ -1,6 +1,8 @@
-trigger=2026-09-01T15:35:00Z
+trigger=2026-09-01T16:02:00Z
 mode=PAUSED_ONLY_AUDITED_GATES
 publication=false
 activation=false
 spend_authorization=false
 single_external_attempt=true
+recovery_basis=known_no_write_previous_attempt
+parser_fix_deployed=true
