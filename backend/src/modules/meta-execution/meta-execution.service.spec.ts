@@ -221,7 +221,7 @@ describe('MetaExecutionService', () => {
           description: 'Atendimento personalizado.',
           whatsappMessage: 'Olá! Quero conhecer os modelos.',
         },
-        asset: { storageRef: '/media/creative-1.png' },
+        asset: { storageRef: '/media/creative-1.png', mimeType: 'image/png' },
       },
       {} as ExecutionPlanV1,
       {},
@@ -249,5 +249,40 @@ describe('MetaExecutionService', () => {
     }));
     expect(JSON.stringify(request.params)).not.toContain('wa.me');
     expect(JSON.stringify(request.params)).not.toContain('1002133529311219');
+  });
+
+  it('uses an uploaded Meta video id instead of treating MP4 media as a picture', () => {
+    const operation = {
+      objectType: 'creative',
+      idempotencyKey: 'c'.repeat(64),
+    } as ExecutionManifestOperationV1;
+    const request = (service() as unknown as {
+      requestFor: (...args: unknown[]) => { edge: string; params: Record<string, unknown> };
+    }).requestFor(
+      operation,
+      {
+        copy: { primaryText: 'Veja os modelos.', headline: 'Fale no WhatsApp' },
+        asset: { storageRef: 'https://media.example/video.mp4', mimeType: 'video/mp4' },
+      },
+      {} as ExecutionPlanV1,
+      {},
+      '100457068314696',
+      '1002133529311219',
+      [],
+      '998877665544',
+    );
+
+    expect(request.params).toEqual(expect.objectContaining({
+      object_story_spec: {
+        page_id: '100457068314696',
+        video_data: expect.objectContaining({
+          video_id: '998877665544',
+          message: 'Veja os modelos.',
+          title: 'Fale no WhatsApp',
+        }),
+      },
+    }));
+    expect(JSON.stringify(request.params)).not.toContain('picture');
+    expect(JSON.stringify(request.params)).not.toContain('video.mp4');
   });
 });

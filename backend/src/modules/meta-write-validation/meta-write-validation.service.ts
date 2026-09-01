@@ -61,6 +61,18 @@ export class MetaWriteValidationService {
     const previous = await this.protocols.latestForManifest(tenantId, executionManifestId);
     if (previous && previous.status !== 'external_validation_failed') return previous;
     const previousReconciled = previous?.reconciledOperations ?? [];
+    const preservedMediaByOperation = new Map(
+      (previous?.preservedMediaUploads ?? []).map((item) => [item.operationKey, item]),
+    );
+    for (const operation of previous?.execution?.operations ?? []) {
+      if (operation.mediaExternalObjectId) {
+        preservedMediaByOperation.set(operation.operationKey, {
+          operationKey: operation.operationKey,
+          externalObjectId: operation.mediaExternalObjectId,
+        });
+      }
+    }
+    const preservedMediaUploads = [...preservedMediaByOperation.values()];
     const succeeded = previous?.execution?.operations.filter((operation) =>
       operation.status === 'succeeded' && operation.externalObjectId
       && this.safeObservedStatus(operation.objectType, operation.observedStatus)) ?? [];
@@ -155,6 +167,7 @@ export class MetaWriteValidationService {
       manifestHash: manifest.manifestHash,
       mode: 'controlled_paused_creation',
       reconciledOperations,
+      preservedMediaUploads,
       operations,
       limits,
       requiredEvidence,
@@ -180,6 +193,7 @@ export class MetaWriteValidationService {
       status: 'prepared_external_validation_required',
       preparedBy: actor,
       ...(reconciledOperations.length > 0 ? { reconciledOperations } : {}),
+      ...(preservedMediaUploads.length > 0 ? { preservedMediaUploads } : {}),
       operations,
       limits,
       requiredEvidence,
