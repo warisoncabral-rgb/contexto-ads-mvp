@@ -98,7 +98,10 @@ export class EcosystemOrchestratorService {
           true,
           'Aprovar ou rejeitar o plano de campanha.',
         ),
-        technicalDetails: { approvalId: approval.approvalId, approvalStatus: approval.status },
+        technicalDetails: {
+          approvalId: approval.approval.approvalId,
+          approvalStatus: approval.approval.status,
+        },
       };
     }
 
