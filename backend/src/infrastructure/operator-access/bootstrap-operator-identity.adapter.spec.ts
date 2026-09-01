@@ -45,7 +45,32 @@ describe('BootstrapOperatorIdentityAdapter', () => {
       }));
   });
 
-  it('fails closed when subject or digest configuration is absent or malformed', async () => {
+  it('accepts an optional secondary digest without invalidating the primary credential', async () => {
+    const secondaryToken = 'secondary-operator-token-with-at-least-thirty-two-characters';
+    const identity = adapter({
+      OPERATOR_BOOTSTRAP_SUBJECT: subject,
+      OPERATOR_BOOTSTRAP_TOKEN_SHA256: createHash('sha256').update(token).digest('hex'),
+      OPERATOR_BOOTSTRAP_TOKEN_SHA256_SECONDARY: createHash('sha256').update(secondaryToken).digest('hex'),
+    });
+
+    await expect(identity.authenticate(`Bearer ${token}`)).resolves
+      .toEqual(expect.objectContaining({ subject }));
+    await expect(identity.authenticate(`Bearer ${secondaryToken}`)).resolves
+      .toEqual(expect.objectContaining({ subject }));
+  });
+
+  it('ignores a malformed secondary digest while preserving a valid primary credential', async () => {
+    const identity = adapter({
+      OPERATOR_BOOTSTRAP_SUBJECT: subject,
+      OPERATOR_BOOTSTRAP_TOKEN_SHA256: createHash('sha256').update(token).digest('hex'),
+      OPERATOR_BOOTSTRAP_TOKEN_SHA256_SECONDARY: 'not-a-digest',
+    });
+    expect(identity.isAvailable()).toBe(true);
+    await expect(identity.authenticate(`Bearer ${token}`)).resolves
+      .toEqual(expect.objectContaining({ subject }));
+  });
+
+  it('fails closed when subject or any usable primary credential is absent or malformed', async () => {
     for (const configuration of [
       {},
       { OPERATOR_BOOTSTRAP_SUBJECT: subject },
@@ -57,6 +82,17 @@ describe('BootstrapOperatorIdentityAdapter', () => {
       await expect(identity.authenticate(`Bearer ${token}`))
         .rejects.toBeInstanceOf(OperatorAuthenticationUnavailableError);
     }
+  });
+
+  it('can operate with only a valid secondary digest during controlled recovery', async () => {
+    const secondaryToken = 'secondary-only-operator-token-with-thirty-two-characters';
+    const identity = adapter({
+      OPERATOR_BOOTSTRAP_SUBJECT: subject,
+      OPERATOR_BOOTSTRAP_TOKEN_SHA256_SECONDARY: createHash('sha256').update(secondaryToken).digest('hex'),
+    });
+    expect(identity.isAvailable()).toBe(true);
+    await expect(identity.authenticate(`Bearer ${secondaryToken}`)).resolves
+      .toEqual(expect.objectContaining({ subject }));
   });
 
   it('normalizes missing, malformed and incorrect credentials to one error', async () => {
