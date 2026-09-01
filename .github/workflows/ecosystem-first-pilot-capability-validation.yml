@@ -1,0 +1,64 @@
+name: Ecosystem First Pilot Capability Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/triggers/ecosystem-first-pilot-capability-validation.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      CAMPAIGN_ID: 09cec7fc-77d0-47ae-9c77-f6250f7bd0c8
+      PLAN_ID: 2ce02f67-8b97-488d-bc53-7acbac9d26fc
+    steps:
+      - name: Validate Meta execution capabilities read-only
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          J="Content-Type: application/json"
+
+          curl --fail --silent --show-error -H "$H" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/plans" > /tmp/plans.json
+          CONNECTION_ID=$(node <<'NODE'
+          const x=require('/tmp/plans.json');
+          const p=x.plans.find(p=>p.executionPlanId===process.env.PLAN_ID && p.campaignId===process.env.CAMPAIGN_ID);
+          if(!p?.connectionId) throw new Error('Current plan has no Meta connection id');
+          process.stdout.write(p.connectionId);
+          NODE
+          )
+
+          curl --fail --silent --show-error -H "$J" -X POST \
+            "$BASE_URL/meta/connections/$CONNECTION_ID/capabilities/validate-execution" \
+            -d "{\"tenantId\":\"$TENANT_ID\"}" > /tmp/capabilities.json
+
+          node <<'NODE'
+          const x=require('/tmp/capabilities.json');
+          const required=['DISCOVER_ASSETS','READ_AD_ACCOUNT','CREATE_CAMPAIGN','CREATE_ADSET','CREATE_CREATIVE','CREATE_AD','CLICK_TO_WHATSAPP'];
+          if(x.success!==true || !Array.isArray(x.data)) throw new Error(`Capability validation failed: ${x.normalizedError||'unknown'}`);
+          const by=new Map(x.data.map(r=>[r.capabilityType,r]));
+          const summary=required.map(k=>({capability:k,status:by.get(k)?.status,restrictions:by.get(k)?.restrictions||[]}));
+          const unavailable=summary.filter(r=>r.status!=='available');
+          console.log(JSON.stringify({PILOT_CAPABILITY_VALIDATION:unavailable.length?'BLOCKED':'PASSED',capabilities:summary,observedAt:x.observedAt},null,2));
+          if(unavailable.length) throw new Error(`CAPABILITIES_BLOCKED:${unavailable.map(r=>r.capability+':'+r.status).join(',')}`);
+          NODE
+
+          # Refresh internal readiness only; this does not perform an external write.
+          curl --fail --silent --show-error -H "$H" -H "$J" -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/plans/$PLAN_ID/readiness" \
+            -d '{}' > /tmp/readiness.json
+          node <<'NODE'
+          const x=require('/tmp/readiness.json');
+          console.log(JSON.stringify({PILOT_READINESS_AFTER_CAPABILITIES:{status:x.status,nextAction:x.nextAction,blockers:x.blockers}},null,2));
+          if((x.blockers||[]).some(b=>b.code==='write_capabilities')) throw new Error('Write capabilities blocker remains after validation');
+          NODE
