@@ -1,0 +1,6 @@
+trigger=2026-09-01T16:01:00Z
+mode=known-no-write-recovery
+external_retry=false
+publication=false
+activation=false
+spend=false
