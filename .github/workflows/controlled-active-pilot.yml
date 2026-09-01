@@ -1,0 +1,127 @@
+name: Controlled Active Pilot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/controlled-active-pilot-*.trigger'
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Exact controlled command
+        required: true
+        type: choice
+        options: [preflight, activate, monitor, pause]
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-active-pilot-0fc65970
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+      TENANT_ID: 22222222-2222-4222-8222-222222222222
+      PACKAGE_ID: 0fc65970-05f1-4258-a28e-a6c411e9f676
+      META_CAMPAIGN_ID: '120253398726520359'
+      MAX_SPEND_MINOR: '14000'
+      PILOT_STOP_AT: '2026-09-08T17:30:00Z'
+      COMMAND: ${{ github.event_name == 'schedule' && 'monitor' || github.event_name == 'push' && contains(github.event.head_commit.message, '[activate]') && 'activate' || github.event_name == 'push' && contains(github.event.head_commit.message, '[monitor]') && 'monitor' || github.event_name == 'push' && contains(github.event.head_commit.message, '[pause]') && 'pause' || github.event_name == 'push' && 'preflight' || inputs.command }}
+    steps:
+      - name: Require protected operator secret
+        run: test -n "$OPERATOR_TOKEN"
+
+      - name: Verify exact campaign and approved financial limits
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $OPERATOR_TOKEN")
+          curl --retry 3 --retry-all-errors --max-time 70 -fsS \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$PACKAGE_ID/analyst/tracking" \
+            "${auth[@]}" -o /tmp/tracking.json
+          jq -e --arg id "$META_CAMPAIGN_ID" \
+            '.action_status == "FOUND" and .registration.externalCampaignId == $id' \
+            /tmp/tracking.json >/dev/null
+          curl --retry 3 --retry-all-errors --max-time 70 -fsS -X POST \
+            "$BASE_URL/operator/campaigns/v1/action-final-review" \
+            "${auth[@]}" -H 'Content-Type: application/json' \
+            --data "{\"package_id\":\"$PACKAGE_ID\"}" -o /tmp/review.json
+          jq -e '.action_status == "FINAL_REVIEW_REQUIRED"
+            and .final_review.budget.mode == "diário"
+            and .final_review.budget.amount == 20
+            and .final_review.budget.duration_days == 7
+            and .final_review.budget.maximum_planned_amount == 140' \
+            /tmp/review.json >/dev/null
+
+      - name: Activate only the exact approved objects
+        if: env.COMMAND == 'activate'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --retry 2 --retry-all-errors --max-time 90 -fsS -X POST \
+            "$BASE_URL/operator/campaigns/v1/action-publish" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "{\"package_id\":\"$PACKAGE_ID\",\"confirmation\":\"PUBLISH_CAMPAIGN\"}" \
+            -o /tmp/publish.json
+          jq -e --arg id "$META_CAMPAIGN_ID" \
+            '.action_status == "PUBLISHED"
+             and .boundaries.campaign_active == true
+             and .boundaries.budget_change_authorized == false
+             and ([.meta_publication.objects[] | select(.objectType == "campaign") | .id] | index($id)) != null' \
+            /tmp/publish.json >/dev/null
+          jq '{action_status, campaign_id, execution_plan_id, meta_publication, boundaries}' /tmp/publish.json
+
+      - name: Collect current spend and essential alert
+        if: env.COMMAND == 'monitor'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SINCE=$(date -u +%F)
+          UNTIL=$SINCE
+          curl --retry 3 --retry-all-errors --max-time 90 -fsS -X POST \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$PACKAGE_ID/analyst/collect-meta" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "{\"since\":\"$SINCE\",\"until\":\"$UNTIL\"}" -o /tmp/collect.json
+          curl --retry 3 --retry-all-errors --max-time 70 -fsS \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$PACKAGE_ID/analyst/alert" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" -o /tmp/alert.json
+          SPEND=$(jq -r '.meta_insights.spendMinor // 0' /tmp/collect.json)
+          ALERT=$(jq -r '.level // "none"' /tmp/alert.json)
+          NOW=$(date -u +%s)
+          STOP=$(date -u -d "$PILOT_STOP_AT" +%s)
+          REASON=''
+          if [ "$SPEND" -ge "$MAX_SPEND_MINOR" ]; then REASON="Teto total de R$ 140 atingido"; fi
+          if [ "$ALERT" = 'critical' ]; then REASON="Alerta operacional crítico do Analista"; fi
+          if [ "$NOW" -ge "$STOP" ]; then REASON="Prazo máximo de 7 dias atingido"; fi
+          echo "Observed spend_minor=$SPEND alert=$ALERT"
+          if [ -n "$REASON" ]; then echo "PAUSE_REASON=$REASON" >> "$GITHUB_ENV"; fi
+
+      - name: Pause automatically on limit or risk
+        if: env.COMMAND == 'pause' || env.PAUSE_REASON != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          REASON="${PAUSE_REASON:-Pausa manual do piloto controlado}"
+          jq -n --arg package_id "$PACKAGE_ID" --arg reason "$REASON" \
+            '{package_id:$package_id,confirmation:"PAUSE_CAMPAIGN",reason:$reason}' >/tmp/pause-request.json
+          curl --retry 3 --retry-all-errors --max-time 90 -fsS -X POST \
+            "$BASE_URL/operator/campaigns/v1/action-pause" \
+            -H "Authorization: Bearer $OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/pause-request.json -o /tmp/pause.json
+          jq -e '.action_status == "PAUSED"
+            and .meta_pause.status == "PAUSED_CONFIRMED"
+            and .meta_pause.kill_switch_engaged == true
+            and .boundaries.campaign_active == false
+            and .boundaries.spend_authorized == false' /tmp/pause.json >/dev/null
+          jq '{action_status, campaign_id, meta_pause, boundaries}' /tmp/pause.json
