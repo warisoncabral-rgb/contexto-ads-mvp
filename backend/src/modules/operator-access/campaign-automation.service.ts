@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { CampaignContextRepository } from '../../domain/ports/repositories';
 import { CAMPAIGN_CONTEXT_REPOSITORY } from '../../infrastructure/database/database.tokens';
 import { CampaignPackageStatusService } from '../campaign-package/campaign-package-status.service';
+import { AutomatedMetaPublicationService } from '../meta-execution/automated-meta-publication.service';
 import { CampaignMediaService } from './campaign-media.service';
 import { OperatorAccessService } from './operator-access.service';
 
@@ -12,6 +13,7 @@ export class CampaignAutomationService {
     private readonly access: OperatorAccessService,
     private readonly status: CampaignPackageStatusService,
     private readonly media: CampaignMediaService,
+    private readonly publication: AutomatedMetaPublicationService,
     @Inject(CAMPAIGN_CONTEXT_REPOSITORY)
     private readonly contexts: CampaignContextRepository,
   ) {}
@@ -120,6 +122,7 @@ export class CampaignAutomationService {
         message: 'A campanha mudou depois da revisão. Uma nova revisão final é necessária.',
       });
     }
+    const { operator } = await this.access.authorizeCampaignPreparation(authorization, tenant.tenantId);
 
     let creative = await this.access.latestCreativePackage(authorization, tenant.tenantId, packageId);
     let currentPlanId = review.execution_plan_id;
@@ -158,7 +161,7 @@ export class CampaignAutomationService {
       currentPlanId,
       approvalId,
     );
-    const protocol = await this.access.prepareMetaWriteValidation(
+    await this.access.prepareMetaWriteValidation(
       authorization,
       tenant.tenantId,
       manifest.executionManifestId,
@@ -206,10 +209,10 @@ export class CampaignAutomationService {
         blockers: preflight.blockers,
       });
     }
-    const execution = await this.access.executeMetaPausedCreation(
-      authorization,
+    const execution = await this.publication.executePaused(
       tenant.tenantId,
       approvedExecutionAuthorization.executionAuthorizationId,
+      operator.subject,
     );
     if (execution.status !== 'external_validation_succeeded') {
       throw new ConflictException({
@@ -218,6 +221,17 @@ export class CampaignAutomationService {
         protocol_status: execution.status,
       });
     }
+
+    let activationRoundTrip: unknown = null;
+    if (source.validation_mode === 'FULL_ROUNDTRIP') {
+      activationRoundTrip = await this.publication.publish(
+        tenant.tenantId,
+        currentPlanId,
+        operator.subject,
+        true,
+      );
+    }
+
     const readyHash = this.hash({
       package_id: packageId,
       creative_hash: creative.contentHash,
@@ -239,9 +253,11 @@ export class CampaignAutomationService {
       plan_approval_status: planApproval.approval.status,
       execution_manifest_id: manifest.executionManifestId,
       meta_validation_status: execution.status,
+      activation_roundtrip: activationRoundTrip,
       meta_objects: execution.execution?.operations.map((operation) => ({
         object_type: operation.objectType,
         external_object_id: operation.externalObjectId ?? null,
+        media_external_object_id: operation.mediaExternalObjectId ?? null,
         observed_status: operation.observedStatus ?? null,
       })) ?? [],
       ready_hash: readyHash,
@@ -254,6 +270,48 @@ export class CampaignAutomationService {
         spend_authorized: false,
         external_writes_performed: true,
         all_created_objects_validated_paused: true,
+      },
+    };
+  }
+
+  async publishCampaign(body: unknown, authorization: string | undefined) {
+    const source = this.record(body, 'publication request');
+    const packageId = this.uuid(source.package_id, 'package_id');
+    if (source.confirmation !== 'PUBLISH_CAMPAIGN') {
+      throw new BadRequestException({
+        code: 'explicit_publish_command_required',
+        message: 'A publicação exige uma confirmação explícita do usuário.',
+      });
+    }
+    const tenant = await this.resolveTenant(authorization, 'decide_approval');
+    const packageStatus = await this.status.get(tenant.tenantId, packageId);
+    if (packageStatus.creative?.status !== 'approved'
+      || packageStatus.plan_approval?.status !== 'approved') {
+      throw new ConflictException({
+        code: 'campaign_not_fully_approved',
+        message: 'A campanha ainda não possui todas as aprovações necessárias.',
+      });
+    }
+    const { operator } = await this.access.authorizeCampaignPreparation(authorization, tenant.tenantId);
+    const published = await this.publication.publish(
+      tenant.tenantId,
+      packageStatus.execution_plan.execution_plan_id,
+      operator.subject,
+      false,
+    );
+    return {
+      action_status: 'PUBLISHED',
+      package_id: packageId,
+      campaign_id: packageId,
+      execution_plan_id: packageStatus.execution_plan.execution_plan_id,
+      meta_publication: published,
+      human_message: 'A campanha foi ativada na Meta com a configuração aprovada. O orçamento não foi alterado.',
+      boundaries: {
+        publication_authorized: true,
+        campaign_active: true,
+        delivery_authorized: true,
+        spend_authorized: true,
+        budget_change_authorized: false,
       },
     };
   }
