@@ -1,0 +1,53 @@
+name: Ecosystem Real Media Inventory
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/triggers/ecosystem-real-media-inventory.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Inventory creative media references
+        run: |
+          set -euo pipefail
+          H="Authorization: Bearer $OPERATOR_TOKEN"
+          curl --fail --silent --show-error -H "$H" "$BASE_URL/operator/portfolio" > /tmp/portfolio.json
+          node - <<'NODE' > /tmp/campaigns.txt
+          const x=require('/tmp/portfolio.json');
+          for(const i of x.items||[]) console.log(`${i.tenantId}|${i.campaignId}`);
+          NODE
+          echo '[' > /tmp/out.jsonl
+          first=1
+          while IFS='|' read -r tenant campaign; do
+            [ -n "$campaign" ] || continue
+            code=$(curl --silent --show-error -o /tmp/creative.json -w '%{http_code}' -H "$H" "$BASE_URL/operator/tenants/$tenant/campaigns/$campaign/creative-packages/latest" || true)
+            if [ "$code" = "200" ]; then
+              node - "$tenant" "$campaign" <<'NODE' > /tmp/item.json
+              const fs=require('fs'); const x=require('/tmp/creative.json');
+              const [tenant,campaign]=process.argv.slice(2);
+              console.log(JSON.stringify({tenantId:tenant,campaignId:campaign,status:x.status,version:x.version,assets:(x.assets||[]).map(a=>({assetId:a.assetId,mimeType:a.mimeType,storageRef:a.storageRef,sha256:a.sha256,width:a.width,height:a.height}))}));
+              NODE
+            else
+              printf '{"tenantId":"%s","campaignId":"%s","http":%s}' "$tenant" "$campaign" "$code" > /tmp/item.json
+            fi
+            if [ "$first" = 0 ]; then echo ',' >> /tmp/out.jsonl; fi
+            cat /tmp/item.json >> /tmp/out.jsonl
+            first=0
+          done < /tmp/campaigns.txt
+          echo ']' >> /tmp/out.jsonl
+          node <<'NODE'
+          const x=JSON.parse(require('fs').readFileSync('/tmp/out.jsonl','utf8'));
+          const clean=x.map(i=>({...i,assets:(i.assets||[]).map(a=>({...a,sha256:a.sha256?`${a.sha256.slice(0,8)}…`:null}))}));
+          console.log(JSON.stringify({REAL_MEDIA_INVENTORY:'READ_ONLY',campaigns:clean,httpsMedia:clean.filter(i=>(i.assets||[]).some(a=>/^https:\/\//.test(a.storageRef||''))).map(i=>i.campaignId)},null,2));
+          NODE
