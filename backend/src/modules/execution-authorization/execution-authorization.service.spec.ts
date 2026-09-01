@@ -234,6 +234,10 @@ describe('ExecutionAuthorizationService', () => {
     const plans = {
       findById: jest.fn().mockResolvedValue({
         meta: { connectionId: authorizationId, adAccountId: 'act_123' },
+        objectsToCreate: [{
+          type: 'ad_set',
+          logicalConfig: { geography: 'João Pessoa, PB, Brasil (40 km)' },
+        }],
       }),
     };
     const connections = {
@@ -243,7 +247,15 @@ describe('ExecutionAuthorizationService', () => {
         { assetType: 'whatsapp', externalId: '20', selected: true },
       ]),
     };
-    const adapter = { enabled: jest.fn().mockReturnValue(true) };
+    const adapter = {
+      enabled: jest.fn().mockReturnValue(true),
+      searchCity: jest.fn().mockResolvedValue({
+        success: true,
+        data: { key: '12345', name: 'João Pessoa' },
+        retryable: false,
+        observedAt: '2026-09-01T16:00:00.000Z',
+      }),
+    };
     service = new ExecutionAuthorizationService(
       manifests, authorizations, killSwitch, validationProtocols,
       plans as never, connections as never, adapter as unknown as MetaWriteAdapter,
@@ -254,6 +266,7 @@ describe('ExecutionAuthorizationService', () => {
     expect(result.blockers).toEqual([]);
     expect(result.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: 'real_meta_write_validation', status: 'passed' }),
+      expect.objectContaining({ key: 'meta_geography_resolved', status: 'passed' }),
       expect.objectContaining({ key: 'write_adapter_enabled', status: 'passed' }),
     ]));
     expect(result.nextAction).toContain('uma única criação controlada');
