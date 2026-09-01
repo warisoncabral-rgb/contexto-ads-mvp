@@ -60,8 +60,11 @@ export class EcosystemOrchestratorService {
 
   async advanceSafe(authorization: string | undefined, campaignId: string) {
     const target = await this.authorizedCampaign(authorization, campaignId);
-    const status = await this.packages.get(target.tenantId, campaignId);
+    let status = await this.packages.get(target.tenantId, campaignId);
+    const completedSteps: string[] = [];
 
+    // Safe internal steps may be chained in one user action. The loop is intentionally
+    // narrow and bounded: only target resolution is allowed to auto-continue.
     if (status.next_action === 'RESOLVE_META_TARGET') {
       const selected = await this.connections.selectedExecutionTarget(target.tenantId);
       await this.access.bindExecutionTarget(
@@ -72,14 +75,8 @@ export class EcosystemOrchestratorService {
         selected.connectionId,
         selected.adAccountId,
       );
-      return this.safeStep(
-        'SAFE_STEP_COMPLETED',
-        'O alvo da Meta foi resolvido automaticamente.',
-        'Usei a conta de anúncios já selecionada. Você não precisou informar nenhum ID técnico.',
-        'Vou seguir até o próximo ponto que exija revisão ou aprovação humana.',
-        false,
-        'Nenhuma ação sua é necessária agora.',
-      );
+      completedSteps.push('META_TARGET_RESOLVED');
+      status = await this.packages.get(target.tenantId, campaignId);
     }
 
     if (status.next_action === 'REQUEST_EXECUTION_PLAN_APPROVAL') {
@@ -89,15 +86,19 @@ export class EcosystemOrchestratorService {
         campaignId,
         status.execution_plan.execution_plan_id,
       );
+      completedSteps.push('PLAN_APPROVAL_REQUEST_PREPARED');
       return {
         ...this.safeStep(
-          'SAFE_STEP_COMPLETED',
-          'O Gerador terminou o plano e a aprovação já está pronta para você.',
-          'Nenhuma campanha foi publicada. Apenas preparei a decisão humana que vem antes de qualquer efeito externo.',
+          'SAFE_STEPS_COMPLETED',
+          'O Gerador terminou o que podia fazer sozinho. Agora preciso apenas da sua decisão.',
+          completedSteps.includes('META_TARGET_RESOLVED')
+            ? 'Resolvi a conta/ativos da Meta e deixei a aprovação do plano pronta, tudo sem publicar ou ativar campanha.'
+            : 'Deixei a aprovação do plano pronta, sem publicar ou ativar campanha.',
           'Revise e aprove ou rejeite o plano quando quiser continuar.',
           true,
           'Aprovar ou rejeitar o plano de campanha.',
         ),
+        completedSteps,
         technicalDetails: {
           approvalId: approval.approval.approvalId,
           approvalStatus: approval.approval.status,
@@ -106,35 +107,44 @@ export class EcosystemOrchestratorService {
     }
 
     if (status.next_action === 'REVIEW_AND_APPROVE_CREATIVE_PACKAGE') {
-      return this.safeStep(
-        'USER_DECISION_REQUIRED',
-        'O criativo precisa da sua revisão.',
-        'O sistema não vai fingir que viu ou aprovou uma peça visual por você.',
-        'Revise a peça e confirme se ela está fiel ao que foi aprovado.',
-        true,
-        'Aprovar ou pedir ajuste no criativo.',
-      );
+      return {
+        ...this.safeStep(
+          'USER_DECISION_REQUIRED',
+          'O criativo precisa da sua revisão.',
+          'O sistema não vai fingir que viu ou aprovou uma peça visual por você.',
+          'Revise a peça e confirme se ela está fiel ao que foi aprovado.',
+          true,
+          'Aprovar ou pedir ajuste no criativo.',
+        ),
+        completedSteps,
+      };
     }
 
     if (status.next_action === 'DECIDE_EXECUTION_PLAN_APPROVAL') {
-      return this.safeStep(
-        'USER_DECISION_REQUIRED',
-        'O plano está aguardando sua decisão.',
-        'Todo o trabalho técnico anterior já foi feito. Agora só falta aprovar ou rejeitar este plano.',
-        'Aprove ou rejeite o plano. Isso ainda não publica nem ativa campanha.',
-        true,
-        'Aprovar ou rejeitar o plano de campanha.',
-      );
+      return {
+        ...this.safeStep(
+          'USER_DECISION_REQUIRED',
+          'O plano está aguardando sua decisão.',
+          'Todo o trabalho técnico anterior já foi feito. Agora só falta aprovar ou rejeitar este plano.',
+          'Aprove ou rejeite o plano. Isso ainda não publica nem ativa campanha.',
+          true,
+          'Aprovar ou rejeitar o plano de campanha.',
+        ),
+        completedSteps,
+      };
     }
 
-    return this.safeStep(
-      'EXTERNAL_GATE_REACHED',
-      'Chegamos ao limite da automação segura.',
-      'O ecossistema concluiu o que podia fazer sem autorização de efeito externo.',
-      'Qualquer criação, publicação, ativação ou ação financeira continua exigindo autorização específica.',
-      true,
-      'Decidir se deseja avançar pelo gate externo apropriado.',
-    );
+    return {
+      ...this.safeStep(
+        'EXTERNAL_GATE_REACHED',
+        'Chegamos ao limite da automação segura.',
+        'O ecossistema concluiu o que podia fazer sem autorização de efeito externo.',
+        'Qualquer criação, publicação, ativação ou ação financeira continua exigindo autorização específica.',
+        true,
+        'Decidir se deseja avançar pelo gate externo apropriado.',
+      ),
+      completedSteps,
+    };
   }
 
   private async authorizedCampaign(authorization: string | undefined, campaignId: string) {
