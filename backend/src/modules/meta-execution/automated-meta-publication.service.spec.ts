@@ -165,6 +165,70 @@ describe('AutomatedMetaPublicationService', () => {
     ]);
   });
 
+  it('activates a reconciled campaign with the validated ad set and ads without creating objects', async () => {
+    const plan = {
+      tenantId,
+      campaignId,
+      executionPlanId: planId,
+      planHash: 'a'.repeat(64),
+      meta: { connectionId: '55555555-5555-4555-8555-555555555555' },
+    } as any;
+    plans.findById.mockResolvedValue(plan);
+    plans.latest.mockResolvedValue(plan);
+    manifests.latestForPlan.mockResolvedValue({
+      executionManifestId: manifestId,
+      planHash: plan.planHash,
+    });
+    protocols.latestForManifest.mockResolvedValue({
+      status: 'external_validation_succeeded',
+      reconciledOperations: [
+        { objectType: 'campaign', externalObjectId: '10001', observedStatus: 'PAUSED' },
+      ],
+      execution: {
+        operations: [
+          { objectType: 'creative', externalObjectId: '20001' },
+          { objectType: 'ad_set', externalObjectId: '10002' },
+          { objectType: 'ad', externalObjectId: '10003' },
+          { objectType: 'ad', externalObjectId: '10004' },
+        ],
+      },
+    });
+    killSwitch.effective.mockResolvedValue({
+      tenant: { status: 'released' },
+      campaign: { status: 'released' },
+    });
+    connections.findById.mockResolvedValue({ credentialRef: 'vault:1' });
+    adapter.read.mockResolvedValue({
+      success: true,
+      data: { configuredStatus: 'PAUSED' },
+      observedAt: new Date().toISOString(),
+      retryable: false,
+    });
+    adapter.updateStatus.mockImplementation(async (
+      _tenant: string,
+      _credential: string,
+      id: string,
+      status: 'ACTIVE' | 'PAUSED',
+    ) => ({ success: true, data: { id, configuredStatus: status }, retryable: false }));
+
+    const result = await service.publish(tenantId, planId, 'operator:warison');
+
+    expect(result.status).toBe('PUBLISHED_ACTIVE_CONFIGURED');
+    expect(result.objects).toEqual([
+      { objectType: 'campaign', id: '10001' },
+      { objectType: 'ad_set', id: '10002' },
+      { objectType: 'ad', id: '10003' },
+      { objectType: 'ad', id: '10004' },
+    ]);
+    expect(adapter.create).not.toHaveBeenCalled();
+    expect(adapter.updateStatus.mock.calls.map((call: any[]) => [call[2], call[3]])).toEqual([
+      ['10001', 'ACTIVE'],
+      ['10002', 'ACTIVE'],
+      ['10003', 'ACTIVE'],
+      ['10004', 'ACTIVE'],
+    ]);
+  });
+
   it('pauses ads before ad set and campaign then engages the campaign kill switch', async () => {
     const plan = {
       tenantId,
