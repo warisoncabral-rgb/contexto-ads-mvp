@@ -27,30 +27,34 @@ jobs:
           set -euo pipefail
           H="Authorization: Bearer $OPERATOR_TOKEN"
 
-          curl --fail --silent --show-error -H "$H" \
-            "$BASE_URL/operator/tenants/$TENANT_ID/plans/$PLAN_ID/execution-manifests/latest" > /tmp/manifest.json
-          curl --fail --silent --show-error -H "$H" \
-            "$BASE_URL/operator/ecosystem/campaigns/$CAMPAIGN_ID" > /tmp/human.json
-          curl --fail --silent --show-error -H "$H" \
-            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/timeline?executionPlanId=$PLAN_ID" > /tmp/timeline.json
-          curl --fail --silent --show-error -H "$H" \
-            "$BASE_URL/operator/tenants/$TENANT_ID/plans/$PLAN_ID/readiness" > /tmp/readiness.json || true
+          fetch() {
+            local url="$1" out="$2"
+            local code
+            code=$(curl --silent --show-error -o "$out" -w '%{http_code}' -H "$H" "$url" || true)
+            if [ ! -s "$out" ]; then echo '{}' > "$out"; fi
+            echo "$code"
+          }
+
+          MANIFEST_CODE=$(fetch "$BASE_URL/operator/tenants/$TENANT_ID/plans/$PLAN_ID/execution-manifests/latest" /tmp/manifest.json)
+          HUMAN_CODE=$(fetch "$BASE_URL/operator/ecosystem/campaigns/$CAMPAIGN_ID" /tmp/human.json)
+          TIMELINE_CODE=$(fetch "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/timeline?executionPlanId=$PLAN_ID" /tmp/timeline.json)
+          READINESS_CODE=$(fetch "$BASE_URL/operator/tenants/$TENANT_ID/plans/$PLAN_ID/readiness" /tmp/readiness.json)
 
           MANIFEST_ID=$(node -e "const x=require('/tmp/manifest.json');process.stdout.write(x?.executionManifestId||'')")
           if [ -n "$MANIFEST_ID" ]; then
-            code=$(curl --silent --show-error -o /tmp/protocol.json -w '%{http_code}' -H "$H" \
-              "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/meta-write-validation-protocols/latest")
-            if [ "$code" != "200" ]; then echo '{}' > /tmp/protocol.json; fi
+            PROTOCOL_CODE=$(fetch "$BASE_URL/operator/tenants/$TENANT_ID/execution-manifests/$MANIFEST_ID/meta-write-validation-protocols/latest" /tmp/protocol.json)
           else
+            PROTOCOL_CODE="not_requested"
             echo '{}' > /tmp/protocol.json
           fi
 
+          export MANIFEST_CODE HUMAN_CODE TIMELINE_CODE READINESS_CODE PROTOCOL_CODE
           node <<'NODE'
           const manifest=require('/tmp/manifest.json');
           const protocol=require('/tmp/protocol.json');
           const human=require('/tmp/human.json');
           const timeline=require('/tmp/timeline.json');
-          let readiness={}; try{readiness=require('/tmp/readiness.json')}catch{}
+          const readiness=require('/tmp/readiness.json');
           const ops=(protocol.execution?.operations||[]).map(o=>({
             objectType:o.objectType,
             status:o.status,
@@ -60,13 +64,16 @@ jobs:
             normalizedError:o.normalizedError,
           }));
           const externalIds=ops.filter(o=>o.externalObjectId).length;
-          console.log(JSON.stringify({
+          const out={
             PILOT_PAUSED_ONLY_DIAGNOSTIC:'READ_ONLY',
+            http:{manifest:process.env.MANIFEST_CODE,human:process.env.HUMAN_CODE,timeline:process.env.TIMELINE_CODE,readiness:process.env.READINESS_CODE,protocol:process.env.PROTOCOL_CODE},
             human:{stage:human.stage,headline:human.headline,planApprovalStatus:human.technicalDetails?.planApprovalStatus,packageNextAction:human.technicalDetails?.packageNextAction},
             manifest:{id:manifest.executionManifestId,status:manifest.status,gate:manifest.executionGate?.status,operationCount:manifest.operations?.length,boundaries:manifest.boundaries},
             readiness:{status:readiness.status,nextAction:readiness.nextAction,blockers:readiness.blockers},
             protocol:{id:protocol.metaWriteValidationProtocolId,status:protocol.status,boundaries:protocol.boundaries,executionAuthorizationId:protocol.execution?.executionAuthorizationId,operations:ops},
             evidence:{externalAttemptStarted:protocol.boundaries?.externalAttemptStarted===true,externalWritesPerformed:protocol.boundaries?.externalWritesPerformed===true,externalObjectIdsObserved:externalIds},
             recentTimeline:(timeline.items||[]).slice(-12).map(i=>({title:i.title,category:i.category,detail:i.detail})),
-          },null,2));
+          };
+          console.log(JSON.stringify(out,null,2));
+          if(out.evidence.externalAttemptStarted || out.evidence.externalWritesPerformed || out.evidence.externalObjectIdsObserved>0) process.exitCode=2;
           NODE
