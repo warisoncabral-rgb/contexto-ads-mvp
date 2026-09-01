@@ -25,6 +25,45 @@ describe('MetaExecutionService', () => {
     expect(paused('ACTIVE', 'CAMPAIGN_PAUSED')).toBe(false);
   });
 
+  it('parses city, state, country and radius as one Meta city target', () => {
+    const targets = (service() as unknown as {
+      geographyTargets: (value: string) => Array<{ city: string; radius: number }>;
+    }).geographyTargets('Campina Grande, PB, BR (40 km)');
+
+    expect(targets).toEqual([{ city: 'Campina Grande', radius: 40 }]);
+  });
+
+  it('parses multiple human geography entries without treating state or country as cities', () => {
+    const targets = (service() as unknown as {
+      geographyTargets: (value: string) => Array<{ city: string; radius: number }>;
+    }).geographyTargets(
+      'João Pessoa, PB, Brasil (40 km); Recife, PE, Brasil (30 km)',
+    );
+
+    expect(targets).toEqual([
+      { city: 'João Pessoa', radius: 40 },
+      { city: 'Recife', radius: 30 },
+    ]);
+  });
+
+  it('uses the configured default radius for compact city-state notation', () => {
+    const parser = new MetaExecutionService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new ConfigService({ META_CITY_RADIUS_KM: '35' }),
+    );
+    const targets = (parser as unknown as {
+      geographyTargets: (value: string) => Array<{ city: string; radius: number }>;
+    }).geographyTargets('Campina Grande - PB');
+
+    expect(targets).toEqual([{ city: 'Campina Grande', radius: 35 }]);
+  });
+
   it('reconciles a failed external ad set only after an authenticated PAUSED read', async () => {
     const tenantId = '22222222-2222-4222-8222-222222222222';
     const manifestId = '33333333-3333-4333-8333-333333333333';
