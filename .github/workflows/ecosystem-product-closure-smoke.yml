@@ -1,0 +1,64 @@
+name: Ecosystem Product Closure Smoke
+
+on:
+  push:
+    paths:
+      - '.github/triggers/ecosystem-product-closure-smoke.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: https://contexto-ads-validation-api.onrender.com/v1
+      OPERATOR_TOKEN: ${{ secrets.CONTEXT_ADS_STABLE_OPERATOR_TOKEN }}
+    steps:
+      - name: Require stable operator secret
+        run: test -n "$OPERATOR_TOKEN"
+
+      - name: Verify custom-header authenticated POST
+        shell: bash
+        run: |
+          set -euo pipefail
+          CODE=$(curl --max-time 45 --silent --show-error -o /tmp/post.json -w '%{http_code}' \
+            -H "Content-Type: application/json" \
+            -H "X-Contexto-Operator-Key: $OPERATOR_TOKEN" \
+            -d '{"probe":"ok"}' \
+            "$BASE_URL/operator/action-post-ping")
+          cat /tmp/post.json | jq .
+          test "$CODE" = "200"
+          jq -e '.action_status == "OK" and .authenticated == true and .probe == "ok" and .boundaries.meta_write_performed == false' /tmp/post.json >/dev/null
+
+      - name: Verify unified ecosystem overview through custom header
+        shell: bash
+        run: |
+          set -euo pipefail
+          CODE=$(curl --max-time 45 --silent --show-error -o /tmp/overview.json -w '%{http_code}' \
+            -H "X-Contexto-Operator-Key: $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/ecosystem/overview")
+          cat /tmp/overview.json | jq .
+          test "$CODE" = "200"
+          jq -e '.actionStatus == "OK" and (.campaigns | type == "array") and .boundaries.externalWritesAllowed == false' /tmp/overview.json >/dev/null
+
+      - name: Verify Analyst simple-language read on one authorized campaign when available
+        shell: bash
+        run: |
+          set -euo pipefail
+          TENANT_ID=$(jq -r '.campaigns[0].tenantId // empty' /tmp/overview.json)
+          CAMPAIGN_ID=$(jq -r '.campaigns[0].campaignId // empty' /tmp/overview.json)
+          if [ -z "$TENANT_ID" ] || [ -z "$CAMPAIGN_ID" ]; then
+            echo 'No authorized campaign available; analyst route smoke skipped safely.'
+            exit 0
+          fi
+          CODE=$(curl --max-time 45 --silent --show-error -o /tmp/analyst.json -w '%{http_code}' \
+            -H "X-Contexto-Operator-Key: $OPERATOR_TOKEN" \
+            "$BASE_URL/operator/tenants/$TENANT_ID/campaigns/$CAMPAIGN_ID/analyst/summary")
+          cat /tmp/analyst.json | jq .
+          test "$CODE" = "200"
+          jq -e '.action_status == "OK" or .action_status == "NO_ANALYSIS"' /tmp/analyst.json >/dev/null
+
+      - name: Confirm safety boundary
+        run: echo 'Closure smoke performed authenticated reads and a no-write ping only. No campaign publication, activation, pause, budget, spend, or Meta write endpoint was called.'
