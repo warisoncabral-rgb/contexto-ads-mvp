@@ -1,0 +1,1 @@
+Run the final no-write ecosystem closure smoke after unified Action authentication and schema deployment.
