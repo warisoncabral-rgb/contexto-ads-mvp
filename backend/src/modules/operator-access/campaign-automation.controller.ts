@@ -10,10 +10,11 @@ export class CampaignAutomationController {
   prepareCreative(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
     return this.envelope(() => this.automation.prepareCreative(
       this.normalizeCreativePreparation(body),
-      authorization,
+      this.operatorAuthorization(authorization, operatorKey),
     ));
   }
 
@@ -22,8 +23,12 @@ export class CampaignAutomationController {
   creativeReview(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    return this.envelope(() => this.automation.creativeReview(body, authorization));
+    return this.envelope(() => this.automation.creativeReview(
+      body,
+      this.operatorAuthorization(authorization, operatorKey),
+    ));
   }
 
   @Post('campaigns/v1/action-final-review')
@@ -31,8 +36,12 @@ export class CampaignAutomationController {
   finalReview(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    return this.envelope(() => this.automation.finalReview(body, authorization));
+    return this.envelope(() => this.automation.finalReview(
+      body,
+      this.operatorAuthorization(authorization, operatorKey),
+    ));
   }
 
   @Post('campaigns/v1/action-finalize-for-publication')
@@ -40,8 +49,12 @@ export class CampaignAutomationController {
   finalize(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    return this.envelope(() => this.automation.finalizeForPublication(body, authorization));
+    return this.envelope(() => this.automation.finalizeForPublication(
+      body,
+      this.operatorAuthorization(authorization, operatorKey),
+    ));
   }
 
   @Post('campaigns/v1/action-publish')
@@ -49,8 +62,12 @@ export class CampaignAutomationController {
   publish(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    return this.envelope(() => this.automation.publishCampaign(body, authorization));
+    return this.envelope(() => this.automation.publishCampaign(
+      body,
+      this.operatorAuthorization(authorization, operatorKey),
+    ));
   }
 
   @Post('campaigns/v1/action-pause')
@@ -58,8 +75,12 @@ export class CampaignAutomationController {
   pause(
     @Body() body: unknown,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    return this.envelope(() => this.automation.pauseCampaign(body, authorization));
+    return this.envelope(() => this.automation.pauseCampaign(
+      body,
+      this.operatorAuthorization(authorization, operatorKey),
+    ));
   }
 
   private normalizeCreativePreparation(body: unknown): unknown {
@@ -78,6 +99,15 @@ export class CampaignAutomationController {
         automaticEnhancementsReviewed: true,
       },
     };
+  }
+
+  private operatorAuthorization(
+    authorization: string | undefined,
+    operatorKey: string | undefined,
+  ): string | undefined {
+    if (authorization?.trim()) return authorization;
+    const token = operatorKey?.trim();
+    return token ? `Bearer ${token}` : undefined;
   }
 
   private async envelope(run: () => Promise<any>) {

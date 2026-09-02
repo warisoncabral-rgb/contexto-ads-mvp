@@ -36,9 +36,10 @@ export class AnalystController {
     @Param('campaignId') campaignId: string,
     @Body() body: AnalystAnalyzeInputV1,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
     const { operator } = await this.access.authorizeCampaignPreparation(
-      authorization,
+      this.operatorAuthorization(authorization, operatorKey),
       tenantId,
     );
     const analyzed = await this.analyst.analyze(tenantId, campaignId, body, operator.subject);
@@ -54,9 +55,10 @@ export class AnalystController {
     @Param('campaignId') campaignId: string,
     @Body() body: CollectMetaBody,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
     const { operator } = await this.access.authorizeCampaignPreparation(
-      authorization,
+      this.operatorAuthorization(authorization, operatorKey),
       tenantId,
     );
 
@@ -183,8 +185,12 @@ export class AnalystController {
     @Param('tenantId') tenantId: string,
     @Param('campaignId') campaignId: string,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    await this.access.authorizeCampaignPreparation(
+      this.operatorAuthorization(authorization, operatorKey),
+      tenantId,
+    );
     const registration = await this.tracking.find(tenantId, campaignId);
     if (!registration) {
       return {
@@ -213,8 +219,12 @@ export class AnalystController {
     @Param('tenantId') tenantId: string,
     @Param('campaignId') campaignId: string,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    await this.access.authorizeCampaignPreparation(
+      this.operatorAuthorization(authorization, operatorKey),
+      tenantId,
+    );
     const latest = await this.analyst.latest(tenantId, campaignId);
     if (!latest.analysis) {
       return {
@@ -235,8 +245,12 @@ export class AnalystController {
     @Param('tenantId') tenantId: string,
     @Param('campaignId') campaignId: string,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    await this.access.authorizeCampaignPreparation(
+      this.operatorAuthorization(authorization, operatorKey),
+      tenantId,
+    );
     return this.governance.essentialAlert(tenantId, campaignId);
   }
 
@@ -245,8 +259,12 @@ export class AnalystController {
     @Param('tenantId') tenantId: string,
     @Param('campaignId') campaignId: string,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    await this.access.authorizeCampaignPreparation(
+      this.operatorAuthorization(authorization, operatorKey),
+      tenantId,
+    );
     return this.governance.latestDecision(tenantId, campaignId);
   }
 
@@ -257,9 +275,10 @@ export class AnalystController {
     @Param('decision') decision: string,
     @Body() body: { reason?: string },
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
     const { operator } = await this.access.authorizeCampaignPreparation(
-      authorization,
+      this.operatorAuthorization(authorization, operatorKey),
       tenantId,
     );
     return this.governance.decideLatest(
@@ -276,13 +295,26 @@ export class AnalystController {
     @Param('tenantId') tenantId: string,
     @Param('campaignId') campaignId: string,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-contexto-operator-key') operatorKey?: string,
   ) {
-    await this.access.authorizeCampaignPreparation(authorization, tenantId);
+    await this.access.authorizeCampaignPreparation(
+      this.operatorAuthorization(authorization, operatorKey),
+      tenantId,
+    );
     const latest = await this.analyst.latest(tenantId, campaignId);
     return {
       ...latest,
       user_brief: latest.analysis ? this.presenter.present(latest.analysis) : null,
     };
+  }
+
+  private operatorAuthorization(
+    authorization: string | undefined,
+    operatorKey: string | undefined,
+  ): string | undefined {
+    if (authorization?.trim()) return authorization;
+    const token = operatorKey?.trim();
+    return token ? `Bearer ${token}` : undefined;
   }
 
   private unavailableMessage(error: string | undefined): string {
