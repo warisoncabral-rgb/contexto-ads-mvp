@@ -1,0 +1,337 @@
+openapi: 3.1.0
+info:
+  title: Contexto Ads Ecosystem
+  version: 1.0.0
+  description: Unified GPT Action contract for Contexto Ads, Gerador/Publicador and Analista. Human approval gates and Meta safety boundaries remain enforced by the backend.
+servers:
+  - url: https://contexto-ads-validation-api.onrender.com/v1
+security:
+  - operatorKey: []
+paths:
+  /operator/action-ping:
+    get:
+      operationId: checkEcosystemConnection
+      summary: Check authenticated ecosystem connection
+      responses:
+        '200': { description: Connection status }
+
+  /operator/ecosystem/overview:
+    get:
+      operationId: getEcosystemOverview
+      summary: Show all authorized campaigns as one human-readable workflow
+      responses:
+        '200': { description: Ecosystem overview }
+
+  /operator/ecosystem/campaigns/{campaignId}:
+    get:
+      operationId: getCampaignWorkflowStatus
+      summary: Show the current Contexto Ads, Gerador and Analista state for one campaign
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Human-readable campaign workflow state }
+
+  /operator/ecosystem/campaigns/{campaignId}/advance-safe:
+    post:
+      operationId: advanceCampaignSafely
+      summary: Advance only deterministic internal steps until the next human or external gate
+      x-openai-isConsequential: false
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201': { description: Safe internal advancement result }
+        '200': { description: Safe internal advancement result }
+
+  /operator/campaign-packages/v1/action-submit:
+    post:
+      operationId: submitCampaignPackage
+      summary: Send a completed Contexto Ads strategy to the Gerador
+      description: Auto-resolves the authorized tenant and selected Meta target. It does not publish, activate or authorize spend.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignPackage'
+      responses:
+        '200': { description: Package accepted or safely rejected }
+
+  /operator/campaign-packages/v1/action-status:
+    post:
+      operationId: getCampaignPackageStatus
+      summary: Recover the current Gerador state for a campaign package
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [package_id]
+              properties:
+                package_id: { type: string, format: uuid }
+      responses:
+        '200': { description: Current package state }
+
+  /operator/creative-packages/v1/action-prepare:
+    post:
+      operationId: prepareCreativePackage
+      summary: Persist reviewed campaign copy and attached creative media for the current package
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              required: [package_id, campaign_id, asset_ids, copies, claims, reviewChecklist]
+              properties:
+                package_id: { type: string, format: uuid }
+                campaign_id: { type: string, format: uuid }
+                asset_ids: { type: array, minItems: 1, maxItems: 10, items: { type: string } }
+                openaiFileIdRefs: { type: array, items: { type: string } }
+                copies: { type: array, minItems: 1, maxItems: 10, items: { type: object, additionalProperties: true } }
+                claims: { type: array, maxItems: 50, items: { type: object, additionalProperties: true } }
+                reviewChecklist: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: Creative package preparation result }
+
+  /operator/creative-packages/v1/action-review:
+    post:
+      operationId: reviewCreativePackage
+      summary: Read the latest creative package prepared for a campaign
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PackageIdRequest'
+      responses:
+        '200': { description: Creative package review }
+
+  /operator/campaigns/v1/action-final-review:
+    post:
+      operationId: getFinalCampaignReview
+      summary: Build the final human-readable review before any Meta creation
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PackageIdRequest'
+      responses:
+        '200': { description: Final review including review hash and safety boundaries }
+
+  /operator/campaigns/v1/action-finalize-for-publication:
+    post:
+      operationId: finalizeCampaignForPublication
+      summary: After explicit user confirmation, validate and create the approved campaign objects in PAUSED state
+      description: Requires the exact review hash and explicit confirmation. This may perform controlled Meta writes, but does not by itself authorize delivery or spend.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [package_id, review_hash, confirmation]
+              properties:
+                package_id: { type: string, format: uuid }
+                review_hash: { type: string }
+                confirmation: { type: string, enum: [CONFIRM_AND_PREPARE_FOR_PUBLICATION] }
+                validation_mode: { type: string, enum: [PAUSED_ONLY, FULL_ROUNDTRIP] }
+      responses:
+        '200': { description: Controlled preparation/publication-validation result }
+
+  /operator/campaigns/v1/action-publish:
+    post:
+      operationId: publishCampaign
+      summary: Activate only the already prepared and explicitly approved Meta objects
+      description: Consequential external action. Must only be called after a fresh explicit user authorization to activate delivery and spend within the approved limits.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              required: [package_id]
+              properties:
+                package_id: { type: string, format: uuid }
+                ready_hash: { type: string }
+      responses:
+        '200': { description: Publication/activation result }
+
+  /operator/campaigns/v1/action-pause:
+    post:
+      operationId: pauseCampaign
+      summary: Pause an already linked campaign through the controlled publication service
+      description: Consequential external action. Use only with explicit user authorization or a previously approved safety rule.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              required: [package_id]
+              properties:
+                package_id: { type: string, format: uuid }
+      responses:
+        '200': { description: Pause result }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/analyst/collect-meta:
+    post:
+      operationId: collectAndAnalyzeMetaCampaign
+      summary: Read real Meta Insights and produce a supervised analysis
+      x-openai-isConsequential: false
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              required: [since, until]
+              properties:
+                since: { type: string, format: date }
+                until: { type: string, format: date }
+                businessConstraints: { type: object, additionalProperties: true }
+      responses:
+        '201': { description: Analysis result }
+        '200': { description: Analysis result }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/analyst/summary:
+    get:
+      operationId: getAnalystSummary
+      summary: Get the latest simple-language campaign analysis
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Analyst summary }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/analyst/alert:
+    get:
+      operationId: getAnalystAlert
+      summary: Get the latest essential campaign alert
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Latest alert }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/analyst/recommendations/latest:
+    get:
+      operationId: getLatestAnalystRecommendation
+      summary: Get the latest supervised recommendation and its approval state
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Latest recommendation decision }
+
+  /operator/tenants/{tenantId}/campaigns/{campaignId}/analyst/recommendations/{decision}:
+    post:
+      operationId: decideAnalystRecommendation
+      summary: Approve or reject the latest recommendation without executing it automatically
+      description: Records a supervised decision only. Approval of a recommendation is not execution authorization.
+      x-openai-isConsequential: true
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: decision, in: path, required: true, schema: { type: string, enum: [approve, reject] } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string }
+      responses:
+        '201': { description: Recommendation decision recorded }
+        '200': { description: Recommendation decision recorded }
+
+components:
+  securitySchemes:
+    operatorKey:
+      type: apiKey
+      in: header
+      name: X-Contexto-Operator-Key
+  schemas:
+    PackageIdRequest:
+      type: object
+      additionalProperties: false
+      required: [package_id]
+      properties:
+        package_id: { type: string, format: uuid }
+    CampaignPackage:
+      type: object
+      additionalProperties: true
+      required:
+        - package_id
+        - package_version
+        - created_at
+        - source
+        - client_id
+        - business_name
+        - business_description
+        - offer_name
+        - offer_description
+        - offer_type
+        - campaign_objective
+        - conversion_destination
+        - campaign_goal_description
+        - audience_description
+        - locations
+        - budget_type
+        - budget_amount
+        - currency
+        - duration_days
+        - ads
+        - media
+        - strategy_status
+        - handoff_status
+      properties:
+        package_id: { type: string, format: uuid }
+        package_version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        source: { type: string, enum: [contexto_ads] }
+        client_id: { type: string }
+        business_name: { type: string }
+        business_description: { type: string }
+        offer_name: { type: string }
+        offer_description: { type: string }
+        offer_type: { type: string }
+        campaign_objective: { type: string }
+        conversion_destination: { type: string }
+        campaign_goal_description: { type: string }
+        audience_description: { type: string }
+        locations: { type: array, minItems: 1, items: { type: object, additionalProperties: true } }
+        budget_type: { type: string, enum: [DAILY, LIFETIME] }
+        budget_amount: { type: number, exclusiveMinimum: 0 }
+        currency: { type: string }
+        duration_days: { type: integer, minimum: 1 }
+        ads: { type: array, minItems: 1, items: { type: object, additionalProperties: true } }
+        media: { type: array, minItems: 1, items: { type: object, additionalProperties: true } }
+        strategy_status: { type: string, enum: [COMPLETE] }
+        handoff_status: { type: string, enum: [READY_FOR_GENERATOR] }
