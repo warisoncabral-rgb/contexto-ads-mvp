@@ -83,7 +83,7 @@ describe('CampaignPackageStatusService', () => {
     expect(result.plan_approval?.status).toBe('pending');
   });
 
-  it('stops the V1 Action at the separate execution gate after plan approval', async () => {
+  it('offers safe PAUSED creation after exact-plan approval', async () => {
     const { service } = build({
       creativeStatus: 'approved',
       targetBound: true,
@@ -91,8 +91,9 @@ describe('CampaignPackageStatusService', () => {
     });
     const result = await service.get(tenantId, packageId);
 
-    expect(result.next_action).toBe('EXECUTION_GATE_SEPARATE');
+    expect(result.next_action).toBe('PREPARE_PAUSED_CREATION');
     expect(result.plan_approval?.status).toBe('approved');
     expect(result.boundaries.plan_approval_is_execution_authorization).toBe(false);
+    expect(result.boundaries.external_writes_allowed).toBe(false);
   });
 });
