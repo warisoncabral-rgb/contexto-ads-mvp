@@ -21,6 +21,7 @@ import { CapabilityRegistryModule } from '../capability-registry/capability-regi
 import { MetaExecutionModule } from '../meta-execution/meta-execution.module';
 import { CampaignPackageModule } from '../campaign-package/campaign-package.module';
 import { OperatorCampaignPackageController } from './operator-campaign-package.controller';
+import { OperatorCampaignExecutionActionController } from './operator-campaign-execution-action.controller';
 import { OperatorStrategyHandoffController } from './operator-strategy-handoff.controller';
 import { StrategyHandoffPersistenceService } from './strategy-handoff-persistence.service';
 import { OperatorActionPingController } from './operator-action-ping.controller';
@@ -57,6 +58,7 @@ import { IntegrationDiagnosticController } from './integration-diagnostic.contro
     OperatorAccessController,
     OperatorMetaController,
     OperatorCampaignPackageController,
+    OperatorCampaignExecutionActionController,
     OperatorStrategyHandoffController,
     OperatorActionPingController,
     OperatorActionTransportController,
