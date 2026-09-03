@@ -15,7 +15,7 @@ export type CampaignPackageNextActionV1 =
   | 'RESOLVE_META_TARGET'
   | 'REQUEST_EXECUTION_PLAN_APPROVAL'
   | 'DECIDE_EXECUTION_PLAN_APPROVAL'
-  | 'EXECUTION_GATE_SEPARATE';
+  | 'PREPARE_PAUSED_CREATION';
 
 @Injectable()
 export class CampaignPackageStatusService {
@@ -54,7 +54,7 @@ export class CampaignPackageStatusService {
       : !targetBound
         ? 'RESOLVE_META_TARGET'
         : approval?.status === 'approved'
-          ? 'EXECUTION_GATE_SEPARATE'
+          ? 'PREPARE_PAUSED_CREATION'
           : approval?.status === 'pending'
             ? 'DECIDE_EXECUTION_PLAN_APPROVAL'
             : 'REQUEST_EXECUTION_PLAN_APPROVAL';
