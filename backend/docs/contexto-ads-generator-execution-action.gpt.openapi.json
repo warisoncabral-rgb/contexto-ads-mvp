@@ -1,0 +1,114 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Contexto Ads Generator Safe Execution",
+    "version": "1.0.0",
+    "description": "Safe Contexto Ads → Gerador execution bridge. It can prepare and, only after exact human confirmation, create Meta objects in PAUSED. It cannot activate delivery or authorize spend. Meta billing is completed directly with Meta."
+  },
+  "servers": [
+    {
+      "url": "https://contexto-ads-validation-api.onrender.com/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/operator/campaign-packages/v1/action-prepare-paused": {
+      "post": {
+        "operationId": "prepareCampaignPausedCreation",
+        "summary": "Prepare a campaign for controlled PAUSED creation",
+        "description": "Creates only internal manifest/authorization records and returns the exact human confirmation required. Performs no Meta write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["package_id"],
+                "properties": {
+                  "package_id": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Prepared and awaiting exact human confirmation" },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Campaign Package not found" },
+          "409": { "description": "Campaign is not ready for PAUSED creation" }
+        }
+      }
+    },
+    "/operator/campaign-packages/v1/action-confirm-paused": {
+      "post": {
+        "operationId": "confirmCampaignPausedCreation",
+        "summary": "Create approved campaign objects in Meta as PAUSED",
+        "description": "Requires the exact literal confirmation CREATE_PAUSED. Runs fail-closed preflight before any Meta write. Does not activate delivery or authorize spend.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["package_id", "execution_authorization_id", "confirmation"],
+                "properties": {
+                  "package_id": { "type": "string", "format": "uuid" },
+                  "execution_authorization_id": { "type": "string", "format": "uuid" },
+                  "confirmation": { "type": "string", "enum": ["CREATE_PAUSED"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Either blocked before write with explicit blockers, or Meta objects created and verified as PAUSED" },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Campaign Package or authorization not found" },
+          "409": { "description": "Confirmation/scope/precondition conflict" }
+        }
+      }
+    },
+    "/operator/campaign-packages/v1/action-payment-handoff": {
+      "post": {
+        "operationId": "getMetaBillingHandoff",
+        "summary": "Get the Meta billing handoff for the campaign",
+        "description": "Returns the Meta billing destination and selected ad account. Payment is processed only by Meta; Contexto Ads does not collect card/payment credentials and this operation never authorizes activation or spend.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["package_id"],
+                "properties": {
+                  "package_id": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Meta billing handoff ready" },
+          "401": { "description": "Authentication denied" },
+          "404": { "description": "Campaign Package not found" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
