@@ -31,7 +31,7 @@ export class OperatorCampaignExecutionActionController {
     const resolved = await this.resolvePackage(auth, packageId);
     const snapshot = resolved.snapshot;
 
-    if (snapshot.next_action !== 'EXECUTION_GATE_SEPARATE') {
+    if (snapshot.next_action !== 'PREPARE_PAUSED_CREATION') {
       throw new ConflictException({
         code: 'campaign_not_ready_for_paused_creation',
         message: `Campaign Package is not ready for paused creation (next_action=${snapshot.next_action})`,
