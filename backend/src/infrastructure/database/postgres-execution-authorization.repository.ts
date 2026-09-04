@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Pool, PoolClient } from 'pg';
 import { AuditEvent } from '../../domain/contracts/audit-event';
 import {
@@ -189,6 +190,10 @@ implements ExecutionAuthorizationRepository {
     preflight: ExecutionPreflightV1,
     event: AuditEvent,
   ): Promise<ExecutionPreflightV1> {
+    const stablePreflight = {
+      ...preflight,
+      preflightHash: this.stablePreflightHash(preflight),
+    };
     return this.inTransaction(async (client) => {
       const inserted = await client.query<PreflightRow>(
         `insert into execution_preflights (
@@ -198,23 +203,46 @@ implements ExecutionAuthorizationRepository {
         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12)
         on conflict (tenant_id, execution_manifest_id, execution_authorization_id,
           preflight_hash) do nothing returning payload`,
-        [preflight.executionPreflightId, preflight.tenantId, preflight.campaignId,
-          preflight.executionPlanId, preflight.executionManifestId,
-          preflight.executionAuthorizationId, preflight.planHash,
-          preflight.manifestHash, preflight.preflightHash, preflight.status,
-          JSON.stringify(preflight), preflight.generatedAt],
+        [stablePreflight.executionPreflightId, stablePreflight.tenantId,
+          stablePreflight.campaignId, stablePreflight.executionPlanId,
+          stablePreflight.executionManifestId, stablePreflight.executionAuthorizationId,
+          stablePreflight.planHash, stablePreflight.manifestHash,
+          stablePreflight.preflightHash, stablePreflight.status,
+          JSON.stringify(stablePreflight), stablePreflight.generatedAt],
       );
       if (inserted.rows[0]) await insertAuditEvent(client, event);
       const result = inserted.rows[0] ?? (await client.query<PreflightRow>(
         `select payload from execution_preflights where tenant_id = $1
           and execution_manifest_id = $2 and execution_authorization_id = $3
           and preflight_hash = $4 limit 1`,
-        [preflight.tenantId, preflight.executionManifestId,
-          preflight.executionAuthorizationId, preflight.preflightHash],
+        [stablePreflight.tenantId, stablePreflight.executionManifestId,
+          stablePreflight.executionAuthorizationId, stablePreflight.preflightHash],
       )).rows[0];
       if (!result) throw new Error('Execution preflight idempotency invariant failed');
       return result.payload;
     });
+  }
+
+  private stablePreflightHash(preflight: ExecutionPreflightV1): string {
+    const diagnostic = preflight.metaDiagnostic
+      ? { ...preflight.metaDiagnostic, observedAt: undefined }
+      : undefined;
+    const semantic = {
+      tenantId: preflight.tenantId,
+      campaignId: preflight.campaignId,
+      executionPlanId: preflight.executionPlanId,
+      executionManifestId: preflight.executionManifestId,
+      executionAuthorizationId: preflight.executionAuthorizationId,
+      planHash: preflight.planHash,
+      manifestHash: preflight.manifestHash,
+      status: preflight.status,
+      checks: preflight.checks,
+      blockers: preflight.blockers,
+      ...(diagnostic ? { metaDiagnostic: diagnostic } : {}),
+      nextAction: preflight.nextAction,
+      boundaries: preflight.boundaries,
+    };
+    return createHash('sha256').update(JSON.stringify(semantic)).digest('hex');
   }
 
   private toDomain(row: AuthorizationRow): ExecutionAuthorizationV1 {
