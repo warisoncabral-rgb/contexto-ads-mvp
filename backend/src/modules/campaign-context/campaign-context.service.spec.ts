@@ -71,8 +71,16 @@ describe('CampaignContextService', () => {
   });
 
   it('asks for WhatsApp automatically when WhatsApp is the chosen destination', async () => {
-    const { whatsappNumber, ...withoutWhatsapp } = completeFacts;
-    const result = await service.create(tenantId, withoutWhatsapp);
+    const result = await service.create(tenantId, {
+      businessName: 'Contexto Ads',
+      offer: 'Gestão profissional de anúncios',
+      objective: 'leads',
+      audience: 'Pequenas empresas que precisam gerar demanda',
+      destination: 'whatsapp',
+      geography: 'Brasil',
+      budget: { mode: 'daily', amountMinor: 5000, currency: 'BRL' },
+      durationDays: 30,
+    });
 
     expect(result.status).toBe('needs_information');
     expect(result.validationIssues).toContainEqual(expect.objectContaining({
@@ -90,18 +98,42 @@ describe('CampaignContextService', () => {
     ['website', 'websiteUrl'],
     ['phone', 'phoneNumber'],
   ])('requires the destination detail for %s', async (destination, field) => {
-    const facts: any = { ...completeFacts, destination };
-    delete facts.whatsappNumber;
-    delete facts.instagramAccount;
-    delete facts.facebookPage;
-    delete facts.websiteUrl;
-    delete facts.phoneNumber;
+    const facts: any = {
+      businessName: 'Contexto Ads',
+      offer: 'Gestão profissional de anúncios',
+      objective: 'leads',
+      audience: 'Pequenas empresas que precisam gerar demanda',
+      destination,
+      geography: 'Brasil',
+      budget: { mode: 'daily', amountMinor: 5000, currency: 'BRL' },
+      durationDays: 30,
+    };
 
     const result = await service.create(tenantId, facts);
     expect(result.validationIssues).toContainEqual(expect.objectContaining({
       code: 'required_destination_detail_missing',
       field,
     }));
+  });
+
+  it('accepts an Instagram profile link as the human destination reference', async () => {
+    const result = await service.create(tenantId, {
+      ...completeFacts,
+      destination: 'instagram',
+      instagramAccount: 'https://www.instagram.com/contextoads/',
+    });
+    expect(result.status).toBe('ready_for_generation');
+    expect(result.facts.instagramAccount?.value).toBe('https://www.instagram.com/contextoads/');
+  });
+
+  it('accepts a Facebook page link as the human destination reference', async () => {
+    const result = await service.create(tenantId, {
+      ...completeFacts,
+      destination: 'messenger',
+      facebookPage: 'https://www.facebook.com/contextoads',
+    });
+    expect(result.status).toBe('ready_for_generation');
+    expect(result.facts.facebookPage?.value).toBe('https://www.facebook.com/contextoads');
   });
 
   it('attaches operator audit evidence to the same context transaction', async () => {
