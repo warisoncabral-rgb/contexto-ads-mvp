@@ -25,8 +25,8 @@ const OBJECTIVES: CampaignObjective[] = [
   'awareness', 'traffic', 'engagement', 'leads', 'app_promotion', 'sales',
 ];
 const DESTINATIONS: CampaignDestination[] = [
-  'website', 'whatsapp', 'instagram', 'messenger', 'instant_form', 'app',
-  'phone', 'physical_location', 'other',
+  'website', 'whatsapp', 'instagram', 'facebook_page', 'messenger',
+  'instant_form', 'app', 'phone', 'physical_location', 'other',
 ];
 const REQUIRED_FIELDS: CampaignContextField[] = [
   'businessName',
@@ -48,17 +48,13 @@ const FIELD_LABELS: Record<CampaignContextField, string> = {
   budget: 'orçamento',
   durationDays: 'duração da campanha',
   whatsappNumber: 'número do WhatsApp que receberá as mensagens',
-  instagramAccount: 'conta do Instagram',
-  facebookPage: 'Página do Facebook',
+  instagramAccount: 'conta do Instagram (@, nome ou link)',
+  instagramUrl: 'link do perfil do Instagram',
+  facebookPage: 'Página do Facebook (nome ou link)',
+  facebookPageUrl: 'link da Página do Facebook',
   websiteUrl: 'site de destino',
   phoneNumber: 'telefone de destino',
-};
-const DESTINATION_REQUIRED_FIELD: Partial<Record<CampaignDestination, CampaignContextField>> = {
-  whatsapp: 'whatsappNumber',
-  instagram: 'instagramAccount',
-  messenger: 'facebookPage',
-  website: 'websiteUrl',
-  phone: 'phoneNumber',
+  appUrl: 'link do aplicativo ou da loja',
 };
 
 @Injectable()
@@ -195,9 +191,16 @@ export class CampaignContextService {
     const budget = this.optionalBudget(input.budget);
     const whatsappNumber = this.optionalContact(input.whatsappNumber, 'whatsappNumber');
     const instagramAccount = this.optionalText(input.instagramAccount, 'instagramAccount', 500);
+    const instagramUrl = this.optionalSocialUrl(input.instagramUrl, 'instagramUrl', ['instagram.com']);
     const facebookPage = this.optionalText(input.facebookPage, 'facebookPage', 500);
+    const facebookPageUrl = this.optionalSocialUrl(
+      input.facebookPageUrl,
+      'facebookPageUrl',
+      ['facebook.com', 'fb.com'],
+    );
     const websiteUrl = this.optionalUrl(input.websiteUrl, 'websiteUrl');
     const phoneNumber = this.optionalContact(input.phoneNumber, 'phoneNumber');
+    const appUrl = this.optionalUrl(input.appUrl, 'appUrl');
 
     if (businessName !== undefined) facts.businessName = this.sourced(businessName, now);
     if (offer !== undefined) facts.offer = this.sourced(offer, now);
@@ -209,9 +212,12 @@ export class CampaignContextService {
     if (durationDays !== undefined) facts.durationDays = this.sourced(durationDays, now);
     if (whatsappNumber !== undefined) facts.whatsappNumber = this.sourced(whatsappNumber, now);
     if (instagramAccount !== undefined) facts.instagramAccount = this.sourced(instagramAccount, now);
+    if (instagramUrl !== undefined) facts.instagramUrl = this.sourced(instagramUrl, now);
     if (facebookPage !== undefined) facts.facebookPage = this.sourced(facebookPage, now);
+    if (facebookPageUrl !== undefined) facts.facebookPageUrl = this.sourced(facebookPageUrl, now);
     if (websiteUrl !== undefined) facts.websiteUrl = this.sourced(websiteUrl, now);
     if (phoneNumber !== undefined) facts.phoneNumber = this.sourced(phoneNumber, now);
+    if (appUrl !== undefined) facts.appUrl = this.sourced(appUrl, now);
     return facts;
   }
 
@@ -231,20 +237,74 @@ export class CampaignContextService {
 
     if (!requireDestinationDetail) return issues;
 
-    const destination = facts.destination?.value;
-    const destinationField = destination
-      ? DESTINATION_REQUIRED_FIELD[destination]
-      : undefined;
-    if (destinationField && facts[destinationField] === undefined) {
+    const missing = this.missingDestinationDetail(facts);
+    if (missing) {
       issues.push({
         code: 'required_destination_detail_missing',
-        field: destinationField,
+        field: missing.field,
         severity: 'blocker',
-        message: `Antes de preparar a campanha, preciso confirmar ${FIELD_LABELS[destinationField]}.`,
-        nextAction: `Perguntar ao usuário ${FIELD_LABELS[destinationField]} e registrar essa informação antes de continuar.`,
+        message: missing.message,
+        nextAction: missing.nextAction,
       });
     }
     return issues;
+  }
+
+  private missingDestinationDetail(facts: CampaignContextFacts): {
+    field: CampaignContextField;
+    message: string;
+    nextAction: string;
+  } | undefined {
+    switch (facts.destination?.value) {
+      case 'whatsapp':
+        if (!facts.whatsappNumber) return this.destinationIssue(
+          'whatsappNumber',
+          'Qual número de WhatsApp deve receber as mensagens desta campanha?',
+        );
+        return undefined;
+      case 'instagram':
+        if (!facts.instagramUrl && !facts.instagramAccount) return this.destinationIssue(
+          'instagramAccount',
+          'Qual perfil do Instagram deve receber essa campanha? Pode enviar o @, o nome ou o link do perfil.',
+        );
+        return undefined;
+      case 'facebook_page':
+      case 'messenger':
+      case 'instant_form':
+        if (!facts.facebookPageUrl && !facts.facebookPage) return this.destinationIssue(
+          'facebookPage',
+          'Qual Página do Facebook deve ser usada? Pode enviar o nome ou o link direto da Página.',
+        );
+        return undefined;
+      case 'website':
+        if (!facts.websiteUrl) return this.destinationIssue(
+          'websiteUrl',
+          'Qual é o link do site ou da página de destino?',
+        );
+        return undefined;
+      case 'phone':
+        if (!facts.phoneNumber) return this.destinationIssue(
+          'phoneNumber',
+          'Qual telefone deve receber os contatos desta campanha?',
+        );
+        return undefined;
+      case 'app':
+        if (!facts.appUrl) return this.destinationIssue(
+          'appUrl',
+          'Qual é o link do aplicativo ou da página dele na loja?',
+        );
+        return undefined;
+      default:
+        return undefined;
+    }
+  }
+
+  private destinationIssue(field: CampaignContextField, prompt: string) {
+    return {
+      field,
+      message: `Antes de preparar a campanha, preciso confirmar o destino. ${prompt}`,
+      nextAction: `${prompt} Registrar a resposta antes de continuar.`,
+    };
   }
 
   private sourced<T>(value: T, now: string): SourcedCampaignFact<T> {
@@ -277,6 +337,21 @@ export class CampaignContextService {
       throw new BadRequestException(`${field} must contain a valid phone number with area/country code when applicable`);
     }
     return normalized;
+  }
+
+  private optionalSocialUrl(
+    value: unknown,
+    field: string,
+    hosts: string[],
+  ): string | undefined {
+    const url = this.optionalUrl(value, field);
+    if (url === undefined) return undefined;
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (!hosts.some((host) => hostname === host || hostname.endsWith(`.${host}`))) {
+      throw new BadRequestException(`${field} must point to an expected social network domain`);
+    }
+    return url;
   }
 
   private optionalUrl(value: unknown, field: string): string | undefined {
