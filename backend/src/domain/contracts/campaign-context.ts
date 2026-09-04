@@ -10,6 +10,7 @@ export type CampaignDestination =
   | 'website'
   | 'whatsapp'
   | 'instagram'
+  | 'facebook_page'
   | 'messenger'
   | 'instant_form'
   | 'app'
@@ -44,9 +45,12 @@ export interface CampaignContextFacts {
   durationDays?: SourcedCampaignFact<number>;
   whatsappNumber?: SourcedCampaignFact<string>;
   instagramAccount?: SourcedCampaignFact<string>;
+  instagramUrl?: SourcedCampaignFact<string>;
   facebookPage?: SourcedCampaignFact<string>;
+  facebookPageUrl?: SourcedCampaignFact<string>;
   websiteUrl?: SourcedCampaignFact<string>;
   phoneNumber?: SourcedCampaignFact<string>;
+  appUrl?: SourcedCampaignFact<string>;
 }
 
 export interface CampaignContextInput {
@@ -60,9 +64,12 @@ export interface CampaignContextInput {
   durationDays?: unknown;
   whatsappNumber?: unknown;
   instagramAccount?: unknown;
+  instagramUrl?: unknown;
   facebookPage?: unknown;
+  facebookPageUrl?: unknown;
   websiteUrl?: unknown;
   phoneNumber?: unknown;
+  appUrl?: unknown;
 }
 
 export type CampaignContextField = keyof CampaignContextFacts;

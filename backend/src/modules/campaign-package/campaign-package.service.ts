@@ -3,11 +3,18 @@ import { createHash } from 'node:crypto';
 import {
   CampaignPackageV1,
   CampaignPackageValidationResultV1,
+  ConversionDestination,
 } from '../../domain/contracts/campaign-package';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^(?:sha256:)?[a-f0-9]{64}$/i;
 const OFFER_TYPES = new Set(['product', 'service', 'catalog', 'promotion', 'lead_generation']);
+const OBJECTIVES = new Set(['AWARENESS', 'TRAFFIC', 'ENGAGEMENT', 'LEADS', 'APP_PROMOTION', 'SALES']);
+const DESTINATIONS = new Set([
+  'WHATSAPP', 'INSTAGRAM', 'FACEBOOK_PAGE', 'MESSENGER', 'WEBSITE', 'PHONE',
+  'INSTANT_FORM', 'APP', 'PHYSICAL_LOCATION', 'OTHER',
+]);
+const CTAS = new Set(['WHATSAPP_MESSAGE', 'LEARN_MORE', 'CONTACT_US', 'SIGN_UP', 'SHOP_NOW']);
 
 @Injectable()
 export class CampaignPackageService {
@@ -41,11 +48,15 @@ export class CampaignPackageService {
       missing.push('package_version');
     }
     if (pkg.source !== 'contexto_ads') blockers.push('source must be contexto_ads');
-    if (!OFFER_TYPES.has(String(pkg.offer_type))) blockers.push('offer_type is not supported in V1');
-    if (pkg.campaign_objective !== 'LEADS') blockers.push('campaign_objective must be LEADS in V1');
-    if (pkg.conversion_destination !== 'WHATSAPP') {
-      blockers.push('conversion_destination must be WHATSAPP in V1');
+    if (!OFFER_TYPES.has(String(pkg.offer_type))) blockers.push('offer_type is not supported');
+    if (!OBJECTIVES.has(String(pkg.campaign_objective))) {
+      blockers.push('campaign_objective is not supported');
     }
+    if (!DESTINATIONS.has(String(pkg.conversion_destination))) {
+      blockers.push('conversion_destination is not supported');
+    }
+    this.validateDestination(pkg, missing, blockers);
+
     if (pkg.strategy_status !== 'COMPLETE') {
       blockers.push('strategy_status must be COMPLETE before handoff');
     }
@@ -130,8 +141,13 @@ export class CampaignPackageService {
         else adReferences.add(ad.ad_reference);
         if (!this.nonEmptyString(ad?.primary_text)) missing.push(`ads[${index}].primary_text`);
         if (!this.nonEmptyString(ad?.headline)) missing.push(`ads[${index}].headline`);
-        if (!this.nonEmptyString(ad?.initial_message)) missing.push(`ads[${index}].initial_message`);
-        if (ad?.cta !== 'WHATSAPP_MESSAGE') blockers.push(`ads[${index}].cta must be WHATSAPP_MESSAGE`);
+        if (!CTAS.has(String(ad?.cta))) blockers.push(`ads[${index}].cta is not supported`);
+        if (pkg.conversion_destination === 'WHATSAPP') {
+          if (ad?.cta !== 'WHATSAPP_MESSAGE') {
+            blockers.push(`ads[${index}].cta must be WHATSAPP_MESSAGE for WHATSAPP destination`);
+          }
+          if (!this.nonEmptyString(ad?.initial_message)) missing.push(`ads[${index}].initial_message`);
+        }
         if (!this.nonEmptyString(ad?.media_id)) missing.push(`ads[${index}].media_id`);
         else if (!mediaIds.has(ad.media_id)) {
           blockers.push(`ads[${index}].media_id does not reference an existing media item`);
@@ -140,8 +156,7 @@ export class CampaignPackageService {
     }
 
     if (!this.nonEmptyString(pkg.ad_account_id)) warnings.push('ad_account_id will need to be resolved before execution');
-    if (!this.nonEmptyString(pkg.facebook_page_id)) warnings.push('facebook_page_id will need to be resolved before execution');
-    if (!this.nonEmptyString(pkg.whatsapp_asset_id)) warnings.push('whatsapp_asset_id will need to be resolved before execution');
+    this.addTargetWarnings(pkg, warnings);
 
     const uniqueMissing = [...new Set(missing)];
     const uniqueBlockers = [...new Set(blockers)];
@@ -163,6 +178,97 @@ export class CampaignPackageService {
         delivery_authorized: false,
       },
     };
+  }
+
+  private validateDestination(
+    pkg: Partial<CampaignPackageV1>,
+    missing: string[],
+    blockers: string[],
+  ) {
+    const destination = pkg.conversion_destination as ConversionDestination | undefined;
+    switch (destination) {
+      case 'WHATSAPP':
+        if (!this.nonEmptyString(pkg.whatsapp_number)) missing.push('whatsapp_number');
+        else if (!this.validPhone(pkg.whatsapp_number)) blockers.push('whatsapp_number must be a valid phone number');
+        break;
+      case 'INSTAGRAM':
+        if (!this.nonEmptyString(pkg.instagram_url) && !this.nonEmptyString(pkg.instagram_account)) {
+          missing.push('instagram_account_or_url');
+        }
+        if (this.nonEmptyString(pkg.instagram_url)
+          && !this.validSocialUrl(pkg.instagram_url, ['instagram.com'])) {
+          blockers.push('instagram_url must point to Instagram');
+        }
+        break;
+      case 'FACEBOOK_PAGE':
+      case 'MESSENGER':
+      case 'INSTANT_FORM':
+        if (!this.nonEmptyString(pkg.facebook_page_url) && !this.nonEmptyString(pkg.facebook_page)) {
+          missing.push('facebook_page_or_url');
+        }
+        if (this.nonEmptyString(pkg.facebook_page_url)
+          && !this.validSocialUrl(pkg.facebook_page_url, ['facebook.com', 'fb.com'])) {
+          blockers.push('facebook_page_url must point to Facebook');
+        }
+        break;
+      case 'WEBSITE':
+        if (!this.nonEmptyString(pkg.website_url)) missing.push('website_url');
+        else if (!this.validUrl(pkg.website_url)) blockers.push('website_url must be a valid http or https URL');
+        break;
+      case 'PHONE':
+        if (!this.nonEmptyString(pkg.phone_number)) missing.push('phone_number');
+        else if (!this.validPhone(pkg.phone_number)) blockers.push('phone_number must be a valid phone number');
+        break;
+      case 'APP':
+        if (!this.nonEmptyString(pkg.app_url)) missing.push('app_url');
+        else if (!this.validUrl(pkg.app_url)) blockers.push('app_url must be a valid http or https URL');
+        break;
+      default:
+        break;
+    }
+  }
+
+  private addTargetWarnings(pkg: Partial<CampaignPackageV1>, warnings: string[]) {
+    switch (pkg.conversion_destination) {
+      case 'WHATSAPP':
+        if (!this.nonEmptyString(pkg.facebook_page_id)) warnings.push('facebook_page_id will need to be resolved before execution');
+        if (!this.nonEmptyString(pkg.whatsapp_asset_id)) warnings.push('whatsapp_asset_id will need to be resolved before execution');
+        break;
+      case 'INSTAGRAM':
+        if (!this.nonEmptyString(pkg.instagram_account_id)) warnings.push('instagram_account_id will need to be resolved before execution');
+        break;
+      case 'FACEBOOK_PAGE':
+      case 'MESSENGER':
+      case 'INSTANT_FORM':
+        if (!this.nonEmptyString(pkg.facebook_page_id)) warnings.push('facebook_page_id will need to be resolved before execution');
+        break;
+      default:
+        break;
+    }
+  }
+
+  private validPhone(value: string) {
+    return /^\+?\d{8,20}$/.test(value.replace(/[\s().-]/g, ''));
+  }
+
+  private validUrl(value: string) {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  private validSocialUrl(value: string, hosts: string[]) {
+    try {
+      const url = new URL(value);
+      if (!['http:', 'https:'].includes(url.protocol)) return false;
+      const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
+      return hosts.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+    } catch {
+      return false;
+    }
   }
 
   private hash(pkg: CampaignPackageV1) {

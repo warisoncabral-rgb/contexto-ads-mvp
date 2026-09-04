@@ -31,6 +31,7 @@ export class OperatorCampaignExecutionActionController {
     const packageId = this.uuid(body?.package_id, 'package_id');
     const resolved = await this.resolvePackage(auth, packageId);
     const snapshot = resolved.snapshot;
+    this.assertPausedExecutionSupported(snapshot);
 
     if (snapshot.next_action !== 'PREPARE_PAUSED_CREATION') {
       throw new ConflictException({
@@ -117,6 +118,7 @@ export class OperatorCampaignExecutionActionController {
     }
 
     const resolved = await this.resolvePackage(auth, packageId);
+    this.assertPausedExecutionSupported(resolved.snapshot);
     const currentAuthorization = await this.access.getExecutionAuthorization(
       auth,
       resolved.tenantId,
@@ -256,6 +258,21 @@ export class OperatorCampaignExecutionActionController {
         spend_authorized: false,
       },
     };
+  }
+
+  private assertPausedExecutionSupported(snapshot: any) {
+    const destination = snapshot?.context?.destination;
+    if (destination && destination !== 'whatsapp') {
+      throw new ConflictException({
+        code: 'destination_execution_not_enabled_yet',
+        message: 'Este destino já pode ser configurado no Contexto Ads, mas a criação automática na Meta ainda não foi liberada para ele. Nenhuma alteração foi feita. O sistema aguardará o executor específico desse destino para evitar publicar no lugar errado.',
+        user_view: {
+          title: 'Destino configurado, publicação protegida',
+          message: 'A campanha está estruturada para o destino escolhido, mas a publicação automática desse tipo de campanha ainda está protegida.',
+          next_step: 'Mantenha a campanha salva. O fluxo atual de WhatsApp continua disponível normalmente.',
+        },
+      });
+    }
   }
 
   private async resolvePackage(authorization: string | undefined, packageId: string) {

@@ -14,6 +14,7 @@ const validPackage = {
   campaign_objective: 'LEADS',
   conversion_destination: 'WHATSAPP',
   campaign_goal_description: 'Gerar contatos qualificados pelo WhatsApp.',
+  whatsapp_number: '+5583999999999',
   audience_description: 'Lojistas, sacoleiros e revendedores.',
   locations: [
     { city: 'Recife', state: 'PE', country: 'BR', radius_km: 40 },
@@ -64,6 +65,59 @@ describe('CampaignPackageService', () => {
       spend_authorized: false,
       delivery_authorized: false,
     });
+  });
+
+  it('requires the WhatsApp number when WhatsApp is the destination', () => {
+    const { whatsapp_number, ...withoutNumber } = validPackage;
+    const result = service.validate(withoutNumber);
+    expect(result.validation_status).toBe('INVALID');
+    expect(result.missing_fields).toContain('whatsapp_number');
+  });
+
+  it('accepts Instagram by direct profile link without requiring a technical Meta id', () => {
+    const result = service.validate({
+      ...validPackage,
+      campaign_objective: 'ENGAGEMENT',
+      conversion_destination: 'INSTAGRAM',
+      instagram_url: 'https://www.instagram.com/contextoads/',
+      whatsapp_number: undefined,
+      ads: [{
+        ...validPackage.ads[0],
+        cta: 'LEARN_MORE',
+        initial_message: undefined,
+      }],
+    });
+    expect(result.validation_status).toBe('VALID');
+    expect(result.warnings).toContain('instagram_account_id will need to be resolved before execution');
+  });
+
+  it('accepts Facebook Page by direct link', () => {
+    const result = service.validate({
+      ...validPackage,
+      campaign_objective: 'ENGAGEMENT',
+      conversion_destination: 'FACEBOOK_PAGE',
+      facebook_page_url: 'https://www.facebook.com/contextoads',
+      whatsapp_number: undefined,
+      ads: [{
+        ...validPackage.ads[0],
+        cta: 'LEARN_MORE',
+        initial_message: undefined,
+      }],
+    });
+    expect(result.validation_status).toBe('VALID');
+    expect(result.warnings).toContain('facebook_page_id will need to be resolved before execution');
+  });
+
+  it('rejects a social link that points to the wrong network', () => {
+    const result = service.validate({
+      ...validPackage,
+      conversion_destination: 'INSTAGRAM',
+      instagram_url: 'https://www.facebook.com/contextoads',
+      whatsapp_number: undefined,
+      ads: [{ ...validPackage.ads[0], cta: 'LEARN_MORE', initial_message: undefined }],
+    });
+    expect(result.validation_status).toBe('INVALID');
+    expect(result.blocking_reasons).toContain('instagram_url must point to Instagram');
   });
 
   it('accepts an MP4 video referenced by an ad', () => {
