@@ -13,8 +13,11 @@ import {
   ExecutionAuthorizationV1,
   ExecutionPreflightCheckV1,
   ExecutionPreflightV1,
+  MetaPreflightDiagnosticV1,
 } from '../../domain/contracts/execution-authorization';
 import { ExecutionManifestV1 } from '../../domain/contracts/execution-manifest';
+import { MetaAssetBinding } from '../../domain/contracts/meta-connection';
+import { MetaCapabilityType } from '../../domain/contracts/capability';
 import {
   ExecutionAuthorizationRepository,
   ExecutionManifestRepository,
@@ -30,10 +33,21 @@ import {
   META_WRITE_VALIDATION_PROTOCOL_REPOSITORY,
 } from '../../infrastructure/database/database.tokens';
 import { KillSwitchService } from '../kill-switch/kill-switch.service';
+import { MetaReadonlyAdapter } from '../meta-adapter/meta-readonly.adapter';
 import { MetaWriteAdapter } from '../meta-adapter/meta-write.adapter';
 import { parseMetaGeography } from '../meta-execution/meta-geography';
 
 const AUTHORIZATION_VALIDITY_MS = 15 * 60 * 1000;
+const PREFLIGHT_META_CAPABILITIES: MetaCapabilityType[] = [
+  'DISCOVER_ASSETS',
+  'READ_AD_ACCOUNT',
+  'CREATE_CAMPAIGN',
+  'CREATE_ADSET',
+  'CREATE_CREATIVE',
+  'CREATE_AD',
+  'MANAGE_AD_STATUS',
+  'CLICK_TO_WHATSAPP',
+];
 
 @Injectable()
 export class ExecutionAuthorizationService {
@@ -51,6 +65,7 @@ export class ExecutionAuthorizationService {
     private readonly connections?: MetaConnectionRepository,
     @Optional() private readonly writeAdapter?: MetaWriteAdapter,
     @Optional() private readonly config?: ConfigService,
+    @Optional() private readonly readonlyAdapter?: MetaReadonlyAdapter,
   ) {}
 
   async request(
@@ -229,13 +244,21 @@ export class ExecutionAuthorizationService {
     const targetReady = Boolean(plan && connectionId && adAccountReady
       && connectionReady
       && pageReady && whatsappReady);
+    const metaDiagnostic = await this.buildMetaDiagnostic(
+      tenantId,
+      connectionId,
+      connection?.status,
+      connection?.credentialRef,
+      plan?.meta.adAccountId,
+      bindings,
+    );
     const geography = plan?.objectsToCreate?.find((item) => item.type === 'ad_set')
       ?.logicalConfig.geography;
     const geographyCheck = targetReady && connection?.credentialRef
       ? await this.validateGeography(tenantId, connection.credentialRef, geography)
       : { passed: false, evidenceRefs: [] as string[],
         meaning: 'A geografia não pôde ser validada porque o destino Meta ainda não está pronto.' };
-    const realMetaReady = protocolReady && targetReady;
+    const realMetaReady = protocolReady && targetReady && metaDiagnostic.status === 'passed';
     const adapterReady = this.writeAdapter?.enabled() === true;
     const tenantKillSwitchPassed = effectiveKillSwitch.tenant.known
       && effectiveKillSwitch.tenant.status === 'released';
@@ -293,20 +316,36 @@ export class ExecutionAuthorizationService {
       },
       {
         key: 'real_meta_write_validation', status: realMetaReady ? 'passed' : 'blocked',
-        evidenceRefs: validationProtocol
-          ? [`meta_write_validation_protocol:${validationProtocol.metaWriteValidationProtocolId}`]
-          : [],
+        evidenceRefs: [
+          ...(validationProtocol
+            ? [`meta_write_validation_protocol:${validationProtocol.metaWriteValidationProtocolId}`]
+            : []),
+          ...(metaDiagnostic.connection.oauthSubjectId
+            ? [`meta_oauth_subject:${metaDiagnostic.connection.oauthSubjectId}`]
+            : []),
+          ...(metaDiagnostic.adAccount.recognizedId
+            ? [`meta_ad_account:${metaDiagnostic.adAccount.recognizedId}`]
+            : []),
+          ...(metaDiagnostic.facebookPage.selectedId
+            ? [`meta_page:${metaDiagnostic.facebookPage.selectedId}`]
+            : []),
+          ...(metaDiagnostic.whatsapp.selectedId
+            ? [`meta_whatsapp:${metaDiagnostic.whatsapp.selectedId}`]
+            : []),
+        ],
         meaning: realMetaReady
-          ? 'O protocolo, a conta de anúncios, a conexão, a Página e o WhatsApp estão prontos para a prova controlada.'
+          ? 'O protocolo, a conta de anúncios, a conexão, a Página, o WhatsApp e as permissões foram comprovados por leitura autenticada da Meta.'
           : !protocolReady
             ? `O protocolo real não está preparado para iniciar (estado: ${validationProtocol?.status ?? 'missing'}).`
-            : !plan || !connectionId || !adAccountReady
-              ? 'O plano não possui um destino Meta executável e atual.'
-              : !connectionReady
-                ? `A conexão Meta não está pronta (estado: ${connection?.status ?? 'missing'}).`
-                : !pageReady || !whatsappReady
-                  ? 'A Página e o WhatsApp selecionados não estão completos ou são ambíguos.'
-                  : 'O destino Meta real não pôde ser comprovado.',
+            : metaDiagnostic.failureCode
+              ? `Diagnóstico Meta bloqueou o preflight: ${metaDiagnostic.failureCode}.`
+              : !plan || !connectionId || !adAccountReady
+                ? 'O plano não possui um destino Meta executável e atual.'
+                : !connectionReady
+                  ? `A conexão Meta não está pronta (estado: ${connection?.status ?? 'missing'}).`
+                  : !pageReady || !whatsappReady
+                    ? 'A Página e o WhatsApp selecionados não estão completos ou são ambíguos.'
+                    : 'O destino Meta real não pôde ser comprovado.',
       },
       {
         key: 'write_adapter_enabled', status: adapterReady ? 'passed' : 'blocked',
@@ -337,6 +376,7 @@ export class ExecutionAuthorizationService {
       authorizationStatus: authorization.status,
       checks,
       blockers,
+      metaDiagnostic,
       boundaries,
     };
     const generatedAt = new Date().toISOString();
@@ -353,6 +393,7 @@ export class ExecutionAuthorizationService {
       status: 'blocked_before_attempt',
       checks,
       blockers,
+      metaDiagnostic,
       nextAction: blockers.length
         ? this.nextAction(blockers[0])
         : 'Executar uma única criação controlada, mantendo todos os objetos em PAUSED.',
@@ -364,9 +405,289 @@ export class ExecutionAuthorizationService {
       this.event(authorization, undefined, 'execution_preflight_blocked', {
         status: preflight.status,
         blockers,
+        metaDiagnosticStatus: metaDiagnostic.status,
+        metaDiagnosticFailureCode: metaDiagnostic.failureCode,
         executionRecordCreated: false,
       }, 'blocked', generatedAt, preflight.executionPreflightId, 'execution_preflight'),
     );
+  }
+
+  private async buildMetaDiagnostic(
+    tenantId: string,
+    connectionId: string | undefined,
+    connectionStatus: string | undefined,
+    credentialRef: string | undefined,
+    configuredAdAccountId: string | undefined,
+    bindings: MetaAssetBinding[],
+  ): Promise<MetaPreflightDiagnosticV1> {
+    const observedAt = new Date().toISOString();
+    const selectedPages = bindings.filter((item) =>
+      item.assetType === 'facebook_page' && item.selected);
+    const selectedWhatsapp = bindings.filter((item) =>
+      item.assetType === 'whatsapp' && item.selected);
+    const selectedAdAccounts = bindings.filter((item) =>
+      item.assetType === 'ad_account' && item.selected);
+    const base = {
+      observedAt,
+      connection: {
+        status: 'blocked' as const,
+        ...(connectionId ? { connectionId } : {}),
+        ...(connectionStatus ? { connectionStatus } : {}),
+      },
+      adAccount: {
+        status: 'blocked' as const,
+        ...(configuredAdAccountId ? { configuredId: configuredAdAccountId } : {}),
+      },
+      facebookPage: {
+        status: 'blocked' as const,
+        selectedId: selectedPages[0]?.externalId,
+        selectedDisplayName: selectedPages[0]?.displayName,
+        discovered: false,
+      },
+      whatsapp: {
+        status: 'blocked' as const,
+        selectedId: selectedWhatsapp[0]?.externalId,
+        selectedDisplayName: selectedWhatsapp[0]?.displayName,
+        recognizedNumber: selectedWhatsapp[0]?.displayName,
+        discovered: false,
+      },
+      relationships: {
+        status: 'blocked' as const,
+        selectedPageCount: selectedPages.length,
+        selectedWhatsappCount: selectedWhatsapp.length,
+        selectedAdAccountCount: selectedAdAccounts.length,
+      },
+      permissions: {
+        status: 'blocked' as const,
+        required: [] as string[],
+        granted: [] as string[],
+        missing: [] as string[],
+        capabilities: [] as MetaPreflightDiagnosticV1['permissions']['capabilities'],
+      },
+    };
+
+    if (!connectionId || !credentialRef || !['connected', 'ready'].includes(connectionStatus ?? '')) {
+      return {
+        ...base,
+        status: 'blocked',
+        failureCode: 'meta_connection_not_ready',
+        connection: {
+          ...base.connection,
+          reason: 'A conexão Meta não possui credencial válida e estado connected/ready.',
+        },
+      };
+    }
+    if (!this.readonlyAdapter) {
+      return {
+        ...base,
+        status: 'blocked',
+        failureCode: 'meta_read_diagnostic_unavailable',
+        connection: {
+          ...base.connection,
+          reason: 'O adapter Meta somente-leitura não está disponível no runtime.',
+        },
+      };
+    }
+
+    const connectionRead = await this.readonlyAdapter.validateConnection(tenantId, credentialRef);
+    if (!connectionRead.success || !connectionRead.data) {
+      return {
+        ...base,
+        status: 'blocked',
+        observedAt: connectionRead.observedAt,
+        failureCode: 'meta_connection_validation_failed',
+        connection: {
+          ...base.connection,
+          normalizedError: connectionRead.normalizedError,
+          reason: 'A Meta recusou ou não confirmou a identidade OAuth da conexão.',
+        },
+      };
+    }
+
+    const connectedBase = {
+      ...base,
+      observedAt: connectionRead.observedAt,
+      connection: {
+        status: 'passed' as const,
+        connectionId,
+        connectionStatus,
+        oauthSubjectId: connectionRead.data.subjectId,
+      },
+    };
+    if (!configuredAdAccountId || !/^act_\d+$/.test(configuredAdAccountId)) {
+      return {
+        ...connectedBase,
+        status: 'blocked',
+        failureCode: 'ad_account_missing_or_invalid',
+        adAccount: {
+          ...connectedBase.adAccount,
+          reason: 'O plano não contém uma conta de anúncios executável no formato act_<id>.',
+        },
+      };
+    }
+
+    const [assetsRead, adAccountRead, permissionsRead] = await Promise.all([
+      this.readonlyAdapter.discoverAssets(credentialRef, tenantId),
+      this.readonlyAdapter.readAdAccount(tenantId, credentialRef, configuredAdAccountId),
+      this.readonlyAdapter.validateCapabilities(
+        tenantId, credentialRef, bindings, PREFLIGHT_META_CAPABILITIES,
+      ),
+    ]);
+
+    const adData = adAccountRead.success && adAccountRead.data
+      ? adAccountRead.data : undefined;
+    const recognizedAdId = typeof adData?.id === 'string' ? adData.id : undefined;
+    const adAccountPassed = recognizedAdId === configuredAdAccountId;
+    const adAccount: MetaPreflightDiagnosticV1['adAccount'] = {
+      status: adAccountPassed ? 'passed' : 'blocked',
+      configuredId: configuredAdAccountId,
+      ...(recognizedAdId ? { recognizedId: recognizedAdId } : {}),
+      ...(typeof adData?.name === 'string' ? { name: adData.name } : {}),
+      ...(['string', 'number'].includes(typeof adData?.account_status)
+        ? { accountStatus: adData?.account_status as string | number } : {}),
+      ...(typeof adData?.currency === 'string' ? { currency: adData.currency } : {}),
+      ...(typeof adData?.timezone_name === 'string' ? { timezoneName: adData.timezone_name } : {}),
+      ...(!adAccountRead.success && adAccountRead.normalizedError
+        ? { normalizedError: adAccountRead.normalizedError } : {}),
+      ...(!adAccountPassed ? { reason: 'A conta configurada não foi confirmada por leitura autenticada da Meta.' } : {}),
+    };
+    if (!adAccountPassed) {
+      return {
+        ...connectedBase,
+        status: 'blocked',
+        failureCode: 'ad_account_not_recognized',
+        adAccount,
+      };
+    }
+
+    if (selectedPages.length !== 1) {
+      return {
+        ...connectedBase,
+        status: 'blocked',
+        adAccount,
+        failureCode: 'facebook_page_missing_or_ambiguous',
+        facebookPage: {
+          ...connectedBase.facebookPage,
+          reason: `É necessário exatamente uma Página selecionada; encontradas ${selectedPages.length}.`,
+        },
+      };
+    }
+    if (selectedWhatsapp.length !== 1) {
+      return {
+        ...connectedBase,
+        status: 'blocked',
+        adAccount,
+        failureCode: 'whatsapp_missing_or_ambiguous',
+        whatsapp: {
+          ...connectedBase.whatsapp,
+          reason: `É necessário exatamente um WhatsApp selecionado; encontrados ${selectedWhatsapp.length}.`,
+        },
+      };
+    }
+
+    const discoveredAssets = assetsRead.success ? assetsRead.data ?? [] : [];
+    const pageDiscovered = discoveredAssets.some((item) =>
+      item.assetType === 'facebook_page' && item.externalId === selectedPages[0].externalId);
+    const whatsappDiscovered = discoveredAssets.some((item) =>
+      item.assetType === 'whatsapp' && item.externalId === selectedWhatsapp[0].externalId);
+    const discoveredWhatsapp = discoveredAssets.find((item) =>
+      item.assetType === 'whatsapp' && item.externalId === selectedWhatsapp[0].externalId);
+    const facebookPage: MetaPreflightDiagnosticV1['facebookPage'] = {
+      status: pageDiscovered ? 'passed' : 'blocked',
+      selectedId: selectedPages[0].externalId,
+      selectedDisplayName: selectedPages[0].displayName,
+      discovered: pageDiscovered,
+      ...(!pageDiscovered ? { reason: assetsRead.success
+        ? 'A Página selecionada não apareceu na descoberta autenticada de ativos.'
+        : `A descoberta de ativos falhou (${assetsRead.normalizedError ?? 'UNKNOWN'}).` } : {}),
+    };
+    if (!pageDiscovered) {
+      return {
+        ...connectedBase,
+        status: 'blocked',
+        adAccount,
+        facebookPage,
+        failureCode: 'facebook_page_not_discovered',
+      };
+    }
+
+    const whatsapp: MetaPreflightDiagnosticV1['whatsapp'] = {
+      status: whatsappDiscovered ? 'passed' : 'blocked',
+      selectedId: selectedWhatsapp[0].externalId,
+      selectedDisplayName: selectedWhatsapp[0].displayName,
+      recognizedNumber: discoveredWhatsapp?.displayName ?? selectedWhatsapp[0].displayName,
+      discovered: whatsappDiscovered,
+      ...(!whatsappDiscovered ? { reason: assetsRead.success
+        ? 'O WhatsApp selecionado não apareceu na descoberta autenticada de ativos da Meta.'
+        : `A descoberta de ativos falhou (${assetsRead.normalizedError ?? 'UNKNOWN'}).` } : {}),
+    };
+    if (!whatsappDiscovered) {
+      return {
+        ...connectedBase,
+        status: 'blocked',
+        adAccount,
+        facebookPage,
+        whatsapp,
+        failureCode: 'whatsapp_not_discovered',
+      };
+    }
+
+    const relationships: MetaPreflightDiagnosticV1['relationships'] = {
+      status: 'passed',
+      selectedPageCount: selectedPages.length,
+      selectedWhatsappCount: selectedWhatsapp.length,
+      selectedAdAccountCount: selectedAdAccounts.length,
+      reason: 'Conta do plano, Página selecionada e WhatsApp selecionado foram reconhecidos na mesma conexão Meta.',
+    };
+
+    const capabilityEvidence = permissionsRead.success ? permissionsRead.data ?? [] : [];
+    const required = [...new Set(capabilityEvidence.flatMap((item) => item.requiredPermissions))];
+    const granted = [...new Set(capabilityEvidence.flatMap((item) => item.grantedPermissions))];
+    const missing = required.filter((permission) => !granted.includes(permission));
+    const unavailable = capabilityEvidence.filter((item) => !item.available);
+    const permissionsPassed = permissionsRead.success
+      && capabilityEvidence.length > 0
+      && missing.length === 0
+      && unavailable.length === 0;
+    const permissions: MetaPreflightDiagnosticV1['permissions'] = {
+      status: permissionsPassed ? 'passed' : 'blocked',
+      required,
+      granted,
+      missing,
+      capabilities: capabilityEvidence.map((item) => ({
+        capability: item.capability,
+        available: item.available,
+        ...(item.assetScope ? { assetScope: item.assetScope } : {}),
+        ...(item.reason ? { reason: item.reason } : {}),
+      })),
+      ...(!permissionsRead.success && permissionsRead.normalizedError
+        ? { normalizedError: permissionsRead.normalizedError } : {}),
+      ...(!permissionsPassed ? { reason: permissionsRead.success
+        ? 'Uma ou mais permissões/capabilities exigidas pela campanha não estão disponíveis para os ativos selecionados.'
+        : 'A Meta não permitiu validar as permissões do token.' } : {}),
+    };
+    if (!permissionsPassed) {
+      return {
+        ...connectedBase,
+        status: 'blocked',
+        adAccount,
+        facebookPage,
+        whatsapp,
+        relationships,
+        permissions,
+        failureCode: 'meta_permissions_missing',
+      };
+    }
+
+    return {
+      ...connectedBase,
+      status: 'passed',
+      adAccount,
+      facebookPage,
+      whatsapp,
+      relationships,
+      permissions,
+    };
   }
 
   private async transition(
@@ -429,7 +750,7 @@ export class ExecutionAuthorizationService {
       tenant_kill_switch: 'Implementar e validar o Kill Switch fail-closed do tenant.',
       campaign_kill_switch: 'Implementar e validar o Kill Switch da campanha.',
       meta_geography_resolved: 'Corrigir ou selecionar uma geografia reconhecida pela Meta.',
-      real_meta_write_validation: 'Validar criação pausada em ambiente Meta controlado.',
+      real_meta_write_validation: 'Corrigir o item exato indicado em metaDiagnostic e repetir somente o preflight.',
       write_adapter_enabled: 'Habilitar o adapter somente após os demais gates.',
     };
     return blocker ? actions[blocker] : 'Nenhuma ação externa foi autorizada.';
