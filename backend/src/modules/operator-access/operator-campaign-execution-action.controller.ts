@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { CampaignPackageStatusService } from '../campaign-package/campaign-package-status.service';
 import { MetaConnectionService } from '../meta-connection/meta-connection.service';
+import { humanizeExecutionBlockers } from './human-decision.presenter';
 import { OperatorAccessService } from './operator-access.service';
 
 @Controller('operator/campaign-packages/v1')
@@ -34,14 +35,14 @@ export class OperatorCampaignExecutionActionController {
     if (snapshot.next_action !== 'PREPARE_PAUSED_CREATION') {
       throw new ConflictException({
         code: 'campaign_not_ready_for_paused_creation',
-        message: `Campaign Package is not ready for paused creation (next_action=${snapshot.next_action})`,
+        message: 'A campanha ainda não está pronta para a criação segura. Conclua a etapa indicada e tente novamente.',
       });
     }
     const approvalId = snapshot.plan_approval?.approval_id;
     if (!approvalId || snapshot.plan_approval?.status !== 'approved') {
       throw new ConflictException({
         code: 'approved_plan_required',
-        message: 'The exact current execution plan must be approved first',
+        message: 'Revise e aprove a configuração atual da campanha antes de continuar.',
       });
     }
 
@@ -61,6 +62,11 @@ export class OperatorCampaignExecutionActionController {
 
     return {
       action_status: 'AWAITING_HUMAN_CONFIRMATION',
+      user_view: {
+        title: 'Campanha pronta para criar',
+        message: 'A configuração aprovada está preservada. A próxima etapa cria a campanha na Meta em modo pausado, sem ativar e sem gerar gasto.',
+        next_step: 'Confirme a criação em modo pausado para continuar.',
+      },
       package_id: packageId,
       campaign_id: packageId,
       execution_plan_id: snapshot.execution_plan.execution_plan_id,
@@ -106,7 +112,7 @@ export class OperatorCampaignExecutionActionController {
     if (body?.confirmation !== 'CREATE_PAUSED') {
       throw new ConflictException({
         code: 'explicit_paused_creation_confirmation_required',
-        message: 'Exact confirmation CREATE_PAUSED is required. No Meta write was attempted.',
+        message: 'Confirme a criação em modo pausado para continuar. Nenhuma alteração foi feita na Meta.',
       });
     }
 
@@ -120,7 +126,7 @@ export class OperatorCampaignExecutionActionController {
       || currentAuthorization.executionPlanId !== resolved.snapshot.execution_plan.execution_plan_id) {
       throw new ConflictException({
         code: 'execution_authorization_scope_mismatch',
-        message: 'Execution authorization does not belong to the approved Campaign Package',
+        message: 'A confirmação não corresponde à versão atual desta campanha. Prepare a criação novamente antes de continuar.',
       });
     }
 
@@ -131,7 +137,7 @@ export class OperatorCampaignExecutionActionController {
         resolved.tenantId,
         executionAuthorizationId,
         'approve',
-        'Explicit CREATE_PAUSED confirmation received through Contexto Ads.',
+        'Confirmação explícita para criar a campanha em modo pausado.',
       );
 
     await this.access.prepareMetaWriteValidation(
@@ -139,20 +145,45 @@ export class OperatorCampaignExecutionActionController {
       resolved.tenantId,
       approvedAuthorization.executionManifestId,
     );
-    const preflight = await this.access.runExecutionPreflight(
+    let preflight = await this.access.runExecutionPreflight(
       auth,
       resolved.tenantId,
       executionAuthorizationId,
     );
 
+    if (preflight.blockers?.length === 1
+      && preflight.blockers[0] === 'campaign_kill_switch') {
+      await this.access.changeKillSwitch(
+        auth,
+        resolved.tenantId,
+        'campaign',
+        packageId,
+        'released',
+        'Liberação automática somente para criação segura em PAUSED após confirmação humana. Ativação, entrega e gasto permanecem bloqueados.',
+      );
+      preflight = await this.access.runExecutionPreflight(
+        auth,
+        resolved.tenantId,
+        executionAuthorizationId,
+      );
+    }
+
     if (preflight.blockers?.length) {
+      const humanDecision = humanizeExecutionBlockers(preflight.blockers);
       return {
-        action_status: 'BLOCKED_BEFORE_META_WRITE',
+        action_status: 'ACTION_REQUIRED_BEFORE_CREATION',
+        user_view: {
+          title: humanDecision.title,
+          message: humanDecision.message,
+          next_step: humanDecision.nextStep,
+          user_decision_required: humanDecision.userDecisionRequired,
+        },
         package_id: packageId,
         execution_authorization_id: executionAuthorizationId,
-        blockers: preflight.blockers,
-        checks: preflight.checks,
-        next_action: preflight.nextAction,
+        diagnostics: {
+          blockers: preflight.blockers,
+          next_action: preflight.nextAction,
+        },
         boundaries: {
           external_writes_allowed: false,
           external_writes_performed: false,
@@ -172,6 +203,11 @@ export class OperatorCampaignExecutionActionController {
 
     return {
       action_status: 'META_OBJECTS_CREATED_PAUSED',
+      user_view: {
+        title: 'Campanha criada com segurança',
+        message: 'A estrutura foi criada na Meta e continua pausada. Nada está rodando e nenhum gasto foi autorizado.',
+        next_step: 'Confira os dados criados e depois conclua a forma de pagamento diretamente na Meta.',
+      },
       package_id: packageId,
       execution_authorization_id: executionAuthorizationId,
       protocol_status: protocol.status,
@@ -206,6 +242,11 @@ export class OperatorCampaignExecutionActionController {
     const target = await this.connections.selectedExecutionTarget(resolved.tenantId);
     return {
       action_status: 'META_BILLING_HANDOFF_READY',
+      user_view: {
+        title: 'Adicionar forma de pagamento na Meta',
+        message: 'O pagamento é feito diretamente na Meta. O Contexto Ads não recebe dinheiro nem armazena dados do cartão.',
+        next_step: 'Abra a cobrança da Meta, escolha a conta indicada e conclua a forma de pagamento. Depois volte para continuar.',
+      },
       package_id: packageId,
       meta_payment: this.paymentHandoff(target.adAccountId),
       boundaries: {
@@ -236,13 +277,13 @@ export class OperatorCampaignExecutionActionController {
     if (found.length === 0) {
       throw new NotFoundException({
         code: 'campaign_package_not_found',
-        message: 'Campaign Package was not found for the authenticated operator',
+        message: 'Não encontrei esta campanha entre as campanhas disponíveis para esta conta.',
       });
     }
     if (found.length > 1) {
       throw new ConflictException({
         code: 'campaign_package_resolution_ambiguous',
-        message: 'Campaign Package exists in more than one authorized tenant',
+        message: 'Encontrei mais de uma campanha com esta referência. Selecione a campanha correta para continuar.',
       });
     }
     await this.access.authorizeCampaignPreparation(authorization, found[0].tenantId);
@@ -255,10 +296,10 @@ export class OperatorCampaignExecutionActionController {
       destination: 'META_ADS_BILLING',
       manage_url: 'https://business.facebook.com/billing_hub',
       ad_account_id: adAccountId ?? null,
-      instructions: 'Open Meta billing, select the ad account shown here, and add or confirm the payment method/funds directly with Meta.',
+      instructions: 'Abra a cobrança da Meta, selecione a conta de anúncios indicada e adicione ou confirme a forma de pagamento diretamente na Meta.',
       payment_is_processed_by_context_ads: false,
       payment_credentials_are_collected_by_context_ads: false,
-      return_step: 'Return to Contexto Ads after Meta billing is ready. Activation remains a separate explicit authorization.',
+      return_step: 'Depois de concluir o pagamento na Meta, volte ao Contexto Ads. A ativação continua exigindo uma nova confirmação.',
     };
   }
 
@@ -276,7 +317,7 @@ export class OperatorCampaignExecutionActionController {
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim())) {
       throw new ConflictException({
         code: `${field}_invalid`,
-        message: `${field} must be a valid UUID`,
+        message: 'Não consegui identificar a campanha com segurança. Volte à campanha atual e tente novamente.',
       });
     }
     return value.trim();
