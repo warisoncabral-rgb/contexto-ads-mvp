@@ -76,7 +76,13 @@ export class CampaignContextService {
     this.assertUuid(tenantId, 'tenantId');
     const now = new Date().toISOString();
     const campaignId = randomUUID();
-    const context = this.buildContext(tenantId, campaignId, input, now);
+    const context = this.buildContext(
+      tenantId,
+      campaignId,
+      input,
+      now,
+      operatorSubject === undefined,
+    );
     const versioned: CampaignContextPackageV1 = { ...context, version: 1 };
     if (operatorSubject) {
       await this.contexts.create(
@@ -102,6 +108,7 @@ export class CampaignContextService {
       campaignId,
       input,
       new Date().toISOString(),
+      operatorSubject === undefined,
     );
     const versioned = operatorSubject
       ? await this.contexts.appendNext(
@@ -153,19 +160,19 @@ export class CampaignContextService {
     campaignId: string,
     input: CampaignContextInput | undefined,
     now: string,
+    requireDestinationDetail = true,
   ): UnversionedCampaignContextPackageV1 {
     if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
       throw new BadRequestException('facts must be an object');
     }
     const facts = this.normalizeFacts(input ?? {}, now);
-    const validationIssues = this.validateCompleteness(facts);
-    const baseRequiredIssues = validationIssues.filter((issue) => issue.code === 'required_fact_missing');
+    const validationIssues = this.validateCompleteness(facts, requireDestinationDetail);
     return {
       packageId: randomUUID(),
       tenantId,
       campaignId,
       schemaVersion: '1.0',
-      status: baseRequiredIssues.length === 0
+      status: validationIssues.length === 0
         ? 'ready_for_generation'
         : 'needs_information',
       facts,
@@ -187,8 +194,8 @@ export class CampaignContextService {
     const durationDays = this.optionalInteger(input.durationDays, 'durationDays', 1, 365);
     const budget = this.optionalBudget(input.budget);
     const whatsappNumber = this.optionalContact(input.whatsappNumber, 'whatsappNumber');
-    const instagramAccount = this.optionalText(input.instagramAccount, 'instagramAccount', 200);
-    const facebookPage = this.optionalText(input.facebookPage, 'facebookPage', 300);
+    const instagramAccount = this.optionalText(input.instagramAccount, 'instagramAccount', 500);
+    const facebookPage = this.optionalText(input.facebookPage, 'facebookPage', 500);
     const websiteUrl = this.optionalUrl(input.websiteUrl, 'websiteUrl');
     const phoneNumber = this.optionalContact(input.phoneNumber, 'phoneNumber');
 
@@ -208,7 +215,10 @@ export class CampaignContextService {
     return facts;
   }
 
-  private validateCompleteness(facts: CampaignContextFacts): CampaignContextIssue[] {
+  private validateCompleteness(
+    facts: CampaignContextFacts,
+    requireDestinationDetail: boolean,
+  ): CampaignContextIssue[] {
     const issues: CampaignContextIssue[] = REQUIRED_FIELDS
       .filter((field) => facts[field] === undefined)
       .map((field) => ({
@@ -218,6 +228,8 @@ export class CampaignContextService {
         message: `A informação obrigatória "${FIELD_LABELS[field]}" ainda não foi informada.`,
         nextAction: `Informar ${FIELD_LABELS[field]} antes de gerar a campanha.`,
       }));
+
+    if (!requireDestinationDetail) return issues;
 
     const destination = facts.destination?.value;
     const destinationField = destination
