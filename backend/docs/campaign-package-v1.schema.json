@@ -25,9 +25,17 @@
     "offer_description": { "type": "string", "minLength": 1 },
     "offer_type": { "enum": ["product", "service", "catalog", "promotion", "lead_generation"] },
     "commercial_conditions": { "type": ["object", "string"] },
-    "campaign_objective": { "const": "LEADS" },
-    "conversion_destination": { "const": "WHATSAPP" },
+    "campaign_objective": { "enum": ["AWARENESS", "TRAFFIC", "ENGAGEMENT", "LEADS", "APP_PROMOTION", "SALES"] },
+    "conversion_destination": { "enum": ["WHATSAPP", "INSTAGRAM", "FACEBOOK_PAGE", "MESSENGER", "WEBSITE", "PHONE", "INSTANT_FORM", "APP", "PHYSICAL_LOCATION", "OTHER"] },
     "campaign_goal_description": { "type": "string", "minLength": 1 },
+    "whatsapp_number": { "type": "string", "minLength": 8 },
+    "instagram_account": { "type": "string", "minLength": 1 },
+    "instagram_url": { "type": "string", "format": "uri" },
+    "facebook_page": { "type": "string", "minLength": 1 },
+    "facebook_page_url": { "type": "string", "format": "uri" },
+    "website_url": { "type": "string", "format": "uri" },
+    "phone_number": { "type": "string", "minLength": 8 },
+    "app_url": { "type": "string", "format": "uri" },
     "audience_description": { "type": "string", "minLength": 1 },
     "locations": {
       "type": "array",
@@ -62,13 +70,13 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["ad_reference", "primary_text", "headline", "cta", "initial_message", "media_id"],
+        "required": ["ad_reference", "primary_text", "headline", "cta", "media_id"],
         "properties": {
           "ad_reference": { "type": "string", "minLength": 1 },
           "primary_text": { "type": "string", "minLength": 1 },
           "headline": { "type": "string", "minLength": 1 },
           "description": { "type": "string" },
-          "cta": { "const": "WHATSAPP_MESSAGE" },
+          "cta": { "enum": ["WHATSAPP_MESSAGE", "LEARN_MORE", "CONTACT_US", "SIGN_UP", "SHOP_NOW"] },
           "initial_message": { "type": "string", "minLength": 1 },
           "media_id": { "type": "string", "minLength": 1 }
         }
@@ -117,6 +125,30 @@
     {
       "if": { "properties": { "budget_type": { "const": "DAILY" } }, "required": ["budget_type"] },
       "then": { "required": ["duration_days"] }
+    },
+    {
+      "if": { "properties": { "conversion_destination": { "const": "WHATSAPP" } }, "required": ["conversion_destination"] },
+      "then": { "required": ["whatsapp_number"] }
+    },
+    {
+      "if": { "properties": { "conversion_destination": { "const": "INSTAGRAM" } }, "required": ["conversion_destination"] },
+      "then": { "anyOf": [ { "required": ["instagram_url"] }, { "required": ["instagram_account"] } ] }
+    },
+    {
+      "if": { "properties": { "conversion_destination": { "enum": ["FACEBOOK_PAGE", "MESSENGER", "INSTANT_FORM"] } }, "required": ["conversion_destination"] },
+      "then": { "anyOf": [ { "required": ["facebook_page_url"] }, { "required": ["facebook_page"] } ] }
+    },
+    {
+      "if": { "properties": { "conversion_destination": { "const": "WEBSITE" } }, "required": ["conversion_destination"] },
+      "then": { "required": ["website_url"] }
+    },
+    {
+      "if": { "properties": { "conversion_destination": { "const": "PHONE" } }, "required": ["conversion_destination"] },
+      "then": { "required": ["phone_number"] }
+    },
+    {
+      "if": { "properties": { "conversion_destination": { "const": "APP" } }, "required": ["conversion_destination"] },
+      "then": { "required": ["app_url"] }
     }
   ]
 }
