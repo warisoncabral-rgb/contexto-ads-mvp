@@ -3,9 +3,30 @@ export type StrategyStatus = 'DRAFT' | 'IN_REVIEW' | 'COMPLETE';
 export type HandoffStatus = 'READY_FOR_GENERATOR';
 export type BudgetType = 'DAILY' | 'LIFETIME';
 export type OfferType = 'product' | 'service' | 'catalog' | 'promotion' | 'lead_generation';
-export type CampaignPackageObjective = 'LEADS';
-export type ConversionDestination = 'WHATSAPP';
-export type AdCallToAction = 'WHATSAPP_MESSAGE';
+export type CampaignPackageObjective =
+  | 'AWARENESS'
+  | 'TRAFFIC'
+  | 'ENGAGEMENT'
+  | 'LEADS'
+  | 'APP_PROMOTION'
+  | 'SALES';
+export type ConversionDestination =
+  | 'WHATSAPP'
+  | 'INSTAGRAM'
+  | 'FACEBOOK_PAGE'
+  | 'MESSENGER'
+  | 'WEBSITE'
+  | 'PHONE'
+  | 'INSTANT_FORM'
+  | 'APP'
+  | 'PHYSICAL_LOCATION'
+  | 'OTHER';
+export type AdCallToAction =
+  | 'WHATSAPP_MESSAGE'
+  | 'LEARN_MORE'
+  | 'CONTACT_US'
+  | 'SIGN_UP'
+  | 'SHOP_NOW';
 export type MediaType = 'image' | 'video';
 export type CampaignPackageMimeType = 'image/jpeg' | 'image/png' | 'video/mp4';
 
@@ -23,7 +44,7 @@ export interface CampaignPackageAdV1 {
   headline: string;
   description?: string;
   cta: AdCallToAction;
-  initial_message: string;
+  initial_message?: string;
   media_id: string;
 }
 
@@ -56,9 +77,15 @@ export interface CampaignPackageV1 {
   campaign_objective: CampaignPackageObjective;
   conversion_destination: ConversionDestination;
   campaign_goal_description: string;
+
   whatsapp_number?: string;
   instagram_account?: string;
+  instagram_url?: string;
   facebook_page?: string;
+  facebook_page_url?: string;
+  website_url?: string;
+  phone_number?: string;
+  app_url?: string;
 
   audience_description: string;
   locations: CampaignPackageLocationV1[];
