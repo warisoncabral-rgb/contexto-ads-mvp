@@ -29,12 +29,43 @@ describe('IntegrationDiagnosticController', () => {
     };
   }
 
-  function controller(access: any, packages: any, plans?: any, capabilities?: any) {
+  function defaultConnections() {
+    return {
+      selectedExecutionTarget: jest.fn().mockResolvedValue({
+        tenantId,
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        adAccountId: 'act_123',
+        displayName: 'Conta Rosa Vip',
+        selectedAssets: [
+          { assetType: 'ad_account', externalId: 'act_123', displayName: 'Conta Rosa Vip' },
+          { assetType: 'facebook_page', externalId: '10', displayName: 'Rosa Vip' },
+          { assetType: 'whatsapp', externalId: '20', displayName: '83986553047' },
+        ],
+        observedAt: '2026-09-04T11:00:00.000Z',
+        boundaries: {
+          selectedDiscoverySnapshotOnly: true,
+          credentialExposed: false,
+          publicationAuthorized: false,
+          externalWritesAllowed: false,
+          externalWritesPerformed: false,
+        },
+      }),
+    };
+  }
+
+  function controller(
+    access: any,
+    packages: any,
+    plans?: any,
+    capabilities?: any,
+    connections?: any,
+  ) {
     return new IntegrationDiagnosticController(
       access,
       packages,
       plans ?? { latest: jest.fn() },
       capabilities ?? { validateForExecution: jest.fn() },
+      connections ?? defaultConnections(),
     );
   }
 
@@ -55,6 +86,7 @@ describe('IntegrationDiagnosticController', () => {
         status: 'FAILED',
         server_credential_status: 'CONFIGURED_BUT_REQUEST_TOKEN_MISMATCH',
       },
+      meta_selected_target: { status: 'NOT_RUN' },
       next_action: 'SYNC_GPT_BEARER_TOKEN_WITH_RENDER',
       boundaries: {
         publication_authorized: false,
@@ -79,11 +111,12 @@ describe('IntegrationDiagnosticController', () => {
         required_permissions_present: true,
       },
       package: { status: 'NOT_REQUESTED' },
+      meta_selected_target: { status: 'NOT_RUN' },
       meta_capability_validation: { status: 'NOT_RUN' },
     });
   });
 
-  it('reports a persisted package that still needs creative preparation', async () => {
+  it('reports a persisted package that still needs creative preparation and reads its selected target', async () => {
     const access = { listTenants: jest.fn().mockResolvedValue(workspace()) } as any;
     const packages = {
       get: jest.fn().mockResolvedValue({
@@ -102,7 +135,8 @@ describe('IntegrationDiagnosticController', () => {
     } as any;
     const plans = { latest: jest.fn() } as any;
     const capabilities = { validateForExecution: jest.fn() } as any;
-    const subject = controller(access, packages, plans, capabilities);
+    const connections = defaultConnections();
+    const subject = controller(access, packages, plans, capabilities, connections);
 
     await expect(subject.diagnose({ package_id: packageId }, 'Bearer valid')).resolves.toMatchObject({
       overall_status: 'PACKAGE_CREATIVE_PREPARATION_REQUIRED',
@@ -112,10 +146,17 @@ describe('IntegrationDiagnosticController', () => {
         creative_status: null,
         target_binding_status: 'BOUND',
       },
+      meta_selected_target: {
+        status: 'OK',
+        ad_account: { id: 'act_123', display_name: 'Conta Rosa Vip' },
+        facebook_page: { id: '10', display_name: 'Rosa Vip' },
+        whatsapp: { id: '20', display_name: '83986553047' },
+      },
       meta_capability_validation: { status: 'NOT_RUN' },
       next_action: 'PREPARE_CREATIVE_PACKAGE',
     });
     expect(packages.get).toHaveBeenCalledWith(tenantId, packageId);
+    expect(connections.selectedExecutionTarget).toHaveBeenCalledWith(tenantId);
     expect(plans.latest).not.toHaveBeenCalled();
     expect(capabilities.validateForExecution).not.toHaveBeenCalled();
   });
@@ -160,6 +201,12 @@ describe('IntegrationDiagnosticController', () => {
 
     await expect(subject.diagnose({ package_id: packageId }, 'Bearer valid')).resolves.toMatchObject({
       overall_status: 'PACKAGE_CREATIVE_REVIEW_REQUIRED',
+      meta_selected_target: {
+        status: 'OK',
+        ad_account: { id: 'act_123' },
+        facebook_page: { id: '10' },
+        whatsapp: { id: '20' },
+      },
       meta_capability_validation: {
         status: 'OK',
         capabilities: [
@@ -172,5 +219,60 @@ describe('IntegrationDiagnosticController', () => {
       tenantId,
       '33333333-3333-4333-8333-333333333333',
     );
+  });
+
+  it('fails closed when the selected Meta target cannot be read', async () => {
+    const access = { listTenants: jest.fn().mockResolvedValue(workspace()) } as any;
+    const packages = {
+      get: jest.fn().mockResolvedValue({
+        package_id: packageId,
+        campaign_id: packageId,
+        context: { status: 'ready_for_generation' },
+        creative: { status: 'approved' },
+        execution_plan: {
+          execution_plan_id: '5308c5b6-7c45-42d4-831e-ee7df642d5e6',
+          status: 'approved',
+          target_binding_status: 'BOUND',
+        },
+        plan_approval: { status: 'approved' },
+        next_action: 'PREPARE_PAUSED_CREATION',
+      }),
+    } as any;
+    const plans = {
+      latest: jest.fn().mockResolvedValue({
+        meta: {
+          connectionId: '33333333-3333-4333-8333-333333333333',
+          requiredCapabilities: [],
+        },
+      }),
+    } as any;
+    const capabilities = {
+      validateForExecution: jest.fn().mockResolvedValue({
+        success: true,
+        observedAt: '2026-09-04T11:00:00.000Z',
+        retryable: false,
+        data: [],
+      }),
+    } as any;
+    const connections = {
+      selectedExecutionTarget: jest.fn().mockRejectedValue(
+        new Error('Exactly one discovered ad account must be selected'),
+      ),
+    } as any;
+    const subject = controller(access, packages, plans, capabilities, connections);
+
+    await expect(subject.diagnose({ package_id: packageId }, 'Bearer valid')).resolves.toMatchObject({
+      overall_status: 'META_TARGET_DIAGNOSTIC_REQUIRED',
+      meta_selected_target: {
+        status: 'BLOCKED',
+        code: 'selected_meta_target_unavailable',
+      },
+      next_action: 'FIX_SELECTED_META_TARGET',
+      boundaries: {
+        external_writes_allowed: false,
+        external_writes_performed: false,
+        spend_authorized: false,
+      },
+    });
   });
 });

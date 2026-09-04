@@ -2,6 +2,7 @@ import { Body, Controller, Headers, HttpCode, HttpException, Post } from '@nestj
 import { CampaignPackageStatusService } from '../campaign-package/campaign-package-status.service';
 import { CapabilityRegistryService } from '../capability-registry/capability-registry.service';
 import { ExecutionPlanService } from '../execution-plan/execution-plan.service';
+import { MetaConnectionService } from '../meta-connection/meta-connection.service';
 import { OperatorAccessService } from './operator-access.service';
 
 type DiagnosticBody = {
@@ -15,6 +16,7 @@ export class IntegrationDiagnosticController {
     private readonly packages: CampaignPackageStatusService,
     private readonly plans: ExecutionPlanService,
     private readonly capabilities: CapabilityRegistryService,
+    private readonly connections: MetaConnectionService,
   ) {}
 
   @Post('integration/v1/action-diagnose')
@@ -65,6 +67,7 @@ export class IntegrationDiagnosticController {
           },
           tenant_resolution: { status: 'NOT_RUN' },
           package: { status: 'NOT_RUN' },
+          meta_selected_target: { status: 'NOT_RUN' },
           meta_capability_validation: { status: 'NOT_RUN' },
           next_action: 'SYNC_GPT_BEARER_TOKEN_WITH_RENDER',
         };
@@ -79,6 +82,7 @@ export class IntegrationDiagnosticController {
         },
         tenant_resolution: { status: 'NOT_RUN' },
         package: { status: 'NOT_RUN' },
+        meta_selected_target: { status: 'NOT_RUN' },
         meta_capability_validation: { status: 'NOT_RUN' },
         next_action: 'REVIEW_SERVER_AUTHENTICATION',
       };
@@ -98,6 +102,7 @@ export class IntegrationDiagnosticController {
             : 'MULTIPLE_AUTHORIZED_TENANTS',
         },
         package: { status: 'NOT_RUN' },
+        meta_selected_target: { status: 'NOT_RUN' },
         meta_capability_validation: { status: 'NOT_RUN' },
         next_action: 'FIX_OPERATOR_TENANT_MEMBERSHIP',
       };
@@ -117,6 +122,7 @@ export class IntegrationDiagnosticController {
           required_permissions_present: tenant.permissions.includes('manage_campaign_preparation'),
         },
         package: { status: 'NOT_REQUESTED' },
+        meta_selected_target: { status: 'NOT_RUN' },
         meta_capability_validation: { status: 'NOT_RUN' },
         next_action: 'RUN_CAMPAIGN_FLOW_OR_DIAGNOSE_WITH_PACKAGE_ID',
       };
@@ -126,6 +132,54 @@ export class IntegrationDiagnosticController {
       const status = await this.packages.get(tenant.tenantId, packageId);
       const creativeStatus = status.creative?.status ?? null;
       const targetStatus = status.execution_plan.target_binding_status;
+
+      let metaSelectedTarget: Record<string, unknown> = { status: 'NOT_RUN' };
+      if (targetStatus === 'BOUND') {
+        try {
+          const target = await this.connections.selectedExecutionTarget(tenant.tenantId);
+          const selectedAssets = target.selectedAssets ?? [];
+          const selectedPage = selectedAssets.find((asset) => asset.assetType === 'facebook_page');
+          const selectedWhatsapp = selectedAssets.find((asset) => asset.assetType === 'whatsapp');
+          const selectedInstagram = selectedAssets.find((asset) => asset.assetType === 'instagram_account');
+          metaSelectedTarget = {
+            status: 'OK',
+            connection_id: target.connectionId,
+            observed_at: target.observedAt,
+            ad_account: {
+              id: target.adAccountId,
+              ...(target.displayName ? { display_name: target.displayName } : {}),
+            },
+            facebook_page: selectedPage
+              ? {
+                id: selectedPage.externalId,
+                ...(selectedPage.displayName ? { display_name: selectedPage.displayName } : {}),
+              }
+              : null,
+            whatsapp: selectedWhatsapp
+              ? {
+                id: selectedWhatsapp.externalId,
+                ...(selectedWhatsapp.displayName ? { display_name: selectedWhatsapp.displayName } : {}),
+              }
+              : null,
+            instagram_account: selectedInstagram
+              ? {
+                id: selectedInstagram.externalId,
+                ...(selectedInstagram.displayName ? { display_name: selectedInstagram.displayName } : {}),
+              }
+              : null,
+            selected_assets: selectedAssets,
+            boundaries: target.boundaries,
+          };
+        } catch (error) {
+          metaSelectedTarget = {
+            status: 'BLOCKED',
+            code: 'selected_meta_target_unavailable',
+            message: error instanceof Error
+              ? error.message
+              : 'Unable to read the selected Meta execution target',
+          };
+        }
+      }
 
       let metaCapabilityValidation: Record<string, unknown> = { status: 'NOT_RUN' };
       if (creativeStatus && targetStatus === 'BOUND') {
@@ -176,15 +230,18 @@ export class IntegrationDiagnosticController {
         }
       }
 
+      const targetReadable = targetStatus !== 'BOUND' || metaSelectedTarget.status === 'OK';
       const capabilitiesReady = metaCapabilityValidation.status === 'OK'
         || metaCapabilityValidation.status === 'NOT_RUN';
-      const overallStatus = !capabilitiesReady
-        ? 'META_CAPABILITY_VALIDATION_REQUIRED'
-        : creativeStatus === 'approved' && targetStatus === 'BOUND'
-          ? 'PACKAGE_TECHNICALLY_READY_FOR_FINAL_GATES'
-          : creativeStatus
-            ? 'PACKAGE_CREATIVE_REVIEW_REQUIRED'
-            : 'PACKAGE_CREATIVE_PREPARATION_REQUIRED';
+      const overallStatus = !targetReadable
+        ? 'META_TARGET_DIAGNOSTIC_REQUIRED'
+        : !capabilitiesReady
+          ? 'META_CAPABILITY_VALIDATION_REQUIRED'
+          : creativeStatus === 'approved' && targetStatus === 'BOUND'
+            ? 'PACKAGE_TECHNICALLY_READY_FOR_FINAL_GATES'
+            : creativeStatus
+              ? 'PACKAGE_CREATIVE_REVIEW_REQUIRED'
+              : 'PACKAGE_CREATIVE_PREPARATION_REQUIRED';
 
       return {
         ...base,
@@ -208,12 +265,15 @@ export class IntegrationDiagnosticController {
           plan_approval_status: status.plan_approval?.status ?? null,
           next_action: status.next_action,
         },
+        meta_selected_target: metaSelectedTarget,
         meta_capability_validation: metaCapabilityValidation,
-        next_action: !capabilitiesReady
-          ? 'FIX_OR_REAUTHORIZE_META_CAPABILITIES'
-          : creativeStatus
-            ? status.next_action
-            : 'PREPARE_CREATIVE_PACKAGE',
+        next_action: !targetReadable
+          ? 'FIX_SELECTED_META_TARGET'
+          : !capabilitiesReady
+            ? 'FIX_OR_REAUTHORIZE_META_CAPABILITIES'
+            : creativeStatus
+              ? status.next_action
+              : 'PREPARE_CREATIVE_PACKAGE',
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -233,6 +293,7 @@ export class IntegrationDiagnosticController {
             http_status: error.getStatus(),
             error: response,
           },
+          meta_selected_target: { status: 'NOT_RUN' },
           meta_capability_validation: { status: 'NOT_RUN' },
           next_action: error.getStatus() === 404
             ? 'SUBMIT_OR_RECOVER_CAMPAIGN_PACKAGE'
@@ -256,6 +317,7 @@ export class IntegrationDiagnosticController {
             message: error instanceof Error ? error.message : 'Unexpected package diagnostic error',
           },
         },
+        meta_selected_target: { status: 'NOT_RUN' },
         meta_capability_validation: { status: 'NOT_RUN' },
         next_action: 'FIX_PACKAGE_STATE',
       };
