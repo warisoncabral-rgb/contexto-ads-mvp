@@ -42,6 +42,11 @@ export interface CampaignContextFacts {
   geography?: SourcedCampaignFact<string>;
   budget?: SourcedCampaignFact<CampaignBudget>;
   durationDays?: SourcedCampaignFact<number>;
+  whatsappNumber?: SourcedCampaignFact<string>;
+  instagramAccount?: SourcedCampaignFact<string>;
+  facebookPage?: SourcedCampaignFact<string>;
+  websiteUrl?: SourcedCampaignFact<string>;
+  phoneNumber?: SourcedCampaignFact<string>;
 }
 
 export interface CampaignContextInput {
@@ -53,12 +58,17 @@ export interface CampaignContextInput {
   geography?: unknown;
   budget?: unknown;
   durationDays?: unknown;
+  whatsappNumber?: unknown;
+  instagramAccount?: unknown;
+  facebookPage?: unknown;
+  websiteUrl?: unknown;
+  phoneNumber?: unknown;
 }
 
 export type CampaignContextField = keyof CampaignContextFacts;
 
 export interface CampaignContextIssue {
-  code: 'required_fact_missing';
+  code: 'required_fact_missing' | 'required_destination_detail_missing';
   field: CampaignContextField;
   severity: 'blocker';
   message: string;
