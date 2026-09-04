@@ -16,6 +16,7 @@ const validPackage = {
   campaign_objective: 'LEADS',
   conversion_destination: 'WHATSAPP',
   campaign_goal_description: 'Gerar contatos qualificados pelo WhatsApp.',
+  whatsapp_number: '+5583999999999',
   audience_description: 'Lojistas, sacoleiros e revendedores.',
   locations: [
     { city: 'Recife', state: 'PE', country: 'BR', radius_km: 40 },
@@ -58,6 +59,7 @@ describe('CampaignPackageMapper', () => {
       businessName: 'Rosa VIP',
       objective: 'leads',
       destination: 'whatsapp',
+      whatsappNumber: '+5583999999999',
       geography: 'Recife, PE, BR (40 km); Natal, RN, BR (40 km)',
       budget: { mode: 'daily', amountMinor: 1000, currency: 'BRL' },
       durationDays: 7,
@@ -83,6 +85,30 @@ describe('CampaignPackageMapper', () => {
       spend_authorized: false,
       delivery_authorized: false,
     });
+  });
+
+  it('maps an Instagram engagement campaign using the profile link and a non-WhatsApp CTA', () => {
+    const result = mapper.prepare({
+      ...validPackage,
+      campaign_objective: 'ENGAGEMENT',
+      conversion_destination: 'INSTAGRAM',
+      instagram_url: 'https://www.instagram.com/contextoads/',
+      whatsapp_number: undefined,
+      ads: [{
+        ...validPackage.ads[0],
+        cta: 'LEARN_MORE',
+        initial_message: undefined,
+      }],
+    });
+
+    expect(result.generator_inputs.campaign_context).toMatchObject({
+      objective: 'engagement',
+      destination: 'instagram',
+      instagramUrl: 'https://www.instagram.com/contextoads/',
+    });
+    expect(result.generator_inputs.creative_package.copies).toEqual([expect.objectContaining({
+      callToAction: 'LEARN_MORE',
+    })]);
   });
 
   it('fails closed when preparation receives an invalid package', () => {
