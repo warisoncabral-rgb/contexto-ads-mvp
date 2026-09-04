@@ -243,8 +243,9 @@ describe('ExecutionAuthorizationService', () => {
     const connections = {
       findById: jest.fn().mockResolvedValue({ status: 'connected', credentialRef: 'vault/ref' }),
       listBindings: jest.fn().mockResolvedValue([
-        { assetType: 'facebook_page', externalId: '10', selected: true },
-        { assetType: 'whatsapp', externalId: '20', selected: true },
+        { assetType: 'ad_account', externalId: 'act_123', selected: true },
+        { assetType: 'facebook_page', externalId: '10', displayName: 'Rosa Vip', selected: true },
+        { assetType: 'whatsapp', externalId: '20', displayName: '83986553047', selected: true },
       ]),
     };
     const adapter = {
@@ -256,9 +257,52 @@ describe('ExecutionAuthorizationService', () => {
         observedAt: '2026-09-01T16:00:00.000Z',
       }),
     };
+    const readonlyAdapter = {
+      validateConnection: jest.fn().mockResolvedValue({
+        success: true,
+        data: { subjectId: '123456' },
+        retryable: false,
+        observedAt: '2026-09-01T16:00:00.000Z',
+      }),
+      discoverAssets: jest.fn().mockResolvedValue({
+        success: true,
+        data: [
+          { assetType: 'ad_account', externalId: 'act_123' },
+          { assetType: 'facebook_page', externalId: '10', displayName: 'Rosa Vip' },
+          { assetType: 'whatsapp', externalId: '20', displayName: '83986553047' },
+        ],
+        retryable: false,
+        observedAt: '2026-09-01T16:00:00.000Z',
+      }),
+      readAdAccount: jest.fn().mockResolvedValue({
+        success: true,
+        data: {
+          id: 'act_123', name: 'Conta Rosa Vip', account_status: 1,
+          currency: 'BRL', timezone_name: 'America/Fortaleza',
+        },
+        retryable: false,
+        observedAt: '2026-09-01T16:00:00.000Z',
+      }),
+      validateCapabilities: jest.fn().mockResolvedValue({
+        success: true,
+        data: [
+          { capability: 'DISCOVER_ASSETS', available: true, requiredPermissions: ['ads_read', 'pages_show_list'], grantedPermissions: ['ads_read', 'pages_show_list'], apiVersion: 'v24.0' },
+          { capability: 'READ_AD_ACCOUNT', available: true, requiredPermissions: ['ads_read'], grantedPermissions: ['ads_read'], apiVersion: 'v24.0', assetScope: 'act_123' },
+          { capability: 'CREATE_CAMPAIGN', available: true, requiredPermissions: ['ads_management'], grantedPermissions: ['ads_management'], apiVersion: 'v24.0', assetScope: 'act_123' },
+          { capability: 'CREATE_ADSET', available: true, requiredPermissions: ['ads_management'], grantedPermissions: ['ads_management'], apiVersion: 'v24.0', assetScope: 'act_123' },
+          { capability: 'CREATE_CREATIVE', available: true, requiredPermissions: ['ads_management'], grantedPermissions: ['ads_management'], apiVersion: 'v24.0', assetScope: 'act_123' },
+          { capability: 'CREATE_AD', available: true, requiredPermissions: ['ads_management'], grantedPermissions: ['ads_management'], apiVersion: 'v24.0', assetScope: 'act_123' },
+          { capability: 'MANAGE_AD_STATUS', available: true, requiredPermissions: ['ads_management'], grantedPermissions: ['ads_management'], apiVersion: 'v24.0', assetScope: 'act_123' },
+          { capability: 'CLICK_TO_WHATSAPP', available: true, requiredPermissions: ['ads_management'], grantedPermissions: ['ads_management'], apiVersion: 'v24.0', assetScope: 'act_123' },
+        ],
+        retryable: false,
+        observedAt: '2026-09-01T16:00:00.000Z',
+      }),
+    };
     service = new ExecutionAuthorizationService(
       manifests, authorizations, killSwitch, validationProtocols,
       plans as never, connections as never, adapter as unknown as MetaWriteAdapter,
+      undefined, readonlyAdapter as never,
     );
 
     const result = await service.preflight(tenantId, authorizationId);
@@ -269,6 +313,10 @@ describe('ExecutionAuthorizationService', () => {
       expect.objectContaining({ key: 'meta_geography_resolved', status: 'passed' }),
       expect.objectContaining({ key: 'write_adapter_enabled', status: 'passed' }),
     ]));
+    expect(result.metaDiagnostic).toEqual(expect.objectContaining({
+      status: 'passed',
+      whatsapp: expect.objectContaining({ recognizedNumber: '83986553047' }),
+    }));
     expect(result.nextAction).toContain('uma única criação controlada');
     expect(result.boundaries.externalAttemptStarted).toBe(false);
   });
