@@ -59,6 +59,11 @@ export class OperatorCampaignExecutionActionController {
       resolved.tenantId,
       manifest.executionManifestId,
     );
+    const preflight = await this.access.runExecutionPreflight(
+      auth,
+      resolved.tenantId,
+      executionAuthorization.executionAuthorizationId,
+    );
     const target = await this.connections.selectedExecutionTarget(resolved.tenantId);
 
     return {
@@ -81,6 +86,12 @@ export class OperatorCampaignExecutionActionController {
         intended_initial_status: 'PAUSED',
         delivery_authorized: false,
         spend_authorized: false,
+      },
+      diagnostics: {
+        checks: preflight.checks,
+        blockers: preflight.blockers,
+        next_action: preflight.nextAction,
+        meta_diagnostic: preflight.metaDiagnostic ?? null,
       },
       meta_payment: this.paymentHandoff(target.adAccountId),
       boundaries: {
@@ -185,6 +196,7 @@ export class OperatorCampaignExecutionActionController {
         diagnostics: {
           blockers: preflight.blockers,
           next_action: preflight.nextAction,
+          meta_diagnostic: preflight.metaDiagnostic ?? null,
         },
         boundaries: {
           external_writes_allowed: false,
