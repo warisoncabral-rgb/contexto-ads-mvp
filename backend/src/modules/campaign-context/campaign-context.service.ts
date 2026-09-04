@@ -159,12 +159,13 @@ export class CampaignContextService {
     }
     const facts = this.normalizeFacts(input ?? {}, now);
     const validationIssues = this.validateCompleteness(facts);
+    const baseRequiredIssues = validationIssues.filter((issue) => issue.code === 'required_fact_missing');
     return {
       packageId: randomUUID(),
       tenantId,
       campaignId,
       schemaVersion: '1.0',
-      status: validationIssues.length === 0
+      status: baseRequiredIssues.length === 0
         ? 'ready_for_generation'
         : 'needs_information',
       facts,
