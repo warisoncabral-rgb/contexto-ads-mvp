@@ -88,7 +88,7 @@ describe('CampaignContextService', () => {
       field: 'whatsappNumber',
       severity: 'blocker',
       message: expect.stringContaining('WhatsApp'),
-      nextAction: expect.stringContaining('Perguntar ao usuário'),
+      nextAction: expect.stringContaining('Registrar a resposta'),
     }));
   });
 
