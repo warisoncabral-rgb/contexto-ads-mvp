@@ -80,10 +80,11 @@ export class ExecutionAuthorizationService {
     const preparedProtocol = await this.validationProtocols.latestForManifest(
       tenantId, executionManifestId,
     );
-    const protocolCurrent = preparedProtocol?.status === 'prepared_external_validation_required'
-      && preparedProtocol.manifestHash === manifest.manifestHash;
+    const protocolCurrent = ['prepared_external_validation_required', 'external_validation_succeeded']
+      .includes(preparedProtocol?.status ?? '')
+      && preparedProtocol?.manifestHash === manifest.manifestHash;
     const authorizedOperationCount = protocolCurrent
-      ? preparedProtocol.operations.length
+      ? preparedProtocol!.operations.length
       : manifest.operations.length;
     const now = new Date();
     const authorization: ExecutionAuthorizationV1 = {
@@ -103,7 +104,7 @@ export class ExecutionAuthorizationService {
         `execution_manifest:${manifest.executionManifestId}`,
         `manifest_hash:${manifest.manifestHash}`,
         `operations:${authorizedOperationCount}`,
-        ...(protocolCurrent
+        ...(protocolCurrent && preparedProtocol
           ? [`validation_protocol:${preparedProtocol.metaWriteValidationProtocolId}`]
           : []),
         'intended_lifecycle_status:PAUSED',
@@ -238,7 +239,8 @@ export class ExecutionAuthorizationService {
       item.assetType === 'facebook_page' && item.selected).length === 1;
     const whatsappReady = bindings.filter((item) =>
       item.assetType === 'whatsapp' && item.selected).length === 1;
-    const protocolReady = validationProtocol?.status === 'prepared_external_validation_required';
+    const protocolReady = ['prepared_external_validation_required', 'external_validation_succeeded']
+      .includes(validationProtocol?.status ?? '');
     const connectionReady = Boolean(connection?.credentialRef
       && ['connected', 'ready'].includes(connection.status));
     const targetReady = Boolean(plan && connectionId && adAccountReady
@@ -334,7 +336,9 @@ export class ExecutionAuthorizationService {
             : []),
         ],
         meaning: realMetaReady
-          ? 'O protocolo, a conta de anúncios, a conexão, a Página, o WhatsApp e as permissões foram comprovados por leitura autenticada da Meta.'
+          ? validationProtocol?.status === 'external_validation_succeeded'
+            ? 'O protocolo já foi validado com sucesso para este manifesto; a execução é idempotente e reutilizará os objetos PAUSED já comprovados, sem duplicar escrita.'
+            : 'O protocolo, a conta de anúncios, a conexão, a Página, o WhatsApp e as permissões foram comprovados por leitura autenticada da Meta.'
           : !protocolReady
             ? `O protocolo real não está preparado para iniciar (estado: ${validationProtocol?.status ?? 'missing'}).`
             : metaDiagnostic.failureCode
@@ -396,7 +400,9 @@ export class ExecutionAuthorizationService {
       metaDiagnostic,
       nextAction: blockers.length
         ? this.nextAction(blockers[0])
-        : 'Executar uma única criação controlada, mantendo todos os objetos em PAUSED.',
+        : validationProtocol?.status === 'external_validation_succeeded'
+          ? 'Reutilizar de forma idempotente a validação Meta já concluída para este manifesto e retornar os objetos PAUSED existentes.'
+          : 'Executar uma única criação controlada, mantendo todos os objetos em PAUSED.',
       boundaries,
       generatedAt,
     };
