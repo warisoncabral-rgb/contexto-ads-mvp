@@ -12,6 +12,7 @@
   "campaign_objective": "LEADS",
   "conversion_destination": "WHATSAPP",
   "campaign_goal_description": "Gerar contatos qualificados pelo WhatsApp.",
+  "whatsapp_number": "+5583999999999",
   "audience_description": "Público de exemplo definido pela estratégia.",
   "locations": [
     {
