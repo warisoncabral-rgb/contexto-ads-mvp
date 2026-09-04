@@ -47,6 +47,18 @@ const FIELD_LABELS: Record<CampaignContextField, string> = {
   geography: 'local de veiculação',
   budget: 'orçamento',
   durationDays: 'duração da campanha',
+  whatsappNumber: 'número do WhatsApp que receberá as mensagens',
+  instagramAccount: 'conta do Instagram',
+  facebookPage: 'Página do Facebook',
+  websiteUrl: 'site de destino',
+  phoneNumber: 'telefone de destino',
+};
+const DESTINATION_REQUIRED_FIELD: Partial<Record<CampaignDestination, CampaignContextField>> = {
+  whatsapp: 'whatsappNumber',
+  instagram: 'instagramAccount',
+  messenger: 'facebookPage',
+  website: 'websiteUrl',
+  phone: 'phoneNumber',
 };
 
 @Injectable()
@@ -173,6 +185,11 @@ export class CampaignContextService {
     const destination = this.optionalEnum(input.destination, 'destination', DESTINATIONS);
     const durationDays = this.optionalInteger(input.durationDays, 'durationDays', 1, 365);
     const budget = this.optionalBudget(input.budget);
+    const whatsappNumber = this.optionalContact(input.whatsappNumber, 'whatsappNumber');
+    const instagramAccount = this.optionalText(input.instagramAccount, 'instagramAccount', 200);
+    const facebookPage = this.optionalText(input.facebookPage, 'facebookPage', 300);
+    const websiteUrl = this.optionalUrl(input.websiteUrl, 'websiteUrl');
+    const phoneNumber = this.optionalContact(input.phoneNumber, 'phoneNumber');
 
     if (businessName !== undefined) facts.businessName = this.sourced(businessName, now);
     if (offer !== undefined) facts.offer = this.sourced(offer, now);
@@ -182,11 +199,16 @@ export class CampaignContextService {
     if (geography !== undefined) facts.geography = this.sourced(geography, now);
     if (budget !== undefined) facts.budget = this.sourced(budget, now);
     if (durationDays !== undefined) facts.durationDays = this.sourced(durationDays, now);
+    if (whatsappNumber !== undefined) facts.whatsappNumber = this.sourced(whatsappNumber, now);
+    if (instagramAccount !== undefined) facts.instagramAccount = this.sourced(instagramAccount, now);
+    if (facebookPage !== undefined) facts.facebookPage = this.sourced(facebookPage, now);
+    if (websiteUrl !== undefined) facts.websiteUrl = this.sourced(websiteUrl, now);
+    if (phoneNumber !== undefined) facts.phoneNumber = this.sourced(phoneNumber, now);
     return facts;
   }
 
   private validateCompleteness(facts: CampaignContextFacts): CampaignContextIssue[] {
-    return REQUIRED_FIELDS
+    const issues: CampaignContextIssue[] = REQUIRED_FIELDS
       .filter((field) => facts[field] === undefined)
       .map((field) => ({
         code: 'required_fact_missing',
@@ -195,6 +217,21 @@ export class CampaignContextService {
         message: `A informação obrigatória "${FIELD_LABELS[field]}" ainda não foi informada.`,
         nextAction: `Informar ${FIELD_LABELS[field]} antes de gerar a campanha.`,
       }));
+
+    const destination = facts.destination?.value;
+    const destinationField = destination
+      ? DESTINATION_REQUIRED_FIELD[destination]
+      : undefined;
+    if (destinationField && facts[destinationField] === undefined) {
+      issues.push({
+        code: 'required_destination_detail_missing',
+        field: destinationField,
+        severity: 'blocker',
+        message: `Antes de preparar a campanha, preciso confirmar ${FIELD_LABELS[destinationField]}.`,
+        nextAction: `Perguntar ao usuário ${FIELD_LABELS[destinationField]} e registrar essa informação antes de continuar.`,
+      });
+    }
+    return issues;
   }
 
   private sourced<T>(value: T, now: string): SourcedCampaignFact<T> {
@@ -217,6 +254,28 @@ export class CampaignContextService {
       throw new BadRequestException(`${field} must have at most ${max} characters`);
     }
     return normalized;
+  }
+
+  private optionalContact(value: unknown, field: string): string | undefined {
+    const text = this.optionalText(value, field, 40);
+    if (text === undefined) return undefined;
+    const normalized = text.replace(/[\s().-]/g, '');
+    if (!/^\+?\d{8,20}$/.test(normalized)) {
+      throw new BadRequestException(`${field} must contain a valid phone number with area/country code when applicable`);
+    }
+    return normalized;
+  }
+
+  private optionalUrl(value: unknown, field: string): string | undefined {
+    const text = this.optionalText(value, field, 500);
+    if (text === undefined) return undefined;
+    try {
+      const url = new URL(text);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol');
+      return url.toString();
+    } catch {
+      throw new BadRequestException(`${field} must be a valid http or https URL`);
+    }
   }
 
   private optionalEnum<T extends string>(
