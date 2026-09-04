@@ -1,7 +1,15 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { CampaignContextInput } from '../../domain/contracts/campaign-context';
-import { CreativePackageInputV1 } from '../../domain/contracts/creative-package';
-import { CampaignPackageV1 } from '../../domain/contracts/campaign-package';
+import {
+  CampaignContextInput,
+  CampaignDestination,
+  CampaignObjective,
+} from '../../domain/contracts/campaign-context';
+import { CreativeCallToAction, CreativePackageInputV1 } from '../../domain/contracts/creative-package';
+import {
+  CampaignPackageObjective,
+  CampaignPackageV1,
+  ConversionDestination,
+} from '../../domain/contracts/campaign-package';
 import { CampaignPackageService } from './campaign-package.service';
 
 export interface PreparedCampaignPackageV1 {
@@ -28,6 +36,28 @@ export interface PreparedCampaignPackageV1 {
   };
 }
 
+const OBJECTIVES: Record<CampaignPackageObjective, CampaignObjective> = {
+  AWARENESS: 'awareness',
+  TRAFFIC: 'traffic',
+  ENGAGEMENT: 'engagement',
+  LEADS: 'leads',
+  APP_PROMOTION: 'app_promotion',
+  SALES: 'sales',
+};
+
+const DESTINATIONS: Record<ConversionDestination, CampaignDestination> = {
+  WHATSAPP: 'whatsapp',
+  INSTAGRAM: 'instagram',
+  FACEBOOK_PAGE: 'facebook_page',
+  MESSENGER: 'messenger',
+  WEBSITE: 'website',
+  PHONE: 'phone',
+  INSTANT_FORM: 'instant_form',
+  APP: 'app',
+  PHYSICAL_LOCATION: 'physical_location',
+  OTHER: 'other',
+};
+
 @Injectable()
 export class CampaignPackageMapper {
   constructor(private readonly validator: CampaignPackageService) {}
@@ -51,12 +81,17 @@ export class CampaignPackageMapper {
     const campaignContext: CampaignContextInput = {
       businessName: pkg.business_name,
       offer: [pkg.offer_name, pkg.offer_description].filter(Boolean).join(' — '),
-      objective: 'leads',
+      objective: OBJECTIVES[pkg.campaign_objective],
       audience: pkg.audience_description,
-      destination: 'whatsapp',
+      destination: DESTINATIONS[pkg.conversion_destination],
       whatsappNumber: pkg.whatsapp_number,
       instagramAccount: pkg.instagram_account,
+      instagramUrl: pkg.instagram_url,
       facebookPage: pkg.facebook_page,
+      facebookPageUrl: pkg.facebook_page_url,
+      websiteUrl: pkg.website_url,
+      phoneNumber: pkg.phone_number,
+      appUrl: pkg.app_url,
       geography,
       budget: {
         mode: pkg.budget_type === 'DAILY' ? 'daily' : 'lifetime',
@@ -72,8 +107,10 @@ export class CampaignPackageMapper {
       primaryText: ad.primary_text,
       headline: ad.headline,
       ...(ad.description === undefined ? {} : { description: ad.description }),
-      whatsappMessage: ad.initial_message,
-      callToAction: 'SEND_WHATSAPP_MESSAGE' as const,
+      ...(pkg.conversion_destination === 'WHATSAPP' && ad.initial_message
+        ? { whatsappMessage: ad.initial_message }
+        : {}),
+      callToAction: this.callToAction(pkg.conversion_destination, ad.cta),
     }));
     const assets = pkg.ads.map((ad) => {
       const media = mediaById.get(ad.media_id)!;
@@ -122,6 +159,17 @@ export class CampaignPackageMapper {
         delivery_authorized: false,
       },
     };
+  }
+
+  private callToAction(
+    destination: ConversionDestination,
+    requested: CampaignPackageV1['ads'][number]['cta'],
+  ): CreativeCallToAction {
+    if (destination === 'WHATSAPP') return 'SEND_WHATSAPP_MESSAGE';
+    if (requested === 'SHOP_NOW') return 'SHOP_NOW';
+    if (requested === 'SIGN_UP') return 'SIGN_UP';
+    if (requested === 'CONTACT_US') return 'CONTACT_US';
+    return 'LEARN_MORE';
   }
 
   private normalizeChecksum(checksum: string): string {
