@@ -67,6 +67,8 @@ export class CampaignPackageStatusService {
         version: context.version,
         status: context.status,
         content_hash: context.contentHash,
+        objective: context.facts.objective?.value ?? null,
+        destination: context.facts.destination?.value ?? null,
       },
       creative: creative ? {
         creative_package_id: creative.creativePackageId,
