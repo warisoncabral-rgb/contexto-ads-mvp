@@ -18,6 +18,9 @@ describe('CampaignContextService', () => {
     objective: 'leads',
     audience: 'Pequenas empresas que precisam gerar demanda',
     destination: 'whatsapp',
+    whatsappNumber: '+5583999999999',
+    instagramAccount: '@contextoads',
+    facebookPage: 'Contexto Ads',
     geography: 'Brasil',
     budget: { mode: 'daily', amountMinor: 5000, currency: 'BRL' },
     durationDays: 30,
@@ -50,6 +53,7 @@ describe('CampaignContextService', () => {
       source: 'user_input',
       evidenceRefs: ['api:user_input'],
     }));
+    expect(result.facts.whatsappNumber?.value).toBe('+5583999999999');
     expect(repository.create).toHaveBeenCalledWith(result);
   });
 
@@ -64,6 +68,72 @@ describe('CampaignContextService', () => {
       code: 'required_fact_missing',
       nextAction: expect.stringContaining('orçamento'),
     }));
+  });
+
+  it('asks for WhatsApp automatically when WhatsApp is the chosen destination', async () => {
+    const result = await service.create(tenantId, {
+      businessName: 'Contexto Ads',
+      offer: 'Gestão profissional de anúncios',
+      objective: 'leads',
+      audience: 'Pequenas empresas que precisam gerar demanda',
+      destination: 'whatsapp',
+      geography: 'Brasil',
+      budget: { mode: 'daily', amountMinor: 5000, currency: 'BRL' },
+      durationDays: 30,
+    });
+
+    expect(result.status).toBe('needs_information');
+    expect(result.validationIssues).toContainEqual(expect.objectContaining({
+      code: 'required_destination_detail_missing',
+      field: 'whatsappNumber',
+      severity: 'blocker',
+      message: expect.stringContaining('WhatsApp'),
+      nextAction: expect.stringContaining('Perguntar ao usuário'),
+    }));
+  });
+
+  it.each([
+    ['instagram', 'instagramAccount'],
+    ['messenger', 'facebookPage'],
+    ['website', 'websiteUrl'],
+    ['phone', 'phoneNumber'],
+  ])('requires the destination detail for %s', async (destination, field) => {
+    const facts: any = {
+      businessName: 'Contexto Ads',
+      offer: 'Gestão profissional de anúncios',
+      objective: 'leads',
+      audience: 'Pequenas empresas que precisam gerar demanda',
+      destination,
+      geography: 'Brasil',
+      budget: { mode: 'daily', amountMinor: 5000, currency: 'BRL' },
+      durationDays: 30,
+    };
+
+    const result = await service.create(tenantId, facts);
+    expect(result.validationIssues).toContainEqual(expect.objectContaining({
+      code: 'required_destination_detail_missing',
+      field,
+    }));
+  });
+
+  it('accepts an Instagram profile link as the human destination reference', async () => {
+    const result = await service.create(tenantId, {
+      ...completeFacts,
+      destination: 'instagram',
+      instagramAccount: 'https://www.instagram.com/contextoads/',
+    });
+    expect(result.status).toBe('ready_for_generation');
+    expect(result.facts.instagramAccount?.value).toBe('https://www.instagram.com/contextoads/');
+  });
+
+  it('accepts a Facebook page link as the human destination reference', async () => {
+    const result = await service.create(tenantId, {
+      ...completeFacts,
+      destination: 'messenger',
+      facebookPage: 'https://www.facebook.com/contextoads',
+    });
+    expect(result.status).toBe('ready_for_generation');
+    expect(result.facts.facebookPage?.value).toBe('https://www.facebook.com/contextoads');
   });
 
   it('attaches operator audit evidence to the same context transaction', async () => {
@@ -93,16 +163,19 @@ describe('CampaignContextService', () => {
     const first = await service.create(tenantId, {
       ...completeFacts,
       businessName: '  Contexto Ads  ',
+      whatsappNumber: '+55 (83) 99999-9999',
     });
     const second = await service.create(tenantId, completeFacts);
 
     expect(first.facts.businessName?.value).toBe('Contexto Ads');
+    expect(first.facts.whatsappNumber?.value).toBe('+5583999999999');
     expect(first.contentHash).toBe(second.contentHash);
   });
 
   it.each([
     [{ ...completeFacts, objective: 'profit' }, 'objective'],
     [{ ...completeFacts, durationDays: 0 }, 'durationDays'],
+    [{ ...completeFacts, whatsappNumber: 'abc' }, 'whatsappNumber'],
     [{ ...completeFacts, budget: { mode: 'daily', amountMinor: 10.5, currency: 'BRL' } }, 'amountMinor'],
     [{ ...completeFacts, budget: { mode: 'daily', amountMinor: 1000, currency: 'brl' } }, 'currency'],
   ])('rejects malformed facts instead of silently guessing: %s', async (facts, message) => {

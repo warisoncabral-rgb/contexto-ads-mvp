@@ -54,6 +54,9 @@ export class CampaignPackageMapper {
       objective: 'leads',
       audience: pkg.audience_description,
       destination: 'whatsapp',
+      whatsappNumber: pkg.whatsapp_number,
+      instagramAccount: pkg.instagram_account,
+      facebookPage: pkg.facebook_page,
       geography,
       budget: {
         mode: pkg.budget_type === 'DAILY' ? 'daily' : 'lifetime',
