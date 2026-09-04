@@ -18,6 +18,7 @@ const packageV1 = {
   campaign_objective: 'LEADS',
   conversion_destination: 'WHATSAPP',
   campaign_goal_description: 'Gerar contatos qualificados pelo WhatsApp.',
+  whatsapp_number: '+5583999999999',
   audience_description: 'Lojistas, sacoleiros e revendedores.',
   locations: [{ city: 'Recife', state: 'PE', country: 'BR', radius_km: 40 }],
   budget_type: 'DAILY',
