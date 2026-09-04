@@ -56,6 +56,9 @@ export interface CampaignPackageV1 {
   campaign_objective: CampaignPackageObjective;
   conversion_destination: ConversionDestination;
   campaign_goal_description: string;
+  whatsapp_number: string;
+  instagram_account?: string;
+  facebook_page?: string;
 
   audience_description: string;
   locations: CampaignPackageLocationV1[];
