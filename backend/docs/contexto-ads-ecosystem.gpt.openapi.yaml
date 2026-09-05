@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Contexto Ads Ecosystem
-  version: 1.0.0
+  version: 1.1.0
   description: Unified GPT Action contract for Contexto Ads, Gerador/Publicador and Analista. Human approval gates and Meta safety boundaries remain enforced by the backend.
 servers:
   - url: https://contexto-ads-validation-api.onrender.com/v1
@@ -73,11 +73,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [package_id]
-              properties:
-                package_id: { type: string, format: uuid }
+              $ref: '#/components/schemas/PackageIdRequest'
       responses:
         '200': { description: Current package state }
 
@@ -158,8 +154,8 @@ paths:
   /operator/campaigns/v1/action-publish:
     post:
       operationId: publishCampaign
-      summary: Activate only the already prepared and explicitly approved Meta objects
-      description: Consequential external action. Must only be called after a fresh explicit user authorization to activate delivery and spend within the approved limits.
+      summary: Activate already prepared Meta objects, including selective ad activation
+      description: Consequential external action. Full publication requires PUBLISH_CAMPAIGN. Selective publication requires PUBLISH_SELECTED_ADS and explicit active/paused ad id lists. Budget changes are not authorized.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -168,10 +164,19 @@ paths:
             schema:
               type: object
               additionalProperties: true
-              required: [package_id]
+              required: [package_id, confirmation]
               properties:
                 package_id: { type: string, format: uuid }
                 ready_hash: { type: string }
+                confirmation:
+                  type: string
+                  enum: [PUBLISH_CAMPAIGN, PUBLISH_SELECTED_ADS]
+                active_ad_ids:
+                  type: array
+                  items: { type: string, pattern: '^\\d+$' }
+                paused_ad_ids:
+                  type: array
+                  items: { type: string, pattern: '^\\d+$' }
       responses:
         '200': { description: Publication/activation result }
 
@@ -191,8 +196,38 @@ paths:
               required: [package_id]
               properties:
                 package_id: { type: string, format: uuid }
+                confirmation: { type: string, enum: [PAUSE_CAMPAIGN] }
+                reason: { type: string }
       responses:
         '200': { description: Pause result }
+
+  /operator/analyst/meta-campaigns/{metaCampaignId}/monitor:
+    post:
+      operationId: monitorMetaCampaign
+      summary: Monitor a real Meta campaign in authenticated read-only mode
+      description: Reads live Meta campaign status and Insights, resolves the internal tracked campaign, and produces a supervised Analyst interpretation without changing campaign status, budget, creatives, ads or spend.
+      x-openai-isConsequential: false
+      parameters:
+        - name: metaCampaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\\d+$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [since, until]
+              properties:
+                since: { type: string, format: date }
+                until: { type: string, format: date }
+                businessConstraints: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: Real Meta read-only monitoring and Analyst result }
 
   /operator/tenants/{tenantId}/campaigns/{campaignId}/analyst/collect-meta:
     post:
@@ -211,6 +246,7 @@ paths:
               additionalProperties: true
               required: [since, until]
               properties:
+                metaCampaignId: { type: string, pattern: '^\\d+$' }
                 since: { type: string, format: date }
                 until: { type: string, format: date }
                 businessConstraints: { type: object, additionalProperties: true }
