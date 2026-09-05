@@ -22,6 +22,7 @@ import { MetaExecutionModule } from '../meta-execution/meta-execution.module';
 import { CampaignPackageModule } from '../campaign-package/campaign-package.module';
 import { OperatorCampaignPackageController } from './operator-campaign-package.controller';
 import { OperatorCampaignExecutionActionController } from './operator-campaign-execution-action.controller';
+import { OperatorCampaignExecutionResultController } from './operator-campaign-execution-result.controller';
 import { OperatorStrategyHandoffController } from './operator-strategy-handoff.controller';
 import { StrategyHandoffPersistenceService } from './strategy-handoff-persistence.service';
 import { OperatorActionPingController } from './operator-action-ping.controller';
@@ -60,6 +61,7 @@ import { SelectivePublicationController } from './selective-publication.controll
     OperatorMetaController,
     OperatorCampaignPackageController,
     OperatorCampaignExecutionActionController,
+    OperatorCampaignExecutionResultController,
     OperatorStrategyHandoffController,
     OperatorActionPingController,
     OperatorActionTransportController,

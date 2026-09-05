@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Contexto Ads Generator Safe Execution",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Safe Contexto Ads to Gerador execution bridge. It can prepare and, only after exact human confirmation, create Meta objects in PAUSED. It cannot activate delivery or authorize spend. Meta billing is completed directly with Meta."
   },
   "servers": [{"url": "https://contexto-ads-validation-api.onrender.com/v1"}],
@@ -23,6 +23,15 @@
         "description": "Requires literal CREATE_PAUSED and runs fail-closed preflight before any Meta write. Does not activate delivery or authorize spend.",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["package_id", "execution_authorization_id", "confirmation"], "properties": {"package_id": {"type": "string", "format": "uuid"}, "execution_authorization_id": {"type": "string", "format": "uuid"}, "confirmation": {"type": "string", "enum": ["CREATE_PAUSED"]}}}}}},
         "responses": {"200": {"description": "Blocked before write or objects created and verified PAUSED"}, "401": {"description": "Authentication denied"}, "404": {"description": "Not found"}, "409": {"description": "Confirmation or precondition conflict"}}
+      }
+    },
+    "/operator/campaign-packages/v1/action-result": {
+      "post": {
+        "operationId": "getCampaignPausedCreationResult",
+        "summary": "Get the complete Meta creation result including reconciled IDs",
+        "description": "Returns the real Meta campaign, ad set, creative and ad IDs from both newly executed and reconciled operations. Performs no external write and does not activate delivery or spend.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["package_id", "execution_authorization_id"], "properties": {"package_id": {"type": "string", "format": "uuid"}, "execution_authorization_id": {"type": "string", "format": "uuid"}}}}}},
+        "responses": {"200": {"description": "Complete Meta creation result with meta_campaign_id and related IDs"}, "401": {"description": "Authentication denied"}, "404": {"description": "Result not found"}, "409": {"description": "Campaign/result mismatch"}}
       }
     },
     "/operator/campaign-packages/v1/action-payment-handoff": {
