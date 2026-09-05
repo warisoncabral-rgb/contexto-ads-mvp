@@ -7,6 +7,7 @@ import { AnalystTrackingModule } from '../analyst-tracking/analyst-tracking.modu
 import { MetaInsightsModule } from '../meta-insights/meta-insights.module';
 import { OperatorAccessModule } from '../operator-access/operator-access.module';
 import { AnalystController } from './analyst.controller';
+import { AnalystExternalMonitorController } from './analyst-external-monitor.controller';
 import { AnalystGovernanceService } from './analyst-governance.service';
 import { AnalystLearningController } from './analyst-learning.controller';
 import { AnalystLearningService } from './analyst-learning.service';
@@ -17,7 +18,7 @@ import { ANALYST_REPOSITORY } from './analyst.tokens';
 
 @Module({
   imports: [DatabaseModule, OperatorAccessModule, MetaInsightsModule, AnalystTrackingModule],
-  controllers: [AnalystController, AnalystLearningController],
+  controllers: [AnalystController, AnalystExternalMonitorController, AnalystLearningController],
   providers: [
     {
       provide: ANALYST_REPOSITORY,
