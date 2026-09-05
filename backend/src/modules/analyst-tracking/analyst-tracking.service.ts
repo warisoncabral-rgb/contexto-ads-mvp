@@ -102,6 +102,19 @@ export class AnalystTrackingService {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
+  async findByExternalCampaignId(
+    externalCampaignId: string,
+  ): Promise<AnalystTrackingRegistrationV1 | null> {
+    if (!/^\d+$/.test(externalCampaignId)) return null;
+    const result = await this.pool.query<TrackingRow>(
+      `select * from analyst_tracking_registrations
+       where external_campaign_id = $1
+       order by updated_at desc limit 1`,
+      [externalCampaignId],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
   private externalCampaign(protocol: MetaWriteValidationProtocolV1): {
     externalCampaignId: string;
     source: AnalystTrackingSource;
