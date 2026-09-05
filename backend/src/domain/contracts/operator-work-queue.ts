@@ -2,6 +2,7 @@ import { OperatorRole } from './operator-access';
 
 export type OperatorWorkOwner = 'system' | 'operator' | 'meta_environment';
 export type OperatorWorkPriority = 'critical' | 'high' | 'normal';
+export type OperatorWorkChangeKind = 'entered' | 'worsened' | 'improved' | 'unchanged' | 'resolved';
 
 export interface OperatorWorkItemV1 {
   workItemId: string;
@@ -26,6 +27,28 @@ export interface OperatorWorkQueueSourceDecisionV1 {
   reason: string;
 }
 
+export interface OperatorWorkQueueChangeV1 {
+  workItemId: string;
+  tenantId: string;
+  tenantDisplayName: string;
+  campaignId: string;
+  executionPlanId: string;
+  blockerCode: string;
+  kind: OperatorWorkChangeKind;
+  previousPriority: OperatorWorkPriority | null;
+  currentPriority: OperatorWorkPriority | null;
+  meaning: string;
+  evidenceRefs: string[];
+  previousQueueDate: string | null;
+  currentQueueDate: string;
+}
+
+export interface OperatorWorkQueueSnapshotComparisonV1 {
+  baselineAvailable: boolean;
+  previousQueueDate: string | null;
+  changes: OperatorWorkQueueChangeV1[];
+}
+
 export interface OperatorWorkQueueSnapshotV1 {
   snapshotId: string;
   tenantId: string;
@@ -34,7 +57,15 @@ export interface OperatorWorkQueueSnapshotV1 {
   snapshotHash: string;
   itemCount: number;
   sourceDecisions: OperatorWorkQueueSourceDecisionV1[];
+  comparison: OperatorWorkQueueSnapshotComparisonV1;
   generatedAt: string;
+}
+
+export type OperatorWorkQueueSnapshotInputV1 = Omit<OperatorWorkQueueSnapshotV1, 'comparison'>;
+
+export interface OperatorWorkQueueStoredSnapshotV1 extends OperatorWorkQueueSnapshotInputV1 {
+  comparison?: OperatorWorkQueueSnapshotComparisonV1;
+  items: OperatorWorkItemV1[];
 }
 
 export interface OperatorWorkQueueV1 {
